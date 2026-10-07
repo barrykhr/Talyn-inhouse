@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+/* Talyn design tokens — warm paper surfaces, ink type, a single persimmon signal
+   colour reserved for focus and AI provenance, and three evidence states. */
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --color-paper: #f6f5f1;
+  --color-surface: #ffffff;
+  --color-sunken: #efede7;
+  --color-line: #e4e1d9;
+  --color-line-strong: #d3cfc4;
+  --color-ink: #17171a;
+  --color-ink-2: #3d3c39;
+  --color-muted: #6f6d67;
+  --color-faint: #9b988f;
+
+  --color-signal: #d9541e;
+  --color-signal-soft: #fbe9e0;
+
+  --color-ok: #1d7048;
+  --color-ok-soft: #e4f2e9;
+  --color-warn: #8f5a00;
+  --color-warn-soft: #fbf0d9;
+  --color-gap: #5a5f6b;
+  --color-gap-soft: #eef0f3;
+  --color-danger: #b42318;
+  --color-danger-soft: #fdecea;
+
+  --radius-card: 14px;
+}
+
+html {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-signal);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--color-signal-soft);
+}
+
+/* Evidence quotes read like highlighted source text. */
+.quote {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.resume-text {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

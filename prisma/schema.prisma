@@ -1,0 +1,234 @@
+// Talyn In-house TA — Phase 1 data model.
+// Every business record carries `orgId`; all reads/writes are scoped by it on the server.
+// Enum-like fields are strings (SQLite has no enums); allowed values live in src/lib/domain.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id          String        @id @default(cuid())
+  name        String
+  createdAt   DateTime      @default(now())
+  memberships Membership[]
+  sessions    Session[]
+  roles       Role[]
+  candidates  Candidate[]
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime     @default(now())
+  memberships  Membership[]
+  sessions     Session[]
+}
+
+model Membership {
+  id        String       @id @default(cuid())
+  userId    String
+  orgId     String
+  role      String       @default("admin") // admin | recruiter
+  createdAt DateTime     @default(now())
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+}
+
+model Session {
+  id        String       @id // sha256 of the cookie token; the raw token is never stored
+  userId    String
+  orgId     String
+  expiresAt DateTime
+  createdAt DateTime     @default(now())
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Role {
+  id             String        @id @default(cuid())
+  orgId          String
+  title          String
+  department     String        @default("")
+  location       String        @default("")
+  employmentType String        @default("full_time")
+  description    String        @default("")
+  status         String        @default("draft") // draft | open | on_hold | closed
+  createdById    String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  org            Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  criteria       Criterion[]
+  applications   Application[]
+
+  @@index([orgId])
+}
+
+model Criterion {
+  id                  String           @id @default(cuid())
+  orgId               String
+  roleId              String
+  name                String
+  description         String           @default("")
+  importance          String           @default("essential") // essential | preferred
+  priority            Int?
+  origin              String           @default("manual") // manual | ai | extracted
+  originalName        String? // wording as first proposed (AI or extraction), for edit comparison
+  originalDescription String?
+  edited              Boolean          @default(false)
+  sourceText          String? // excerpt of the job description this came from
+  rationale           String?
+  status              String           @default("proposed") // proposed | approved | rejected
+  approvedById        String?
+  approvedAt          DateTime?
+  position            Int              @default(0)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  role                Role             @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assessmentItems     AssessmentItem[]
+
+  @@index([orgId, roleId])
+}
+
+model Candidate {
+  id               String        @id @default(cuid())
+  orgId            String
+  fullName         String
+  email            String?
+  phone            String?
+  location         String?
+  linkedinUrl      String?
+  currentTitle     String?
+  currentCompany   String?
+  candidateSummary String? // information provided by the candidate (e.g. application answers)
+  source           String        @default("manual") // manual | csv
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  org              Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  resumes          Resume[]
+  notes            Note[]
+  applications     Application[]
+
+  @@index([orgId])
+  @@index([orgId, email])
+}
+
+model Resume {
+  id          String       @id @default(cuid())
+  orgId       String
+  candidateId String
+  fileName    String
+  mimeType    String
+  sizeBytes   Int          @default(0)
+  storageKey  String? // null when the resume was pasted as text
+  pagesJson   String // JSON string[] of extracted text, one entry per page
+  isCurrent   Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  candidate   Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  assessments Assessment[]
+
+  @@index([orgId, candidateId])
+}
+
+model Note {
+  id          String    @id @default(cuid())
+  orgId       String
+  candidateId String
+  roleId      String?
+  authorId    String?
+  authorName  String    @default("")
+  body        String
+  createdAt   DateTime  @default(now())
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, candidateId])
+}
+
+// A candidate's association with a role, and their place in that role's pipeline.
+model Application {
+  id            String       @id @default(cuid())
+  orgId         String
+  candidateId   String
+  roleId        String
+  stage         String       @default("new")
+  decision      String? // advance | hold | decline — always recorded by a recruiter
+  decisionNote  String?
+  decidedById   String?
+  decidedByName String?
+  decidedAt     DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  candidate     Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  role          Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  stageEvents   StageEvent[]
+  assessments   Assessment[]
+
+  @@unique([candidateId, roleId])
+  @@index([orgId, roleId])
+}
+
+model StageEvent {
+  id            String      @id @default(cuid())
+  orgId         String
+  applicationId String
+  fromStage     String?
+  toStage       String
+  actorId       String?
+  actorName     String      @default("")
+  createdAt     DateTime    @default(now())
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+}
+
+model Assessment {
+  id               String           @id @default(cuid())
+  orgId            String
+  applicationId    String
+  resumeId         String?
+  generator        String // "ai" | "keyword" | "manual"
+  model            String? // model id when generator = ai
+  criteriaSnapshot String // JSON: [{id, updatedAt}] of the approved criteria used
+  status           String           @default("needs_review") // needs_review | reviewed
+  createdById      String?
+  reviewedById     String?
+  reviewedByName   String?
+  reviewedAt       DateTime?
+  createdAt        DateTime         @default(now())
+  application      Application      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  resume           Resume?          @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  items            AssessmentItem[]
+
+  @@index([orgId, applicationId])
+}
+
+model AssessmentItem {
+  id             String     @id @default(cuid())
+  assessmentId   String
+  criterionId    String?
+  criterionName  String // snapshot so history survives criterion edits
+  importance     String
+  result         String // supported | not_stated | inferred
+  evidenceJson   String     @default("[]") // JSON: [{quote, source, page, section, verified}]
+  explanation    String     @default("")
+  missingInfo    String     @default("")
+  confidence     String? // high | medium | low
+  overrideResult String? // recruiter correction
+  overrideNote   String?
+  overriddenBy   String?
+  overriddenAt   DateTime?
+  assessment     Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  criterion      Criterion? @relation(fields: [criterionId], references: [id], onDelete: SetNull)
+
+  @@index([assessmentId])
+}
