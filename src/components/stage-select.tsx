@@ -2,12 +2,12 @@
 
 import clsx from "clsx";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
 import { STAGES, STAGE_LABEL } from "@/lib/domain";
 import { moveStage } from "@/server/candidate-actions";
+import { usePendingTask } from "./client";
 
 export function StageSelect({ applicationId, stage, className }: { applicationId: string; stage: string; className?: string }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = usePendingTask();
   const router = useRouter();
   return (
     <select

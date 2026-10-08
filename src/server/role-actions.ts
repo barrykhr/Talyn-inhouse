@@ -1,12 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { EMPLOYMENT_TYPES, ROLE_STATUSES } from "@/lib/domain";
-import { str, type ActionState } from "./form";
+import { goTo, str, type ActionState } from "./form";
 import { ownRole } from "./scope";
 
 const RoleSchema = z.object({
@@ -34,7 +33,7 @@ export async function createRole(_prev: ActionState, fd: FormData): Promise<Acti
   const parsed = parseRole(fd);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message };
   const role = await db.role.create({ data: { ...parsed.data, orgId: auth.orgId, createdById: auth.userId } });
-  redirect(`/roles/${role.id}`);
+  return goTo(`/roles/${role.id}`);
 }
 
 export async function updateRole(roleId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -43,7 +42,7 @@ export async function updateRole(roleId: string, _prev: ActionState, fd: FormDat
   const parsed = parseRole(fd);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message };
   await db.role.update({ where: { id: roleId }, data: parsed.data });
-  redirect(`/roles/${roleId}`);
+  return goTo(`/roles/${roleId}`);
 }
 
 export async function setRoleStatus(roleId: string, status: string) {
@@ -59,7 +58,6 @@ export async function deleteRole(roleId: string) {
   const auth = await requireAuth();
   await ownRole(auth, roleId);
   await db.role.delete({ where: { id: roleId } });
-  revalidatePath("/roles");
-  redirect("/roles");
+  return goTo("/roles");
 }
 

@@ -83,7 +83,10 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
               {candidates.map((c) => (
                 <Link key={c.id} href={`/candidates/${c.id}`} className="flex flex-wrap items-center gap-x-6 gap-y-1.5 px-5 py-3 hover:bg-[#fbfaf8]">
                   <div className="min-w-0 flex-1 basis-56">
-                    <div className="font-medium">{c.fullName}</div>
+                    <div className="flex items-center gap-1.5 font-medium">
+                      {c.fullName}
+                      {c.extractionStatus === "needs_review" && <span className="rounded-md bg-signal-soft px-1.5 text-[11px] font-semibold text-signal">CV review pending</span>}
+                    </div>
                     <div className="truncate text-[12.5px] text-muted">
                       {[c.currentTitle, c.currentCompany].filter(Boolean).join(" · ") || c.email || "—"}
                     </div>

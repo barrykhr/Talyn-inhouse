@@ -1,21 +1,18 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { CandidateFields } from "@/components/candidate-fields";
-import { ActionButton, FormMessage, SubmitButton } from "@/components/client";
+import { ActionButton, ActionForm, FormMessage, SubmitButton, useServerForm } from "@/components/client";
 import { Button, Field, Input, Select, Textarea, formatDateTime } from "@/components/ui";
 import { addNote, deleteCandidate, deleteNote, deleteResume, updateCandidate, uploadResume } from "@/server/candidate-actions";
 
 export function ResumeUpload({ candidateId, hasResume }: { candidateId: string; hasResume: boolean }) {
   const [open, setOpen] = useState(!hasResume);
-  const [state, action] = useActionState(uploadResume.bind(null, candidateId), undefined);
-  const formRef = useRef<HTMLFormElement>(null);
+  const [state, action, actionPending] = useServerForm(uploadResume.bind(null, candidateId));
+  const [key, setKey] = useState(0);
   useEffect(() => {
-    if (state?.ok) {
-      formRef.current?.reset();
-      if (hasResume) setOpen(false);
-    }
-  }, [state, hasResume]);
+    if (state?.ok) setKey((k) => k + 1); // clear the form only after a successful upload
+  }, [state]);
   if (!open)
     return (
       <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
@@ -23,7 +20,7 @@ export function ResumeUpload({ candidateId, hasResume }: { candidateId: string; 
       </Button>
     );
   return (
-    <form ref={formRef} action={action} className="space-y-3">
+    <ActionForm key={key} action={action} pending={actionPending} className="space-y-3">
       <Input name="resume" type="file" accept=".pdf,.docx,.txt,.md" className="h-auto py-1.5 text-[13px]" />
       <Field label="…or paste text">
         <Textarea name="resumeText" rows={3} maxLength={100000} />
@@ -32,10 +29,10 @@ export function ResumeUpload({ candidateId, hasResume }: { candidateId: string; 
         <FormMessage state={state} />
         <div className="ml-auto flex gap-2">
           {hasResume && <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>}
-          <SubmitButton size="sm" pendingLabel="Reading…">Save resume</SubmitButton>
+          <SubmitButton size="sm" pendingLabel="Reading and extracting…">Save resume</SubmitButton>
         </div>
       </div>
-    </form>
+    </ActionForm>
   );
 }
 
@@ -48,13 +45,13 @@ export function DeleteResumeButton({ id }: { id: string }) {
 }
 
 export function NoteForm({ candidateId, roles }: { candidateId: string; roles: { id: string; title: string }[] }) {
-  const [state, action] = useActionState(addNote.bind(null, candidateId), undefined);
-  const formRef = useRef<HTMLFormElement>(null);
+  const [state, action, actionPending] = useServerForm(addNote.bind(null, candidateId));
+  const [key, setKey] = useState(0);
   useEffect(() => {
-    if (state?.ok) formRef.current?.reset();
+    if (state?.ok) setKey((k) => k + 1); // clear only after a successful save
   }, [state]);
   return (
-    <form ref={formRef} action={action} className="space-y-2">
+    <ActionForm key={key} action={action} pending={actionPending} className="space-y-2">
       <Textarea name="body" rows={2} placeholder="Add a note for your team…" maxLength={10000} />
       <div className="flex items-center gap-2">
         {roles.length > 0 && (
@@ -68,7 +65,7 @@ export function NoteForm({ candidateId, roles }: { candidateId: string; roles: {
         <FormMessage state={state?.ok ? undefined : state} />
         <SubmitButton size="sm" variant="secondary" className="ml-auto" pendingLabel="Saving…">Add note</SubmitButton>
       </div>
-    </form>
+    </ActionForm>
   );
 }
 
@@ -90,7 +87,7 @@ type ProfileValues = Parameters<typeof CandidateFields>[0]["v"];
 
 export function EditProfile({ candidateId, values }: { candidateId: string; values: ProfileValues }) {
   const [open, setOpen] = useState(false);
-  const [state, action] = useActionState(updateCandidate.bind(null, candidateId), undefined);
+  const [state, action, actionPending] = useServerForm(updateCandidate.bind(null, candidateId));
   useEffect(() => {
     if (state?.ok) setOpen(false);
   }, [state]);
@@ -102,7 +99,7 @@ export function EditProfile({ candidateId, values }: { candidateId: string; valu
     );
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/30 px-4 py-10" role="dialog" aria-modal="true" aria-label="Edit profile">
-      <form action={action} className="w-full max-w-2xl rounded-[var(--radius-card)] bg-surface p-6 shadow-xl">
+      <ActionForm action={action} pending={actionPending} className="w-full max-w-2xl rounded-[var(--radius-card)] bg-surface p-6 shadow-xl">
         <h2 className="mb-4 text-lg font-semibold">Edit profile</h2>
         <CandidateFields v={values} />
         <div className="mt-5 flex items-center gap-2">
@@ -112,7 +109,7 @@ export function EditProfile({ candidateId, values }: { candidateId: string; valu
             <SubmitButton pendingLabel="Saving…">Save</SubmitButton>
           </div>
         </div>
-      </form>
+      </ActionForm>
     </div>
   );
 }

@@ -1,11 +1,11 @@
 "use client";
 
 import clsx from "clsx";
-import { useActionState, useEffect, useState, useTransition } from "react";
-import { ActionButton, FormMessage, Spinner, SubmitButton } from "@/components/client";
+import { useEffect, useState } from "react";
+import { ActionForm, ActionButton, FormMessage, Spinner, SubmitButton, useServerForm } from "@/components/client";
 import { AiMark, Badge, Button, Field, Notice, Select, Textarea } from "@/components/ui";
-import { RESULT_HELP, RESULT_LABEL, RESULTS, type AssessmentResult, type Evidence } from "@/lib/domain";
-import { markReviewed, overrideItem, runAssessment } from "@/server/assessment-actions";
+import { RECOMMENDATIONS, RECOMMENDATION_LABEL, RESULT_HELP, RESULT_LABEL, RESULTS, type AssessmentResult, type Evidence, type Recommendation } from "@/lib/domain";
+import { markReviewed, overrideItem, reviewRecommendation, runAssessment } from "@/server/assessment-actions";
 import type { ActionState } from "@/server/form";
 
 export type ItemView = {
@@ -23,7 +23,13 @@ export type ItemView = {
   overriddenAt: string | null;
 };
 
-const resultTone: Record<string, "ok" | "warn" | "gap"> = { supported: "ok", inferred: "warn", not_stated: "gap" };
+const resultTone: Record<string, "ok" | "warn" | "gap" | "danger"> = {
+  supported: "ok",
+  partially_supported: "warn",
+  inferred: "warn",
+  conflicting: "danger",
+  not_stated: "gap",
+};
 
 export function ResultBadge({ result, struck = false }: { result: string; struck?: boolean }) {
   const r = result as AssessmentResult;
@@ -42,6 +48,19 @@ function ResultIcon({ result }: { result: AssessmentResult }) {
         <path d="M2 5.2l2 2L8 3" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" />
       </svg>
     );
+  if (result === "partially_supported")
+    return (
+      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+        <circle cx="5" cy="5" r="3.5" stroke="currentColor" strokeWidth="1.4" fill="none" />
+        <path d="M5 1.5a3.5 3.5 0 010 7z" fill="currentColor" />
+      </svg>
+    );
+  if (result === "conflicting")
+    return (
+      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+        <path d="M2 3h6M2 7h6M6.5 1.5L8 3 6.5 4.5M3.5 5.5L2 7l1.5 1.5" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+      </svg>
+    );
   if (result === "inferred")
     return (
       <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
@@ -56,14 +75,24 @@ function ResultIcon({ result }: { result: AssessmentResult }) {
 }
 
 export function RunAssessment({ applicationId, aiConfigured, hasAssessment, disabledReason }: { applicationId: string; aiConfigured: boolean; hasAssessment: boolean; disabledReason?: string }) {
-  const [pending, start] = useTransition();
+  const [pending, setPending] = useState(false);
   const [mode, setMode] = useState<"ai" | "keyword" | null>(null);
   const [state, setState] = useState<ActionState>(undefined);
-  const run = (m: "ai" | "keyword") => {
+  const run = async (m: "ai" | "keyword") => {
     if (hasAssessment && !window.confirm("Create a new assessment? The current one stays in history.")) return;
     setMode(m);
     setState(undefined);
-    start(async () => setState(await runAssessment(applicationId, m)));
+    setPending(true);
+    let result: ActionState;
+    try {
+      result = await runAssessment(applicationId, m);
+    } catch {
+      result = { error: "The assessment request failed. Please try again." };
+    }
+    // Reload to show the stored assessment (see useServerForm for why not a client refresh).
+    if (result?.ok) return window.location.reload();
+    setState(result);
+    setPending(false);
   };
   return (
     <div>
@@ -148,7 +177,9 @@ export function ItemCard({ item }: { item: ItemView }) {
         </div>
         <div className="space-y-2.5">
           <div>
-            <div className="mb-1 text-[11.5px] font-semibold uppercase tracking-wide text-muted">{effective === "inferred" ? "Inference" : "Explanation"}</div>
+            <div className="mb-1 text-[11.5px] font-semibold uppercase tracking-wide text-muted">
+              {effective === "inferred" ? "Inference" : effective === "conflicting" ? "What conflicts" : "Explanation"}
+            </div>
             <p className="text-[13px] leading-relaxed text-ink-2">{item.explanation || "—"}</p>
           </div>
           {item.missingInfo && (
@@ -174,12 +205,12 @@ export function ItemCard({ item }: { item: ItemView }) {
 }
 
 function CorrectionForm({ item, onDone }: { item: ItemView; onDone: () => void }) {
-  const [state, action] = useActionState(overrideItem.bind(null, item.id), undefined);
+  const [state, action, actionPending] = useServerForm(overrideItem.bind(null, item.id));
   useEffect(() => {
     if (state?.ok) onDone();
   }, [state, onDone]);
   return (
-    <form action={action} className="grid gap-3 rounded-lg border border-line bg-[#fbfaf7] p-3 sm:grid-cols-[180px_1fr]">
+    <ActionForm action={action} pending={actionPending} className="grid gap-3 rounded-lg border border-line bg-[#fbfaf7] p-3 sm:grid-cols-[180px_1fr]">
       <Field label="Your assessment">
         <Select name="overrideResult" defaultValue={item.overrideResult ?? ""}>
           <option value="">Keep original ({RESULT_LABEL[item.result as AssessmentResult]})</option>
@@ -198,7 +229,7 @@ function CorrectionForm({ item, onDone }: { item: ItemView; onDone: () => void }
           <SubmitButton size="sm" pendingLabel="Saving…">Save correction</SubmitButton>
         </div>
       </div>
-    </form>
+    </ActionForm>
   );
 }
 
@@ -211,8 +242,108 @@ export function ReviewControls({ assessmentId, reviewed, reviewedBy }: { assessm
   );
 }
 
+// ---------------------------------------------------------------- Recommendation
+
+export type RecommendationView = {
+  assessmentId: string;
+  recommendation: string | null;
+  rationale: string | null;
+  criteriaCited: string[];
+  questions: string[];
+  adjustedNote: string | null;
+  unavailable: string | null;
+  status: string | null;
+  finalRecommendation: string | null;
+  note: string | null;
+  reviewedBy: string | null;
+};
+
+export function RecommendationPanel({ r }: { r: RecommendationView }) {
+  const [mode, setMode] = useState<"accept" | "edit" | "override" | null>(null);
+  const [state, action, actionPending] = useServerForm(reviewRecommendation.bind(null, r.assessmentId));
+  useEffect(() => {
+    if (state?.ok) setMode(null);
+  }, [state]);
+  if (!r.recommendation) return <p className="text-[13px] text-muted">{r.unavailable ?? "No recommendation for this assessment."}</p>;
+  const reviewed = r.status && r.status !== "pending";
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <AiMark label="AI suggestion" />
+        <span className={clsx("font-medium", reviewed && r.status === "overridden" && "line-through opacity-60")}>{RECOMMENDATION_LABEL[r.recommendation as Recommendation]}</span>
+      </div>
+      {r.rationale && <p className="text-[13px] leading-relaxed text-ink-2">{r.rationale}</p>}
+      {r.criteriaCited.length > 0 && <p className="text-[12px] text-muted">Based on: {r.criteriaCited.join(" · ")}</p>}
+      {r.questions.length > 0 && (
+        <div>
+          <div className="mb-1 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Questions to close gaps</div>
+          <ul className="list-disc space-y-0.5 pl-5 text-[13px] text-ink-2">
+            {r.questions.map((q, i) => (
+              <li key={i}>{q}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {r.adjustedNote && <Notice tone="warn">{r.adjustedNote}</Notice>}
+
+      {reviewed ? (
+        <div className="rounded-lg border border-line bg-sunken px-3 py-2 text-[13px]">
+          <span className="font-medium">
+            Recruiter {r.status === "accepted" ? "accepted" : r.status === "edited" ? "accepted with edits" : "overrode"}:
+          </span>{" "}
+          {RECOMMENDATION_LABEL[r.finalRecommendation as Recommendation]}
+          <span className="text-muted"> · {r.reviewedBy}</span>
+          {r.note && <p className="mt-0.5 text-ink-2">{r.note}</p>}
+          <button type="button" onClick={() => setMode("override")} className="mt-1 block text-[12px] text-muted underline-offset-2 hover:text-ink hover:underline">
+            Change
+          </button>
+        </div>
+      ) : (
+        !mode && (
+          <div className="flex flex-wrap gap-2">
+            <ActionForm action={action} pending={actionPending}>
+              <input type="hidden" name="reviewAction" value="accept" />
+              <SubmitButton size="sm" variant="primary" pendingLabel="Saving…">Accept</SubmitButton>
+            </ActionForm>
+            <Button size="sm" onClick={() => setMode("edit")}>Edit rationale</Button>
+            <Button size="sm" onClick={() => setMode("override")}>Override</Button>
+          </div>
+        )
+      )}
+      {state?.error && <p className="text-[13px] text-danger">{state.error}</p>}
+      {(mode === "edit" || mode === "override") && (
+        <ActionForm action={action} pending={actionPending} className="space-y-3 rounded-lg border border-line bg-[#fbfaf7] p-3">
+          <input type="hidden" name="reviewAction" value={mode} />
+          {mode === "override" && (
+            <Field label="Your recommendation">
+              <Select name="finalRecommendation" defaultValue={r.finalRecommendation ?? r.recommendation}>
+                {RECOMMENDATIONS.map((x) => (
+                  <option key={x} value={x}>{RECOMMENDATION_LABEL[x]}</option>
+                ))}
+              </Select>
+            </Field>
+          )}
+          <Field label={mode === "edit" ? "Your rationale" : "Reason"} hint="Job-related, based on the approved criteria.">
+            <Textarea name="note" rows={2} defaultValue={r.note ?? (mode === "edit" ? r.rationale ?? "" : "")} maxLength={2000} />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button type="button" size="sm" variant="ghost" onClick={() => setMode(null)}>Cancel</Button>
+            <SubmitButton size="sm" pendingLabel="Saving…">Save</SubmitButton>
+          </div>
+        </ActionForm>
+      )}
+    </div>
+  );
+}
+
 export function GeneratorTag({ generator, model }: { generator: string; model: string | null }) {
-  if (generator === "ai") return <span className="inline-flex items-center gap-1.5"><AiMark label="AI assessment" />{model && <span className="font-mono text-[11.5px] text-faint">{model}</span>}</span>;
+  if (generator === "ai")
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <AiMark label="AI assessment" />
+        {model && <span className="font-mono text-[11.5px] text-faint">{model}</span>}
+      </span>
+    );
   return <Badge>Keyword check · not AI</Badge>;
 }
 

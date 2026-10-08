@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { normalize } from "@/lib/resume";
+import { normalize } from "@/lib/documents";
 import { ownRole } from "./scope";
 
 const Row = z.object({

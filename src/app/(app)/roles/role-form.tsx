@@ -1,7 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
-import { FormMessage, SubmitButton } from "@/components/client";
+import { ActionForm, FormMessage, SubmitButton, useServerForm } from "@/components/client";
 import { Card, Field, Input, LinkButton, Select, Textarea } from "@/components/ui";
 import { EMPLOYMENT_TYPES, EMPLOYMENT_TYPE_LABEL, ROLE_STATUSES, ROLE_STATUS_LABEL } from "@/lib/domain";
 import type { ActionState } from "@/server/form";
@@ -19,9 +18,9 @@ export function RoleForm({
   submitLabel: string;
   cancelHref: string;
 }) {
-  const [state, formAction] = useActionState(action, undefined);
+  const [state, formAction, formActionPending] = useServerForm(action);
   return (
-    <form action={formAction}>
+    <ActionForm action={formAction} pending={formActionPending}>
       <Card className="space-y-5 p-6">
         <Field label="Title">
           <Input name="title" defaultValue={initial?.title} placeholder="e.g. Senior Backend Engineer" required maxLength={160} autoFocus />
@@ -62,6 +61,6 @@ export function RoleForm({
           </div>
         </div>
       </Card>
-    </form>
+    </ActionForm>
   );
 }

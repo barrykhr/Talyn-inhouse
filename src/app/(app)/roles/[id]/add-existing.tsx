@@ -1,14 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-import { Spinner } from "@/components/client";
+import { useState } from "react";
+import { Spinner, usePendingTask } from "@/components/client";
 import { buttonClass, Select } from "@/components/ui";
 import { addToRole } from "@/server/candidate-actions";
 
 export function AddExisting({ roleId, candidates }: { roleId: string; candidates: { id: string; fullName: string; currentTitle: string | null }[] }) {
   const [value, setValue] = useState("");
-  const [pending, start] = useTransition();
+  const [pending, start] = usePendingTask();
   const router = useRouter();
   if (candidates.length === 0) return null;
   return (

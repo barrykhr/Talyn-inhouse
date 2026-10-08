@@ -105,30 +105,43 @@ No output is ever presented as coming from a model unless it did.
 
 ## Manual walkthrough
 
-1. **Sign up** — creates your organization and an admin account.
-2. **Roles → New role** — enter title, department, location, employment type, status, and paste
-   the job description (bulleted requirements work best).
-3. **Criteria tab** — click **Propose with AI** (or **Extract bullet points** without a key).
-   Proposals appear under *Awaiting your review* with the JD excerpt they came from and a
-   rationale ("Why this criterion?"). Edit wording, switch essential/preferred, set a priority,
-   then **Approve** or **Reject**. You can also **+ Add criterion** yourself (active immediately).
-4. **Candidates → New candidate** (or **Import & export** for a CSV) — add profile, contact
-   details, candidate-provided information, a resume (PDF/DOCX/TXT up to 4 MB, or pasted text), a private
-   note, and optionally attach to a role.
-5. **Candidate profile** — select the role chip, then **Assess with AI** (or **Keyword check**).
-   For each approved criterion you see: *Supported / Inferred / Not stated*, verbatim evidence
-   with its location (resume page and section, or candidate-provided info), a ✓ if the quote was
-   found in the source, an explanation, missing information, and confidence. Evidence is
-   highlighted in the resume panel on the right.
-6. **Correct this** on any criterion to override the result with a reason; corrections are shown
-   alongside the original. **Mark as reviewed** when done.
-7. **Recruiter decision** — Advance / Hold / Decline with a job-related rationale (required for
-   Decline). Then move the **Stage** yourself; every move is logged in *Stage history*.
-8. **Role → Pipeline** — board of all eight stages with assessment summaries, review state and
-   decisions. **Export CSV** exports the pipeline with per-criterion results.
-9. **Import & export** — export all candidates or roles & criteria as CSV.
-10. **Delete** — candidates (removes resume files, notes, assessments), roles, individual resumes,
-    or the whole workspace from **Settings**.
+1. **Sign up** (email/password or Google) — creates your organization and an admin account.
+2. **Roles → New role → Upload job description** (PDF/DOCX), or **Enter manually**.
+   - Talyn keeps the file, uses its text as the job description, extracts title, department,
+     location, employment type, responsibilities, qualifications and experience requirements,
+     and proposes criteria. Every item shows its source (JD page · section · quoted text, ✓ if
+     found in the document).
+   - The **Job description** tab opens with a review form: tick, correct or untick each detail,
+     then **Save reviewed details**. Nothing is applied before that.
+3. **Criteria tab** — proposed criteria wait under *Awaiting your review* with the JD excerpt and
+   page/section they came from. Edit wording, set essential/preferred and priority, then
+   **Approve** or **Reject**. You can also **+ Add criterion** yourself. Any change to approved
+   criteria bumps the role's criteria version.
+4. **Candidates → New candidate → Upload CV** (PDF/DOCX), or **Enter manually**.
+   - Unreadable files (password-protected, scanned/no text, damaged, old `.doc`, unsupported)
+     are explained and nothing is created; you can switch to manual entry.
+   - Contact details are read locally (never sent to AI). Name, location, current title/company,
+     work history, education, skills and certifications are extracted with sources.
+   - Review on the candidate page: correct or untick anything, then **Save reviewed profile**.
+     The Profile card labels each field *From CV*, *From CV, corrected by recruiter*, or
+     *Entered by recruiter*.
+5. **Assess with AI** (or **Keyword check**) on the candidate's role. Per criterion: *Supported,
+   Partially supported, Inferred, Conflicting evidence* or *Not stated*, with verbatim evidence and
+   its location (✓ found / ⚠ not found — unverifiable "supported" claims are downgraded),
+   explanation, missing information and confidence. **Correct this** overrides a result with a
+   reason.
+6. **Score** — *Criteria alignment* (0–100) and *Evidence coverage* shown separately; open
+   **How this is calculated** for weights and per-criterion points. Withheld when evidence is too
+   incomplete. Not a measure of candidate quality or likelihood of hire.
+7. **Recommendation** (after the score) — AI suggests *Advance to the next human review*, *Gather
+   more information*, or *Does not currently show enough evidence for the approved criteria*, with
+   rationale and questions. **Accept**, **Edit rationale** or **Override** it, then record your
+   **Recruiter decision**. Pipeline stages only ever move when you change them.
+8. Editing approved criteria flags existing assessments as **out of date** (criteria vN → vM);
+   re-run to update. Each assessment records the CV file, parser version, criteria version,
+   engine version and model.
+9. **Role → Export CSV** includes stage, decision, criteria version, score, coverage, AI
+   recommendation, its review status and the final recommendation.
 
 ## Project layout
 

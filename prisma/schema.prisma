@@ -13,9 +13,9 @@ datasource db {
 }
 
 model Organization {
-  id          String        @id @default(cuid())
+  id          String       @id @default(cuid())
   name        String
-  createdAt   DateTime      @default(now())
+  createdAt   DateTime     @default(now())
   memberships Membership[]
   sessions    Session[]
   roles       Role[]
@@ -68,22 +68,80 @@ model Session {
 }
 
 model Role {
-  id             String        @id @default(cuid())
-  orgId          String
-  title          String
-  department     String        @default("")
-  location       String        @default("")
-  employmentType String        @default("full_time")
-  description    String        @default("")
-  status         String        @default("draft") // draft | open | on_hold | closed
-  createdById    String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  org            Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  criteria       Criterion[]
-  applications   Application[]
+  id               String           @id @default(cuid())
+  orgId            String
+  title            String
+  department       String           @default("")
+  location         String           @default("")
+  employmentType   String           @default("full_time")
+  description      String           @default("")
+  status           String           @default("draft") // draft | open | on_hold | closed
+  criteriaVersion  Int              @default(1) // bumped whenever the approved criteria set changes
+  extractionStatus String? // null | needs_review | reviewed (when created from an uploaded JD)
+  createdById      String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  org              Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  criteria         Criterion[]
+  applications     Application[]
+  documents        JobDescription[]
+  extracted        ExtractedField[]
 
   @@index([orgId])
+}
+
+// An uploaded job description (PDF/DOCX) with its extracted per-page text.
+model JobDescription {
+  id            String              @id @default(cuid())
+  orgId         String
+  roleId        String
+  fileName      String
+  mimeType      String
+  sizeBytes     Int
+  pagesJson     String // JSON string[]: extracted text per page
+  parserVersion String
+  isCurrent     Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  role          Role                @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  file          JobDescriptionFile?
+
+  @@index([orgId, roleId])
+}
+
+model JobDescriptionFile {
+  id    String         @id @default(cuid())
+  jdId  String         @unique
+  orgId String
+  data  Bytes
+  jd    JobDescription @relation(fields: [jdId], references: [id], onDelete: Cascade)
+}
+
+// A single fact extracted from a JD or CV, with its source and review state.
+model ExtractedField {
+  id              String     @id @default(cuid())
+  orgId           String
+  subjectType     String // role | candidate
+  roleId          String?
+  candidateId     String?
+  documentId      String? // JobDescription.id or Resume.id it came from
+  field           String // e.g. title, location, email, work_history, skill
+  valueJson       String // extracted value (string or object)
+  editedValueJson String? // recruiter-corrected value
+  sourceQuote     String?
+  sourcePage      Int?
+  sourceSection   String?
+  verified        Boolean    @default(false) // sourceQuote found in the document text
+  status          String     @default("pending") // pending | accepted | edited | rejected
+  extractor       String // e.g. "ai:openai:gpt-5.5/jd-extract-v1", "parser:jd-heuristic-v1"
+  reviewedByName  String?
+  reviewedAt      DateTime?
+  position        Int        @default(0)
+  createdAt       DateTime   @default(now())
+  role            Role?      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  candidate       Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, roleId])
+  @@index([orgId, candidateId])
 }
 
 model Criterion {
@@ -99,6 +157,8 @@ model Criterion {
   originalDescription String?
   edited              Boolean          @default(false)
   sourceText          String? // excerpt of the job description this came from
+  sourcePage          Int?
+  sourceSection       String?
   rationale           String?
   status              String           @default("proposed") // proposed | approved | rejected
   approvedById        String?
@@ -113,7 +173,7 @@ model Criterion {
 }
 
 model Candidate {
-  id               String        @id @default(cuid())
+  id               String           @id @default(cuid())
   orgId            String
   fullName         String
   email            String?
@@ -123,32 +183,36 @@ model Candidate {
   currentTitle     String?
   currentCompany   String?
   candidateSummary String? // information provided by the candidate (e.g. application answers)
-  source           String        @default("manual") // manual | csv
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  org              Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  source           String           @default("manual") // manual | csv | cv_upload
+  fieldOriginsJson String           @default("{}") // { fieldName: "cv" | "cv_corrected" | "recruiter" }
+  extractionStatus String? // null | needs_review | reviewed (when a CV extraction awaits review)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  org              Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   resumes          Resume[]
   notes            Note[]
   applications     Application[]
+  extracted        ExtractedField[]
 
   @@index([orgId])
   @@index([orgId, email])
 }
 
 model Resume {
-  id          String       @id @default(cuid())
-  orgId       String
-  candidateId String
-  fileName    String
-  mimeType    String
-  sizeBytes   Int          @default(0)
-  hasFile     Boolean      @default(false) // true when the original upload is stored in ResumeFile
-  pagesJson   String // JSON string[] of extracted text, one entry per page
-  isCurrent   Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  candidate   Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  file        ResumeFile? // original upload; null when the resume was pasted as text
-  assessments Assessment[]
+  id            String       @id @default(cuid())
+  orgId         String
+  candidateId   String
+  fileName      String
+  mimeType      String
+  sizeBytes     Int          @default(0)
+  hasFile       Boolean      @default(false) // true when the original upload is stored in ResumeFile
+  parserVersion String       @default("text-v1")
+  pagesJson     String // JSON string[] of extracted text, one entry per page
+  isCurrent     Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  candidate     Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  file          ResumeFile? // original upload; null when the resume was pasted as text
+  assessments   Assessment[]
 
   @@index([orgId, candidateId])
 }
@@ -215,22 +279,33 @@ model StageEvent {
 }
 
 model Assessment {
-  id               String           @id @default(cuid())
-  orgId            String
-  applicationId    String
-  resumeId         String?
-  generator        String // "ai" | "keyword" | "manual"
-  model            String? // model id when generator = ai
-  criteriaSnapshot String // JSON: [{id, updatedAt}] of the approved criteria used
-  status           String           @default("needs_review") // needs_review | reviewed
-  createdById      String?
-  reviewedById     String?
-  reviewedByName   String?
-  reviewedAt       DateTime?
-  createdAt        DateTime         @default(now())
-  application      Application      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  resume           Resume?          @relation(fields: [resumeId], references: [id], onDelete: SetNull)
-  items            AssessmentItem[]
+  id                       String           @id @default(cuid())
+  orgId                    String
+  applicationId            String
+  resumeId                 String?
+  generator                String // "ai" | "keyword" | "manual"
+  model                    String? // model id when generator = ai
+  criteriaSnapshot         String // JSON: [{id, updatedAt}] of the approved criteria used
+  criteriaVersion          Int?
+  engineVersion            String? // assessment prompt/logic version
+  parserVersion            String? // resume text parser version
+  scoreJson                String? // score breakdown at generation time (see src/lib/score.ts)
+  recommendation           String? // advance_to_review | gather_more_info | insufficient_evidence
+  recommendationJson       String? // { rationale, criteriaCited[], questions[], adjustedNote }
+  recommendationStatus     String? // pending | accepted | edited | overridden
+  finalRecommendation      String?
+  recommendationNote       String?
+  recommendationReviewedBy String?
+  recommendationReviewedAt DateTime?
+  status                   String           @default("needs_review") // needs_review | reviewed
+  createdById              String?
+  reviewedById             String?
+  reviewedByName           String?
+  reviewedAt               DateTime?
+  createdAt                DateTime         @default(now())
+  application              Application      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  resume                   Resume?          @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  items                    AssessmentItem[]
 
   @@index([orgId, applicationId])
 }
@@ -241,7 +316,7 @@ model AssessmentItem {
   criterionId    String?
   criterionName  String // snapshot so history survives criterion edits
   importance     String
-  result         String // supported | not_stated | inferred
+  result         String // supported | partially_supported | inferred | conflicting | not_stated
   evidenceJson   String     @default("[]") // JSON: [{quote, source, page, section, verified}]
   explanation    String     @default("")
   missingInfo    String     @default("")

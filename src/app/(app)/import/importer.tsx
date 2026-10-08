@@ -2,8 +2,8 @@
 
 import Papa from "papaparse";
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
-import { Spinner } from "@/components/client";
+import { useMemo, useState } from "react";
+import { Spinner, usePendingTask } from "@/components/client";
 import { Button, Card, Notice, Select, SectionTitle } from "@/components/ui";
 import { IMPORT_FIELDS, guessMapping, type ImportFieldKey } from "@/lib/csv";
 import { importCandidates, type ImportResult } from "@/server/import-actions";
@@ -19,7 +19,7 @@ export function Importer({ roles, defaultRole }: { roles: { id: string; title: s
   const [roleId, setRoleId] = useState(defaultRole);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
-  const [pending, start] = useTransition();
+  const [pending, start] = usePendingTask();
 
   const mapped = useMemo(() => new Set(Object.values(mapping).filter(Boolean)), [mapping]);
   const hasName = mapped.has("fullName") || mapped.has("firstName") || mapped.has("lastName");

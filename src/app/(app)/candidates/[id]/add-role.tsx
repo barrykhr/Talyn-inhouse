@@ -1,12 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+
 import { Select } from "@/components/ui";
 import { addToRole } from "@/server/candidate-actions";
+import { usePendingTask } from "@/components/client";
 
 export function AddToRole({ candidateId, roles }: { candidateId: string; roles: { id: string; title: string }[] }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = usePendingTask();
   const router = useRouter();
   if (roles.length === 0) return null;
   return (

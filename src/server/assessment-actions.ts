@@ -2,12 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { AiRequestError, AiUnavailableError, aiStatus, assessWithAi } from "@/lib/ai";
+import { ASSESSMENT_ENGINE_VERSION, AiRequestError, AiUnavailableError, aiStatus, assessWithAi, recommendWithAi } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { RESULTS, type Evidence } from "@/lib/domain";
+import { RECOMMENDATIONS, RESULTS, type Evidence } from "@/lib/domain";
 import { locateQuote, type SourceDoc } from "@/lib/evidence";
+import { redactContact } from "@/lib/extraction";
 import { keywordMatch, keywordsFor } from "@/lib/heuristics";
+import { computeScore, scoreSummaryText } from "@/lib/score";
 import { logError } from "@/lib/log";
 import { str, type ActionState } from "./form";
 import { ownApplication, ownAssessment, ownAssessmentItem } from "./scope";
@@ -21,13 +23,6 @@ function profileText(c: { currentTitle: string | null; currentCompany: string | 
   ]
     .filter(Boolean)
     .join("\n");
-}
-
-/** Contact details are irrelevant to criteria, so they are not sent to the AI provider. */
-function redactContact(text: string) {
-  return text
-    .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "[email]")
-    .replace(/(?<![\w])(\+?\d[\d\s().-]{7,}\d)(?![\w])/g, (m) => (m.replace(/\D/g, "").length >= 9 ? "[phone]" : m));
 }
 
 type ItemDraft = {
@@ -87,11 +82,12 @@ export async function runAssessment(applicationId: string, mode: "ai" | "keyword
         let result = it.result as string;
         let confidence = it.confidence as string;
         let explanation = it.explanation;
-        // A "supported" claim must rest on at least one quote that exists in the material.
-        if (result === "supported" && !evidence.some((e) => e.verified)) {
+        // A "supported" or "partially supported" claim must rest on at least one quote that exists in the material.
+        if ((result === "supported" || result === "partially_supported") && !evidence.some((e) => e.verified)) {
+          const was = result === "supported" ? "supported" : "partially supported";
           result = "inferred";
           confidence = "low";
-          explanation = `${explanation} [Talyn: the quoted evidence could not be found verbatim in the candidate's material, so this was downgraded from "supported" to "inferred". Verify before relying on it.]`;
+          explanation = `${explanation} [Talyn: the quoted evidence could not be found verbatim in the candidate's material, so this was downgraded from "${was}" to "inferred". Verify before relying on it.]`;
         }
         return { criterionId: c.id, criterionName: c.name, importance: c.importance, result, evidence, explanation, missingInfo: it.missing_info, confidence };
       });
@@ -130,14 +126,50 @@ export async function runAssessment(applicationId: string, mode: "ai" | "keyword
     });
   }
 
+  // Score is computed by Talyn (deterministic), then the AI is asked for a recommendation
+  // that is shown AFTER the score and evidence. A recommendation failure never loses the assessment.
+  const score = computeScore(drafts.map((d) => ({ name: d.criterionName, importance: d.importance, result: d.result })));
+  let recommendation: string | null = null;
+  let recommendationJson: Record<string, unknown> | null = null;
+  if (mode === "ai") {
+    try {
+      const rec = await recommendWithAi({
+        roleTitle: role.title,
+        items: drafts.map((d) => ({ name: d.criterionName, importance: d.importance, result: d.result, explanation: d.explanation, missingInfo: d.missingInfo })),
+        scoreSummary: scoreSummaryText(score),
+      });
+      recommendation = rec.recommendation;
+      let adjustedNote: string | null = null;
+      // Guardrail: never suggest advancing when Talyn has withheld the score for lack of evidence.
+      if (rec.recommendation === "advance_to_review" && score.status === "withheld") {
+        recommendation = "gather_more_info";
+        adjustedNote = "The AI suggested advancing, but Talyn changed this to “Gather more information” because the score is withheld for incomplete evidence.";
+      }
+      recommendationJson = { rationale: rec.rationale, criteriaCited: rec.criteria_cited, questions: rec.questions, adjustedNote };
+    } catch (err) {
+      if (!(err instanceof AiRequestError)) logError("assessment.recommend_failed", err, { applicationId });
+      recommendationJson = { unavailable: `The recommendation couldn't be generated${err instanceof AiRequestError ? ` (${err.message})` : ""}. The assessment and score are unaffected.` };
+    }
+  } else {
+    recommendationJson = { unavailable: "Recommendations are only generated with AI assessments." };
+  }
+  const ai = aiStatus();
+
   await db.assessment.create({
     data: {
       orgId: auth.orgId,
       applicationId,
       resumeId: resume?.id ?? null,
       generator: mode,
-      model: mode === "ai" ? aiStatus().model : null,
+      model: mode === "ai" ? `${ai.provider}:${ai.model}` : null,
       criteriaSnapshot: JSON.stringify(criteria.map((c) => ({ id: c.id, updatedAt: c.updatedAt.toISOString() }))),
+      criteriaVersion: role.criteriaVersion,
+      engineVersion: mode === "ai" ? ASSESSMENT_ENGINE_VERSION : "keyword-v1 + alignment-v1",
+      parserVersion: resume?.parserVersion ?? null,
+      scoreJson: JSON.stringify(score),
+      recommendation,
+      recommendationJson: recommendationJson ? JSON.stringify(recommendationJson) : null,
+      recommendationStatus: recommendation ? "pending" : null,
       createdById: auth.userId,
       items: {
         create: drafts.map((d) => ({
@@ -194,4 +226,43 @@ export async function deleteAssessment(assessmentId: string) {
   await db.assessment.delete({ where: { id: assessmentId } });
   const app = await db.application.findFirst({ where: { id: a.applicationId, orgId: auth.orgId } });
   if (app) revalidatePath(`/candidates/${app.candidateId}`);
+}
+
+/** Recruiter review of the AI recommendation: accept as is, edit (same outcome, own wording), or override. */
+export async function reviewRecommendation(assessmentId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const auth = await requireAuth();
+  const a = await ownAssessment(auth, assessmentId);
+  if (!a.recommendation) return { error: "There is no AI recommendation to review." };
+  const action = str(fd, "reviewAction");
+  const note = str(fd, "note", 2000);
+  let finalRecommendation = a.recommendation;
+  let status: "accepted" | "edited" | "overridden";
+  if (action === "accept") status = "accepted";
+  else if (action === "edit") {
+    if (!note) return { error: "Add your wording of the rationale." };
+    status = "edited";
+  } else if (action === "override") {
+    const r = z.enum(RECOMMENDATIONS).safeParse(str(fd, "finalRecommendation"));
+    if (!r.success) return { error: "Choose the outcome you recommend instead." };
+    if (!note) return { error: "Add a short, job-related reason for overriding." };
+    finalRecommendation = r.data;
+    status = r.data === a.recommendation ? "edited" : "overridden";
+  } else return { error: "Choose accept, edit or override." };
+
+  await db.assessment.update({
+    where: { id: assessmentId },
+    data: {
+      recommendationStatus: status,
+      finalRecommendation,
+      recommendationNote: note || null,
+      recommendationReviewedBy: auth.userName,
+      recommendationReviewedAt: new Date(),
+    },
+  });
+  const app = await db.application.findFirst({ where: { id: a.applicationId, orgId: auth.orgId } });
+  if (app) {
+    revalidatePath(`/candidates/${app.candidateId}`);
+    revalidatePath(`/roles/${app.roleId}`);
+  }
+  return { ok: true, message: "Recommendation review saved. Record your decision below." };
 }

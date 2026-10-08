@@ -9,6 +9,7 @@ import { IMPORTANCE } from "@/lib/domain";
 import { extractCriteriaFromJd } from "@/lib/heuristics";
 import { logError } from "@/lib/log";
 import { str, type ActionState } from "./form";
+import { bumpCriteriaVersion, storeProposedCriteria } from "./facts";
 import { ownCriterion, ownRole } from "./scope";
 
 const CriterionSchema = z.object({
@@ -51,6 +52,7 @@ export async function addCriterion(roleId: string, _prev: ActionState, fd: FormD
       position: await nextPosition(roleId),
     },
   });
+  await bumpCriteriaVersion(roleId);
   revalidatePath(`/roles/${roleId}`);
   return { ok: true };
 }
@@ -64,6 +66,7 @@ export async function updateCriterion(id: string, _prev: ActionState, fd: FormDa
     c.origin !== "manual" &&
     (parsed.data.name !== (c.originalName ?? c.name) || parsed.data.description !== (c.originalDescription ?? c.description));
   await db.criterion.update({ where: { id }, data: { ...parsed.data, edited } });
+  if (c.status === "approved") await bumpCriteriaVersion(c.roleId);
   revalidatePath(`/roles/${c.roleId}`);
   return { ok: true };
 }
@@ -80,16 +83,18 @@ export async function setCriterionStatus(id: string, status: "approved" | "rejec
       approvedAt: s === "approved" ? new Date() : null,
     },
   });
+  if ((c.status === "approved") !== (s === "approved")) await bumpCriteriaVersion(c.roleId);
   revalidatePath(`/roles/${c.roleId}`);
 }
 
 export async function approveAllProposed(roleId: string) {
   const auth = await requireAuth();
   await ownRole(auth, roleId);
-  await db.criterion.updateMany({
+  const { count } = await db.criterion.updateMany({
     where: { roleId, orgId: auth.orgId, status: "proposed" },
     data: { status: "approved", approvedById: auth.userId, approvedAt: new Date() },
   });
+  if (count) await bumpCriteriaVersion(roleId);
   revalidatePath(`/roles/${roleId}`);
 }
 
@@ -97,6 +102,7 @@ export async function deleteCriterion(id: string) {
   const auth = await requireAuth();
   const c = await ownCriterion(auth, id);
   await db.criterion.delete({ where: { id } });
+  if (c.status === "approved") await bumpCriteriaVersion(c.roleId);
   revalidatePath(`/roles/${c.roleId}`);
 }
 
@@ -143,25 +149,20 @@ export async function proposeCriteria(roleId: string, mode: "ai" | "extract"): P
       return { error: "No bullet-point requirements found. Add criteria manually, or format requirements as a bulleted list." };
   }
 
-  // Replace any earlier proposals still awaiting review so repeated runs don't pile up.
-  await db.criterion.deleteMany({ where: { roleId, orgId: auth.orgId, status: "proposed" } });
-  let pos = await nextPosition(roleId);
-  await db.criterion.createMany({
-    data: drafts.map((d) => ({
-      orgId: auth.orgId,
-      roleId,
+  await storeProposedCriteria(
+    auth.orgId,
+    roleId,
+    drafts.map((d) => ({
       name: d.name,
       description: d.description,
-      importance: d.importance,
-      origin: mode === "ai" ? "ai" : "extracted",
-      originalName: d.name,
-      originalDescription: d.description,
+      importance: d.importance === "preferred" ? "preferred" : "essential",
       sourceText: d.sourceText,
+      sourcePage: null,
+      sourceSection: null,
       rationale: d.rationale,
-      status: "proposed",
-      position: pos++,
     })),
-  });
+    mode === "ai" ? "ai" : "extracted",
+  );
   revalidatePath(`/roles/${roleId}`);
   return { ok: true, message: `${drafts.length} criteria proposed. Review each one before it is used.` };
 }

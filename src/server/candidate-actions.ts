@@ -1,14 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireAuth, type AuthContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { DECISIONS, STAGES } from "@/lib/domain";
 import { logError } from "@/lib/log";
-import { extractResume, normalize } from "@/lib/resume";
-import { optStr, str, type ActionState } from "./form";
+import { DocumentParseError } from "@/lib/documents";
+import { goTo, optStr, str, type ActionState } from "./form";
+import { attach } from "./pipeline";
+import { extractIntoReview, parseOrigins, prepareResume, saveResume } from "./resume-store";
 import { ownApplication, ownCandidate, ownNote, ownResume, ownRole } from "./scope";
 
 const CandidateSchema = z.object({
@@ -39,44 +40,7 @@ function parseCandidate(fd: FormData) {
   });
 }
 
-/** Stores a resume (uploaded file or pasted text) and makes it the candidate's current resume. */
-async function storeResume(auth: AuthContext, candidateId: string, fd: FormData): Promise<string | null> {
-  const file = fd.get("resume");
-  const pasted = str(fd, "resumeText", 100000);
-  let record: { fileName: string; mimeType: string; sizeBytes: number; data: Buffer | null; pages: string[] } | null = null;
-
-  if (file instanceof File && file.size > 0) {
-    const data = Buffer.from(await file.arrayBuffer());
-    const extracted = await extractResume(file.name, data); // throws user-facing errors
-    if (extracted.pages.join("").trim().length === 0)
-      throw new Error("No text could be read from this file (it may be a scanned image). Paste the resume text instead.");
-    record = { fileName: file.name.slice(0, 200), mimeType: extracted.mimeType, sizeBytes: data.length, data, pages: extracted.pages };
-  } else if (pasted) {
-    record = { fileName: "Pasted resume text", mimeType: "text/plain", sizeBytes: pasted.length, data: null, pages: [normalize(pasted)] };
-  }
-  if (!record) return null;
-
-  await db.resume.updateMany({ where: { candidateId, orgId: auth.orgId }, data: { isCurrent: false } });
-  const r = await db.resume.create({
-    data: {
-      orgId: auth.orgId,
-      candidateId,
-      fileName: record.fileName,
-      mimeType: record.mimeType,
-      sizeBytes: record.sizeBytes,
-      hasFile: record.data !== null,
-      pagesJson: JSON.stringify(record.pages),
-      isCurrent: true,
-      ...(record.data ? { file: { create: { orgId: auth.orgId, data: new Uint8Array(record.data) } } } : {}),
-    },
-  });
-  return r.id;
-}
-
-function userMessage(err: unknown, fallback: string) {
-  if (err instanceof Error && /^(Unsupported|Resume files|The file|No text|This doesn't)/.test(err.message)) return err.message;
-  return fallback;
-}
+const PROFILE_FIELDS = ["fullName", "email", "phone", "location", "linkedinUrl", "currentTitle", "currentCompany", "candidateSummary"] as const;
 
 export async function createCandidate(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const auth = await requireAuth();
@@ -89,19 +53,26 @@ export async function createCandidate(_prev: ActionState, fd: FormData): Promise
     const dupe = await db.candidate.findFirst({ where: { orgId: auth.orgId, email: parsed.data.email } });
     if (dupe) return { error: `A candidate with this email already exists (${dupe.fullName}).` };
   }
-
-  const candidate = await db.candidate.create({ data: { ...parsed.data, orgId: auth.orgId, source: "manual" } });
+  // Read the resume BEFORE creating anything, so a bad file never leaves a half-created record.
+  let resume;
   try {
-    await storeResume(auth, candidate.id, fd);
+    resume = await prepareResume(fd);
   } catch (err) {
-    logError("candidate.resume_failed", err, { candidateId: candidate.id });
-    // Keep the candidate; surface the resume problem on their profile.
-    redirect(`/candidates/${candidate.id}?resumeError=${encodeURIComponent(userMessage(err, "The resume could not be processed."))}`);
+    if (err instanceof DocumentParseError) return { error: `Resume: ${err.message} Your other entries are kept — remove the file or try another.` };
+    logError("candidate.resume_failed", err);
+    return { error: "The resume couldn't be read. Your entries are kept — remove the file or try another." };
   }
+
+  // Everything typed into this form is recruiter-entered.
+  const origins = Object.fromEntries(PROFILE_FIELDS.filter((f) => parsed.data[f]).map((f) => [f, "recruiter"]));
+  const candidate = await db.candidate.create({
+    data: { ...parsed.data, orgId: auth.orgId, source: "manual", fieldOriginsJson: JSON.stringify(origins) },
+  });
+  if (resume) await saveResume(auth, candidate.id, resume);
   const note = str(fd, "note", 10000);
   if (note) await db.note.create({ data: { orgId: auth.orgId, candidateId: candidate.id, authorId: auth.userId, authorName: auth.userName, body: note } });
   if (roleId) await attach(auth, candidate.id, roleId);
-  redirect(roleId ? `/candidates/${candidate.id}?role=${roleId}` : `/candidates/${candidate.id}`);
+  return goTo(roleId ? `/candidates/${candidate.id}?role=${roleId}` : `/candidates/${candidate.id}`);
 }
 
 export async function updateCandidate(id: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -113,7 +84,11 @@ export async function updateCandidate(id: string, _prev: ActionState, fd: FormDa
     const dupe = await db.candidate.findFirst({ where: { orgId: auth.orgId, email: parsed.data.email, NOT: { id } } });
     if (dupe) return { error: `Another candidate already uses this email (${dupe.fullName}).` };
   }
-  await db.candidate.update({ where: { id }, data: parsed.data });
+  // Any field the recruiter changes here becomes recruiter-entered.
+  const current = await db.candidate.findFirstOrThrow({ where: { id, orgId: auth.orgId } });
+  const origins = parseOrigins(current.fieldOriginsJson);
+  for (const f of PROFILE_FIELDS) if ((current[f] ?? null) !== (parsed.data[f] ?? null)) origins[f] = "recruiter";
+  await db.candidate.update({ where: { id }, data: { ...parsed.data, fieldOriginsJson: JSON.stringify(origins) } });
   revalidatePath(`/candidates/${id}`);
   return { ok: true, message: "Saved" };
 }
@@ -123,22 +98,48 @@ export async function deleteCandidate(id: string) {
   const auth = await requireAuth();
   await ownCandidate(auth, id);
   await db.candidate.delete({ where: { id } }); // cascades to resumes, files, notes, applications, assessments
-  revalidatePath("/candidates");
-  redirect("/candidates");
+  return goTo("/candidates");
 }
 
+/** Stores a new resume version, then extracts its details into a pending review. */
 export async function uploadResume(candidateId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const auth = await requireAuth();
   await ownCandidate(auth, candidateId);
+  let resume;
   try {
-    const id = await storeResume(auth, candidateId, fd);
-    if (!id) return { error: "Choose a file or paste resume text." };
+    resume = await prepareResume(fd);
+    if (!resume) return { error: "Choose a file or paste resume text." };
   } catch (err) {
+    if (err instanceof DocumentParseError) return { error: err.message };
     logError("resume.upload_failed", err, { candidateId });
-    return { error: userMessage(err, "The resume could not be processed.") };
+    return { error: "The resume couldn't be read. Please try another file." };
+  }
+  const saved = await saveResume(auth, candidateId, resume);
+  let notice: string | null = null;
+  try {
+    notice = await extractIntoReview(auth, candidateId, saved.id, resume.parsed.pages);
+  } catch (err) {
+    logError("resume.extract_failed", err, { candidateId });
+    notice = "Resume saved, but details couldn't be extracted. You can still assess and edit the profile manually.";
   }
   revalidatePath(`/candidates/${candidateId}`);
-  return { ok: true, message: "Resume saved" };
+  return { ok: true, message: notice ?? "Resume saved. Review the extracted details above." };
+}
+
+/** Runs extraction on the current resume (e.g. one added manually or via CSV). */
+export async function extractFromCurrentResume(candidateId: string): Promise<ActionState> {
+  const auth = await requireAuth();
+  await ownCandidate(auth, candidateId);
+  const resume = await db.resume.findFirst({ where: { candidateId, orgId: auth.orgId, isCurrent: true } });
+  if (!resume) return { error: "Add a resume first." };
+  try {
+    const notice = await extractIntoReview(auth, candidateId, resume.id, JSON.parse(resume.pagesJson) as string[]);
+    revalidatePath(`/candidates/${candidateId}`);
+    return { ok: true, message: notice ?? undefined };
+  } catch (err) {
+    logError("resume.extract_failed", err, { candidateId });
+    return { error: "Details couldn't be extracted. Please try again." };
+  }
 }
 
 export async function deleteResume(id: string) {
@@ -169,14 +170,6 @@ export async function deleteNote(id: string) {
   const n = await ownNote(auth, id);
   await db.note.delete({ where: { id } });
   revalidatePath(`/candidates/${n.candidateId}`);
-}
-
-async function attach(auth: AuthContext, candidateId: string, roleId: string) {
-  const existing = await db.application.findUnique({ where: { candidateId_roleId: { candidateId, roleId } } });
-  if (existing) return existing;
-  const app = await db.application.create({ data: { orgId: auth.orgId, candidateId, roleId, stage: "new" } });
-  await db.stageEvent.create({ data: { orgId: auth.orgId, applicationId: app.id, fromStage: null, toStage: "new", actorId: auth.userId, actorName: auth.userName } });
-  return app;
 }
 
 export async function addToRole(candidateId: string, roleId: string) {

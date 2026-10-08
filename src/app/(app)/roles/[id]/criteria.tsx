@@ -1,8 +1,9 @@
 "use client";
 
 import clsx from "clsx";
-import { useActionState, useEffect, useState, useTransition } from "react";
-import { ActionButton, FormMessage, Spinner, SubmitButton } from "@/components/client";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { ActionForm, ActionButton, FormMessage, Spinner, SubmitButton, useServerForm, usePendingTask } from "@/components/client";
 import { AiMark, Badge, Button, Card, Field, Input, Notice, Select, Textarea } from "@/components/ui";
 import { CRITERION_ORIGIN_LABEL } from "@/lib/domain";
 import {
@@ -26,19 +27,26 @@ export type CriterionView = {
   originalDescription: string | null;
   edited: boolean;
   sourceText: string | null;
+  sourcePage: number | null;
+  sourceSection: string | null;
   rationale: string | null;
   status: string;
   approvedAt: string | null;
 };
 
 export function ProposePanel({ roleId, aiConfigured, hasDescription, hasCriteria }: { roleId: string; aiConfigured: boolean; hasDescription: boolean; hasCriteria: boolean }) {
-  const [pending, start] = useTransition();
+  const router = useRouter();
+  const [pending, start] = usePendingTask();
   const [which, setWhich] = useState<"ai" | "extract" | null>(null);
   const [state, setState] = useState<ActionState>(undefined);
   const run = (mode: "ai" | "extract") => {
     setWhich(mode);
     setState(undefined);
-    start(async () => setState(await proposeCriteria(roleId, mode)));
+    start(async () => {
+      const r = await proposeCriteria(roleId, mode);
+      setState(r);
+      if (r?.ok) router.refresh();
+    });
   };
   return (
     <Card className="p-4">
@@ -128,7 +136,15 @@ export function CriterionRow({ c }: { c: CriterionView }) {
             {showSource && (
               <div className="mt-2 space-y-1.5 border-l-2 border-line-strong pl-3">
                 {c.sourceText ? (
-                  <p className="quote text-ink-2">“{c.sourceText}”</p>
+                  <>
+                    {(c.sourcePage || c.sourceSection) && (
+                      <p className="text-[11.5px] text-muted">
+                        JD{c.sourcePage ? ` · p.${c.sourcePage}` : ""}
+                        {c.sourceSection ? ` · ${c.sourceSection}` : ""}
+                      </p>
+                    )}
+                    <p className="quote text-ink-2">“{c.sourceText}”</p>
+                  </>
                 ) : (
                   c.origin === "ai" && <p className="text-[12.5px] text-warn">No exact citation in the job description was found for this proposal.</p>
                 )}
@@ -169,7 +185,7 @@ export function CriterionForm({
   onDone?: () => void;
   onCancel?: () => void;
 }) {
-  const [state, formAction] = useActionState(action, undefined);
+  const [state, formAction, formActionPending] = useServerForm(action);
   const [key, setKey] = useState(0);
   useEffect(() => {
     if (state?.ok) {
@@ -179,7 +195,7 @@ export function CriterionForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
   return (
-    <form key={key} action={formAction} className="grid gap-3 sm:grid-cols-[1fr_150px_110px]">
+    <ActionForm key={key} action={formAction} pending={formActionPending} className="grid gap-3 sm:grid-cols-[1fr_150px_110px]">
       <Field label="Criterion">
         <Input name="name" defaultValue={initial?.name} required maxLength={200} placeholder="e.g. 3+ years building production APIs" />
       </Field>
@@ -202,7 +218,7 @@ export function CriterionForm({
           <SubmitButton size="sm" pendingLabel="Saving…">{submitLabel}</SubmitButton>
         </div>
       </div>
-    </form>
+    </ActionForm>
   );
 }
 

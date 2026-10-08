@@ -1,20 +1,17 @@
-// Transparent assessment summary: counts per importance and result. No weighted score.
+// Transparent assessment summary: counts per importance and result (recruiter corrections applied).
 export type SummaryItem = { importance: string; result: string; overrideResult: string | null };
 
-export type Summary = {
-  essential: { total: number; supported: number; inferred: number; not_stated: number };
-  preferred: { total: number; supported: number; inferred: number; not_stated: number };
-  overrides: number;
-};
+type Bucket = { total: number; supported: number; partially_supported: number; inferred: number; conflicting: number; not_stated: number };
+export type Summary = { essential: Bucket; preferred: Bucket; overrides: number };
 
 export function summarize(items: SummaryItem[]): Summary {
-  const blank = () => ({ total: 0, supported: 0, inferred: 0, not_stated: 0 });
+  const blank = (): Bucket => ({ total: 0, supported: 0, partially_supported: 0, inferred: 0, conflicting: 0, not_stated: 0 });
   const s: Summary = { essential: blank(), preferred: blank(), overrides: 0 };
   for (const i of items) {
     const bucket = i.importance === "preferred" ? s.preferred : s.essential;
-    const r = (i.overrideResult ?? i.result) as "supported" | "inferred" | "not_stated";
+    const r = (i.overrideResult ?? i.result) as keyof Bucket;
     bucket.total++;
-    if (r in bucket) bucket[r]++;
+    if (r !== "total" && r in bucket) bucket[r]++;
     if (i.overrideResult) s.overrides++;
   }
   return s;

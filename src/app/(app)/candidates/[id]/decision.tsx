@@ -1,15 +1,14 @@
 "use client";
 
-import { useActionState } from "react";
-import { FormMessage, SubmitButton } from "@/components/client";
+import { ActionForm, FormMessage, SubmitButton, useServerForm } from "@/components/client";
 import { Field, Textarea } from "@/components/ui";
 import { DECISIONS, DECISION_LABEL } from "@/lib/domain";
 import { recordDecision } from "@/server/candidate-actions";
 
 export function DecisionForm({ applicationId, decision, note }: { applicationId: string; decision: string | null; note: string | null }) {
-  const [state, action] = useActionState(recordDecision.bind(null, applicationId), undefined);
+  const [state, action, actionPending] = useServerForm(recordDecision.bind(null, applicationId));
   return (
-    <form action={action} className="space-y-3">
+    <ActionForm action={action} pending={actionPending} className="space-y-3">
       <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Decision">
         {DECISIONS.map((d) => (
           <label key={d} className="cursor-pointer">
@@ -27,6 +26,6 @@ export function DecisionForm({ applicationId, decision, note }: { applicationId:
         <FormMessage state={state} />
         <SubmitButton size="sm" className="ml-auto" pendingLabel="Saving…">Record decision</SubmitButton>
       </div>
-    </form>
+    </ActionForm>
   );
 }

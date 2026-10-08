@@ -8,7 +8,7 @@ export type SourceDoc = {
 };
 
 const HEADING_WORDS =
-  /^(summary|profile|about|objective|experience|work experience|professional experience|employment|employment history|education|skills|technical skills|core skills|certifications?|licen[cs]es|projects|publications|awards|achievements|languages|volunteer(ing)?|interests|training|leadership|references)\b/i;
+  /^(summary|profile|about|objective|experience|work experience|professional experience|employment|employment history|education|skills|technical skills|core skills|certifications?|licen[cs]es|projects|publications|awards|achievements|languages|volunteer(ing)?|interests|training|leadership|references|requirements|qualifications|responsibilities|key responsibilities|nice to have|preferred qualifications|minimum qualifications|about the role|about you|about us|the role|what you('|’)ll do|what you('|’)ll bring|what we('|’)re looking for|you have|benefits|perks)\b/i;
 
 function squash(s: string) {
   return s.toLowerCase().replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, "-").replace(/\s+/g, " ").trim();

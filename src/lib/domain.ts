@@ -53,17 +53,29 @@ export const CRITERION_ORIGIN_LABEL: Record<string, string> = {
   extracted: "Extracted from JD (no AI)",
 };
 
-export const RESULTS = ["supported", "inferred", "not_stated"] as const;
+export const RESULTS = ["supported", "partially_supported", "inferred", "conflicting", "not_stated"] as const;
 export type AssessmentResult = (typeof RESULTS)[number];
 export const RESULT_LABEL: Record<AssessmentResult, string> = {
   supported: "Supported",
+  partially_supported: "Partially supported",
   inferred: "Inferred",
+  conflicting: "Conflicting evidence",
   not_stated: "Not stated",
 };
 export const RESULT_HELP: Record<AssessmentResult, string> = {
-  supported: "Directly stated in the resume or candidate-provided information.",
+  supported: "Directly and fully stated in the CV or candidate-provided information.",
+  partially_supported: "Part of the criterion is stated; part is missing.",
   inferred: "Not stated outright; a reasonable reading of related evidence. Verify.",
+  conflicting: "The material contradicts itself on this criterion. Clarify with the candidate.",
   not_stated: "No evidence found. This is missing information, not proof the candidate lacks it.",
+};
+
+export const RECOMMENDATIONS = ["advance_to_review", "gather_more_info", "insufficient_evidence"] as const;
+export type Recommendation = (typeof RECOMMENDATIONS)[number];
+export const RECOMMENDATION_LABEL: Record<Recommendation, string> = {
+  advance_to_review: "Advance to the next human review",
+  gather_more_info: "Gather more information",
+  insufficient_evidence: "Does not currently show enough evidence for the approved criteria",
 };
 
 export const CONFIDENCE = ["high", "medium", "low"] as const;
@@ -75,6 +87,12 @@ export const DECISION_LABEL: Record<Decision, string> = {
   advance: "Advance",
   hold: "Hold",
   decline: "Decline",
+};
+
+export const ORIGIN_LABEL: Record<string, string> = {
+  cv: "From CV",
+  cv_corrected: "From CV, corrected by recruiter",
+  recruiter: "Entered by recruiter",
 };
 
 export const GENERATOR_LABEL: Record<string, string> = {

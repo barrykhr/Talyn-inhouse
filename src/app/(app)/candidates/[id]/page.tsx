@@ -2,20 +2,26 @@ import clsx from "clsx";
 import Link from "next/link";
 import { ActionButton } from "@/components/client";
 import { StageSelect } from "@/components/stage-select";
+import { ScorePanel } from "@/components/score-panel";
+import { SourceRef } from "@/components/source-ref";
 import { SummaryLine } from "@/components/summary";
-import { Card, EmptyState, Notice, PageHeader, SectionTitle, formatDate, formatDateTime } from "@/components/ui";
+import { Badge, Card, EmptyState, Notice, PageHeader, SectionTitle, formatDate, formatDateTime } from "@/components/ui";
 import { aiStatus } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { DECISION_LABEL, STAGE_LABEL, type Decision, type Stage } from "@/lib/domain";
+import { DECISION_LABEL, ORIGIN_LABEL, STAGE_LABEL, type Decision, type Stage } from "@/lib/domain";
+import { computeScore } from "@/lib/score";
 import { parseEvidence } from "@/lib/evidence";
 import { highlight } from "@/lib/highlight";
 import { isStale, summarize } from "@/lib/summary";
 import { deleteAssessment } from "@/server/assessment-actions";
-import { removeFromRole } from "@/server/candidate-actions";
+import { extractFromCurrentResume, removeFromRole } from "@/server/candidate-actions";
+import { parseOrigins } from "@/server/resume-store";
 import { ownCandidate } from "@/server/scope";
 import { AddToRole } from "./add-role";
-import { GeneratorTag, ItemCard, ReviewControls, RunAssessment, StaleNotice, type ItemView } from "./assessment";
+import { GeneratorTag, ItemCard, RecommendationPanel, ReviewControls, RunAssessment, StaleNotice, type ItemView } from "./assessment";
+import { CV_LISTS, CV_SCALARS } from "@/lib/extraction-fields";
+import { CvReviewForm, type CvFact } from "./cv-review";
 import { DecisionForm } from "./decision";
 import { DeleteCandidateButton, DeleteResumeButton, EditProfile, NoteForm, NoteItem, ResumeUpload } from "./panels";
 
@@ -29,21 +35,22 @@ export default async function CandidatePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ role?: string; resumeError?: string }>;
+  searchParams: Promise<{ role?: string; resumeError?: string; notice?: string; saved?: string }>;
 }) {
   const auth = await requireAuth();
   const { id } = await params;
-  const { role: roleParam, resumeError } = await searchParams;
+  const { role: roleParam, resumeError, notice, saved } = await searchParams;
   await ownCandidate(auth, id);
 
   const candidate = await db.candidate.findFirstOrThrow({
     where: { id, orgId: auth.orgId },
     include: {
       resumes: { orderBy: { createdAt: "desc" } },
+      extracted: { where: { status: { not: "rejected" } }, orderBy: { position: "asc" } },
       notes: { orderBy: { createdAt: "desc" } },
       applications: {
         include: {
-          role: { include: { criteria: { where: { status: "approved" }, select: { id: true, updatedAt: true } } } },
+          role: { include: { criteria: { where: { status: "approved" }, select: { id: true, updatedAt: true } } } }, // criteriaVersion on role
           stageEvents: { orderBy: { createdAt: "desc" } },
           assessments: { orderBy: { createdAt: "desc" }, include: { items: true, resume: { select: { fileName: true } } } },
         },
@@ -59,6 +66,32 @@ export default async function CandidatePage({
   const resume = candidate.resumes.find((r) => r.isCurrent) ?? candidate.resumes[0];
   const pages = resume ? (JSON.parse(resume.pagesJson) as string[]) : [];
   const ai = aiStatus();
+  const facts: CvFact[] = candidate.extracted.map((f) => ({
+    id: f.id,
+    field: f.field,
+    value: JSON.parse(f.valueJson),
+    editedValue: f.editedValueJson ? JSON.parse(f.editedValueJson) : null,
+    sourceQuote: f.sourceQuote,
+    sourcePage: f.sourcePage,
+    sourceSection: f.sourceSection,
+    verified: f.verified,
+    extractor: f.extractor,
+    status: f.status,
+  }));
+  const pendingFacts = facts.filter((f) => f.status === "pending");
+  const reviewedFacts = facts.filter((f) => f.status !== "pending");
+  const needsReview = candidate.extractionStatus === "needs_review";
+  const origins = parseOrigins(candidate.fieldOriginsJson);
+  const liveScore = latest
+    ? computeScore(latest.items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult })))
+    : null;
+  const recJson = (latest?.recommendationJson ? JSON.parse(latest.recommendationJson) : {}) as {
+    rationale?: string;
+    criteriaCited?: string[];
+    questions?: string[];
+    adjustedNote?: string | null;
+    unavailable?: string;
+  };
 
   const items: ItemView[] = (latest?.items ?? []).map((i) => ({
     ...i,
@@ -116,6 +149,19 @@ export default async function CandidatePage({
       />
 
       {resumeError && <Notice tone="danger" className="mb-4">Candidate saved, but the resume couldn&apos;t be processed: {resumeError}</Notice>}
+      {notice && <Notice tone="warn" className="mb-4">{notice}</Notice>}
+      {saved === "profile" && !needsReview && (
+        <Notice tone="ok" className="mb-4">Profile saved from your review. CV-extracted details are labeled with their source; your corrections are marked.</Notice>
+      )}
+      {needsReview && (
+        <div className="mb-6">
+          <CvReviewForm
+            candidateId={candidate.id}
+            facts={pendingFacts}
+            current={Object.fromEntries(CV_SCALARS.map((f) => [f.column, (candidate as Record<string, unknown>)[f.column] as string | null]))}
+          />
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         {/* Main column: role-specific review */}
@@ -169,7 +215,7 @@ export default async function CandidatePage({
                   <EmptyState title="Not assessed yet" body="Run an assessment to see, for each criterion, the supporting evidence, what's missing, and what is only inferred." />
                 ) : (
                   <div className="space-y-3">
-                    {isStale(latest.criteriaSnapshot, app.role.criteria) && <StaleNotice />}
+                    {(isStale(latest.criteriaSnapshot, app.role.criteria) || (latest.criteriaVersion != null && latest.criteriaVersion !== app.role.criteriaVersion)) && <StaleNotice />}
                     <Card className="overflow-hidden">
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-[#fbfaf8] px-4 py-3">
                         <GeneratorTag generator={latest.generator} model={latest.model} />
@@ -180,12 +226,20 @@ export default async function CandidatePage({
                           <ReviewControls assessmentId={latest.id} reviewed={latest.status === "reviewed"} reviewedBy={latest.reviewedByName} />
                         </span>
                       </div>
-                      <div className="border-b border-line px-4 py-3">
-                        <SummaryLine summary={summarize(latest.items)} />
-                        <p className="mt-1 text-[12px] text-faint">
-                          Summary = count of criteria per result, with your corrections applied. It is not a score; read the evidence below.
-                          {latest.generator === "keyword" && " Keyword matches are marked “inferred” because a keyword alone doesn't confirm a criterion."}
-                        </p>
+                      <div className="border-b border-line px-4 py-2 text-[11.5px] text-faint">
+                        Criteria v{latest.criteriaVersion ?? "?"}
+                        {latest.criteriaVersion != null && latest.criteriaVersion !== app.role.criteriaVersion && ` (current v${app.role.criteriaVersion})`} · CV:{" "}
+                        {latest.resume ? latest.resume.fileName : "none"}
+                        {latest.parserVersion ? ` (${latest.parserVersion})` : ""} · Engine: {latest.engineVersion ?? "assess-v1"}
+                      </div>
+                      <div className="border-b border-line px-4 py-4">
+                        {liveScore && <ScorePanel score={liveScore} adjusted={summarize(latest.items).overrides > 0} />}
+                        <div className="mt-3 border-t border-line pt-3">
+                          <SummaryLine summary={summarize(latest.items)} />
+                          {latest.generator === "keyword" && (
+                            <p className="mt-1 text-[12px] text-faint">Keyword matches are marked “inferred” because a keyword alone doesn&apos;t confirm a criterion.</p>
+                          )}
+                        </div>
                       </div>
                       <div className="divide-y divide-line">
                         {items.map((i) => <ItemCard key={i.id} item={i} />)}
@@ -211,6 +265,29 @@ export default async function CandidatePage({
                   </div>
                 )}
               </section>
+
+              {latest && (
+                <section>
+                  <SectionTitle hint="Shown after the score and evidence. Advisory only — accept, edit or override it, then record your decision.">Recommendation</SectionTitle>
+                  <Card className="p-4">
+                    <RecommendationPanel
+                      r={{
+                        assessmentId: latest.id,
+                        recommendation: latest.recommendation,
+                        rationale: recJson.rationale ?? null,
+                        criteriaCited: recJson.criteriaCited ?? [],
+                        questions: recJson.questions ?? [],
+                        adjustedNote: recJson.adjustedNote ?? null,
+                        unavailable: recJson.unavailable ?? null,
+                        status: latest.recommendationStatus,
+                        finalRecommendation: latest.finalRecommendation,
+                        note: latest.recommendationNote,
+                        reviewedBy: latest.recommendationReviewedBy,
+                      }}
+                    />
+                  </Card>
+                </section>
+              )}
 
               <section>
                 <SectionTitle hint="Your decision is recorded separately from the pipeline stage and from any AI output.">Recruiter decision</SectionTitle>
@@ -246,6 +323,74 @@ export default async function CandidatePage({
 
         {/* Side column: source material and notes */}
         <aside className="space-y-5">
+          <Card className="p-4">
+            <SectionTitle hint="Where each detail came from.">Profile</SectionTitle>
+            <dl className="space-y-1.5 text-[13px]">
+              {CV_SCALARS.map(({ label, column }) => {
+                const v = (candidate as Record<string, unknown>)[column] as string | null;
+                if (!v || (column === "fullName" && candidate.source === "cv_upload" && v.startsWith("Unnamed candidate"))) return null;
+                const o: string = origins[column] ?? (candidate.source === "csv" ? "csv" : "recruiter");
+                return (
+                  <div key={column} className="flex flex-wrap items-baseline justify-between gap-x-2">
+                    <dt className="text-muted">{label}</dt>
+                    <dd className="flex min-w-0 items-center gap-1.5 text-right">
+                      <span className="truncate">{v}</span>
+                      <Badge tone={o === "cv" ? "neutral" : o === "cv_corrected" ? "warn" : "neutral"} className="shrink-0 !text-[10.5px]">
+                        {o === "csv" ? "CSV import" : ORIGIN_LABEL[o] ?? o}
+                      </Badge>
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </Card>
+
+          {(reviewedFacts.some((f) => CV_LISTS.some((g) => g.field === f.field)) || (resume && !needsReview && facts.length === 0)) && (
+            <Card className="p-4">
+              <SectionTitle hint="Extracted from the CV and reviewed by a recruiter.">CV details</SectionTitle>
+              {facts.length === 0 && resume ? (
+                <div className="text-[13px] text-muted">
+                  No details have been extracted from this resume yet.
+                  <div className="mt-2">
+                    <ActionButton action={extractFromCurrentResume.bind(null, candidate.id)} pendingLabel="Extracting…">Extract details from CV</ActionButton>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {CV_LISTS.map((g) => {
+                    const items = reviewedFacts.filter((f) => f.field === g.field);
+                    if (!items.length) return null;
+                    return (
+                      <div key={g.field}>
+                        <div className="mb-1 text-[11.5px] font-semibold uppercase tracking-wide text-muted">{g.label}</div>
+                        <ul className="space-y-1.5">
+                          {items.map((f) => {
+                            const v = (f.status === "edited" ? f.editedValue : f.value) as Record<string, string> | string;
+                            const text =
+                              typeof v === "string"
+                                ? v
+                                : g.field === "work_history"
+                                  ? `${v.title}${v.employer ? ` · ${v.employer}` : ""}${v.start || v.end ? ` (${[v.start, v.end].filter(Boolean).join(" – ")})` : ""}`
+                                  : g.field === "education"
+                                    ? [v.credential, v.field, v.institution].filter(Boolean).join(" · ")
+                                    : [v.name, v.issuer].filter(Boolean).join(" · ");
+                            return (
+                              <li key={f.id} className="text-[13px]">
+                                <span>{text}</span>
+                                {f.status === "edited" && <Badge tone="warn" className="ml-1.5 !text-[10.5px]">Corrected</Badge>}
+                                <SourceRef doc="CV" quote={f.sourceQuote} page={f.sourcePage} section={f.sourceSection} verified={f.verified} extractor={f.extractor} />
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          )}
+
           <Card className="p-4" id="resume">
             <SectionTitle
               action={

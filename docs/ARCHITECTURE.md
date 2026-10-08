@@ -51,6 +51,46 @@ original wording, edited flag, JD source excerpt, rationale, approval state).
   the assessment is flagged outdated.
 - **No autonomy**: no code path changes a stage, decision or visibility based on AI output.
 
+## Document upload and extraction
+
+- `src/lib/documents.ts` parses PDF/DOCX (TXT for pasted/legacy flows) from magic bytes and
+  reports specific failures: password-protected, damaged, scanned (no selectable text), legacy
+  `.doc`, unsupported, too large. Nothing is created when parsing fails.
+- `src/lib/extraction.ts` turns a parsed JD/CV into `ExtractedField` facts: value, source quote,
+  page, section, `verified` (quote found in the document), extractor (`ai:<provider>:<model>/
+  jd-extract-v1`, `parser:*-heuristic-v1`, `parser:contact-regex-v1`). AI failures fall back to the
+  labeled non-AI parser. CV contact details are always extracted locally and redacted before any
+  AI call.
+- Facts stay `pending` until a recruiter reviews them; review marks each `accepted`, `edited`
+  (with the corrected value) or `rejected`, and only then writes to the role/candidate.
+  `Candidate.fieldOriginsJson` records whether each profile field is from the CV, CV-corrected,
+  or recruiter-entered.
+- Original files are stored in Postgres (`JobDescriptionFile`, `ResumeFile`) and served only via
+  org-checked routes.
+
+## Scoring and recommendation
+
+- Per-criterion states: supported, partially supported, inferred, conflicting, not stated.
+- `src/lib/score.ts` (method `alignment-v1`) is deterministic and computed by Talyn, not the AI:
+  essential weight 2, preferred 1; credit supported 1, partial 0.5, inferred 0.5; not stated and
+  conflicting are excluded from the score and reduce coverage. Withheld below 60% weighted
+  coverage or when fewer than half of essential criteria are assessable; "limited" below 80%.
+  The breakdown is stored on the assessment and recomputed live with recruiter corrections.
+- The recommendation is a second AI call made after the score, given only per-criterion results
+  and the score summary. Guardrail: an "advance" suggestion is changed to "gather more
+  information" when the score is withheld. Recruiters accept, edit or override it; the final
+  decision and pipeline stage are always separate recruiter actions.
+- Traceability: each assessment stores resume id + parser version, criteria snapshot and
+  `criteriaVersion`, engine version, provider:model, score JSON and recommendation JSON.
+
+## Client forms and server actions
+
+Forms that call server actions use `useServerForm` + `<ActionForm>` (`src/components/client.tsx`):
+no automatic form reset (recruiter input and chosen files survive errors), no React transition
+around the action call, and a full page load for post-save navigation. Navigating or refreshing
+from inside a transition that awaits a server action intermittently stalled Next's router queue
+in testing, dropping navigations.
+
 ## Logging
 
 `src/lib/log.ts` logs event names, ids and error classes only. Prisma query logging is disabled.

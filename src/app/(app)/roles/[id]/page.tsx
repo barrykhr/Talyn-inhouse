@@ -3,16 +3,20 @@ import Link from "next/link";
 import { ActionButton } from "@/components/client";
 import { StageSelect } from "@/components/stage-select";
 import { RoleStatusBadge } from "@/components/status";
+import { SourceRef } from "@/components/source-ref";
 import { SummaryLine } from "@/components/summary";
-import { Badge, Card, EmptyState, LinkButton, PageHeader, SectionTitle, buttonClass, formatDate } from "@/components/ui";
+import { AiMark, Badge, Card, EmptyState, LinkButton, Notice, PageHeader, SectionTitle, buttonClass, formatDate } from "@/components/ui";
 import { aiStatus } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { DECISION_LABEL, EMPLOYMENT_TYPE_LABEL, GENERATOR_LABEL, STAGES, STAGE_LABEL, type Decision, type EmploymentType } from "@/lib/domain";
+import { DECISION_LABEL, EMPLOYMENT_TYPE_LABEL, GENERATOR_LABEL, RECOMMENDATION_LABEL, STAGES, STAGE_LABEL, type Decision, type EmploymentType, type Recommendation } from "@/lib/domain";
+import { computeScore, pct } from "@/lib/score";
 import { isStale, summarize } from "@/lib/summary";
 import { deleteRole } from "@/server/role-actions";
 import { ownRole } from "@/server/scope";
 import { AddExisting } from "./add-existing";
+import { LIST_LABEL } from "@/lib/extraction-fields";
+import { RoleReviewForm, UploadJd, type FactView } from "./jd";
 import { AddCriterion, CriterionRow, ProposePanel, ReviewBanner, type CriterionView } from "./criteria";
 
 // AI proposals/assessments run as server actions on this page and can take a while.
@@ -22,10 +26,10 @@ export const metadata = { title: "Role" };
 
 type Tab = "pipeline" | "criteria" | "description";
 
-export default async function RolePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
+export default async function RolePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; notice?: string; saved?: string }> }) {
   const auth = await requireAuth();
   const { id } = await params;
-  const { tab: tabParam } = await searchParams;
+  const { tab: tabParam, notice, saved } = await searchParams;
   await ownRole(auth, id);
 
   const role = await db.role.findFirstOrThrow({
@@ -35,17 +39,45 @@ export default async function RolePage({ params, searchParams }: { params: Promi
       applications: {
         include: {
           candidate: { select: { id: true, fullName: true, currentTitle: true, currentCompany: true } },
-          assessments: { orderBy: { createdAt: "desc" }, take: 1, include: { items: { select: { importance: true, result: true, overrideResult: true } } } },
+          assessments: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            include: { items: { select: { criterionName: true, importance: true, result: true, overrideResult: true } } },
+          },
         },
         orderBy: { updatedAt: "desc" },
       },
+      documents: { orderBy: { createdAt: "desc" }, select: { id: true, fileName: true, createdAt: true, isCurrent: true, parserVersion: true } },
+      extracted: { where: { status: { not: "rejected" } }, orderBy: { position: "asc" } },
     },
   });
 
   const approved = role.criteria.filter((c) => c.status === "approved");
   const proposed = role.criteria.filter((c) => c.status === "proposed");
   const rejected = role.criteria.filter((c) => c.status === "rejected");
-  const tab: Tab = tabParam === "criteria" || tabParam === "description" || tabParam === "pipeline" ? tabParam : approved.length === 0 ? "criteria" : "pipeline";
+  const needsReview = role.extractionStatus === "needs_review";
+  const tab: Tab =
+    tabParam === "criteria" || tabParam === "description" || tabParam === "pipeline"
+      ? tabParam
+      : needsReview
+        ? "description"
+        : approved.length === 0
+          ? "criteria"
+          : "pipeline";
+  const facts: FactView[] = role.extracted.map((f) => ({
+    id: f.id,
+    field: f.field,
+    value: JSON.parse(f.valueJson),
+    editedValue: f.editedValueJson ? JSON.parse(f.editedValueJson) : null,
+    sourceQuote: f.sourceQuote,
+    sourcePage: f.sourcePage,
+    sourceSection: f.sourceSection,
+    verified: f.verified,
+    extractor: f.extractor,
+    status: f.status,
+  }));
+  const pendingFacts = facts.filter((f) => f.status === "pending");
+  const reviewedFacts = facts.filter((f) => f.status !== "pending" && f.field in LIST_LABEL);
 
   const inRole = new Set(role.applications.map((a) => a.candidateId));
   const others = tab === "pipeline"
@@ -88,10 +120,23 @@ export default async function RolePage({ params, searchParams }: { params: Promi
         }
       />
 
+      {notice && <Notice tone="warn" className="mb-4">{notice}</Notice>}
+      {saved === "details" && (
+        <Notice tone="ok" className="mb-4">
+          Role details saved from your review.{proposed.length > 0 ? " Next, review the criteria proposed from the JD below." : ""}
+        </Notice>
+      )}
+      {needsReview && tab !== "description" && (
+        <Notice tone="signal" className="mb-4">
+          Details extracted from the uploaded job description are waiting for your review.{" "}
+          <Link href={`/roles/${role.id}?tab=description`} className="font-medium underline">Review now</Link>
+        </Notice>
+      )}
+
       <div className="mb-5 flex gap-1 border-b border-line">
         <TabLink href={`/roles/${role.id}?tab=pipeline`} active={tab === "pipeline"} label="Pipeline" count={role.applications.length} />
         <TabLink href={`/roles/${role.id}?tab=criteria`} active={tab === "criteria"} label="Criteria" count={approved.length} attention={proposed.length} />
-        <TabLink href={`/roles/${role.id}?tab=description`} active={tab === "description"} label="Job description" />
+        <TabLink href={`/roles/${role.id}?tab=description`} active={tab === "description"} label="Job description" attention={needsReview ? pendingFacts.length || 1 : 0} />
       </div>
 
       {tab === "criteria" && (
@@ -138,13 +183,76 @@ export default async function RolePage({ params, searchParams }: { params: Promi
       )}
 
       {tab === "description" && (
-        <Card className="p-6">
-          {role.description ? (
-            <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-ink-2">{role.description}</div>
-          ) : (
-            <EmptyState title="No job description" action={<LinkButton href={`/roles/${role.id}/edit`}>Add one</LinkButton>} />
+        <div className="space-y-5">
+          {needsReview && (
+            <RoleReviewForm
+              roleId={role.id}
+              facts={pendingFacts}
+              current={{ title: role.title, department: role.department, location: role.location, employmentType: role.employmentType }}
+            />
           )}
-        </Card>
+          {needsReview && proposed.length > 0 && (
+            <p className="text-[13px] text-muted">
+              {proposed.length} criteria were also proposed from this JD — <Link className="font-medium text-ink underline" href={`/roles/${role.id}?tab=criteria`}>review them on the Criteria tab</Link>.
+            </p>
+          )}
+
+          <Card className="p-5">
+            <SectionTitle action={<UploadJd roleId={role.id} hasJd={role.documents.length > 0} />} hint="Kept privately with the role. Extraction re-runs on each upload.">
+              Uploaded job description
+            </SectionTitle>
+            {role.documents.length === 0 ? (
+              <p className="text-[13px] text-muted">No file uploaded. You can upload a PDF or DOCX to extract details and propose criteria.</p>
+            ) : (
+              <ul className="space-y-1 text-[13px]">
+                {role.documents.map((d) => (
+                  <li key={d.id} className="flex flex-wrap items-center gap-2">
+                    <a href={`/api/jds/${d.id}`} target="_blank" rel="noopener" className="font-medium underline-offset-2 hover:underline">{d.fileName}</a>
+                    <span className="text-faint">{formatDate(d.createdAt)} · {d.parserVersion}</span>
+                    {d.isCurrent && <Badge>Current</Badge>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          {reviewedFacts.length > 0 && (
+            <Card className="p-5">
+              <SectionTitle hint="Extracted from the JD and reviewed by a recruiter.">Role details</SectionTitle>
+              <div className="space-y-4">
+                {Object.entries(LIST_LABEL).map(([group, label]) => {
+                  const items = reviewedFacts.filter((f) => f.field === group);
+                  if (!items.length) return null;
+                  return (
+                    <div key={group}>
+                      <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted">{label}</div>
+                      <ul className="space-y-2">
+                        {items.map((f) => (
+                          <li key={f.id} className="text-[13.5px]">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span>{String(f.status === "edited" ? f.editedValue : f.value)}</span>
+                              {f.status === "edited" && <Badge tone="warn">Corrected by recruiter</Badge>}
+                            </div>
+                            <SourceRef doc="JD" quote={f.sourceQuote} page={f.sourcePage} section={f.sourceSection} verified={f.verified} extractor={f.extractor} />
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
+          <Card className="p-6">
+            <SectionTitle>Job description text</SectionTitle>
+            {role.description ? (
+              <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-ink-2">{role.description}</div>
+            ) : (
+              <EmptyState title="No job description" action={<LinkButton href={`/roles/${role.id}/edit`}>Add one</LinkButton>} />
+            )}
+          </Card>
+        </div>
       )}
 
       {tab === "pipeline" && (
@@ -195,7 +303,14 @@ export default async function RolePage({ params, searchParams }: { params: Promi
                               <div className="mt-2 space-y-1">
                                 {asmt ? (
                                   <>
+                                    <ScoreChip items={asmt.items} />
                                     <SummaryLine summary={summarize(asmt.items)} compact />
+                                    {(asmt.finalRecommendation ?? asmt.recommendation) && (
+                                      <div className="flex items-center gap-1 text-[11.5px] text-ink-2">
+                                        {asmt.finalRecommendation ? <span className="font-medium text-muted">Reviewed:</span> : <AiMark label="AI suggests" />}
+                                        <span className="truncate">{RECOMMENDATION_LABEL[(asmt.finalRecommendation ?? asmt.recommendation) as Recommendation]}</span>
+                                      </div>
+                                    )}
                                     <div className="flex flex-wrap gap-1">
                                       {asmt.status === "reviewed" ? <Badge tone="ok">Reviewed</Badge> : <Badge tone="signal">Needs review</Badge>}
                                       {asmt.generator !== "ai" && <Badge>{GENERATOR_LABEL[asmt.generator]}</Badge>}
@@ -225,6 +340,23 @@ export default async function RolePage({ params, searchParams }: { params: Promi
         </div>
       )}
     </>
+  );
+}
+
+function ScoreChip({ items }: { items: { criterionName: string; importance: string; result: string; overrideResult: string | null }[] }) {
+  const s = computeScore(items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult })));
+  return (
+    <div className="text-[12px]" title="Criteria-alignment score (alignment-v1) and weighted evidence coverage. Not a measure of candidate quality.">
+      {s.score === null ? (
+        <span className="text-muted">Score withheld · coverage {pct(s.coverage)}</span>
+      ) : (
+        <span>
+          <span className="font-semibold tabular-nums">{s.score}</span>
+          <span className="text-faint">/100 alignment</span>
+          <span className="text-muted"> · coverage {pct(s.coverage)}</span>
+        </span>
+      )}
+    </div>
   );
 }
 

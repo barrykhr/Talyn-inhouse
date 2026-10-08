@@ -72,6 +72,7 @@ export default async function RolesPage({ searchParams }: { searchParams: Promis
                     <div className="flex items-center gap-2">
                       <span className="truncate text-[15px] font-semibold tracking-tight">{r.title}</span>
                       <RoleStatusBadge status={r.status} />
+                      {r.extractionStatus === "needs_review" && <span className="rounded-md bg-signal-soft px-1.5 text-[11px] font-semibold text-signal">JD review pending</span>}
                     </div>
                     <div className="mt-0.5 truncate text-[13px] text-muted">
                       {[r.department, r.location, EMPLOYMENT_TYPE_LABEL[r.employmentType as EmploymentType]].filter(Boolean).join(" · ")}
