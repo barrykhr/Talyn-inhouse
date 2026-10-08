@@ -3,6 +3,9 @@ import { Badge, Card, PageHeader, SectionTitle, buttonClass } from "@/components
 import { eligibleForRetention } from "@/lib/retention";
 import { RetentionForm } from "./retention";
 import { PROVIDER_LABEL, aiStatus } from "@/lib/ai";
+import { ATS_SETUP_HINT, getAtsConnector } from "@/lib/ats/connector";
+import { SENDING_SETUP_HINT, getEmailProvider } from "@/lib/outreach/provider";
+import { CONNECTORS } from "@/lib/sourcing/connectors";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { DeleteOrg } from "./delete-org";
@@ -67,6 +70,39 @@ export default async function SettingsPage() {
             {ai.provider === "openai" && " Requests are sent with storage disabled (store: false)."}
           </p>
         </div>
+      </Card>
+
+      <Card className="p-5">
+        <SectionTitle hint="What Talyn is connected to. Nothing here sends data anywhere unless it says Connected.">Integrations &amp; data providers</SectionTitle>
+        <dl className="space-y-2.5 text-[13px]">
+          <div>
+            <dt className="font-medium">AI provider</dt>
+            <dd className="text-muted">{ai.configured && ai.provider ? `${PROVIDER_LABEL[ai.provider]} · ${ai.model} — receives role/criteria text, CV text with email and phone redacted, and confirmed profile facts for drafting outreach.` : "Not configured — AI features are off; labeled non-AI helpers are used."}</dd>
+          </div>
+          {CONNECTORS.map((c) => (
+            <div key={c.key}>
+              <dt className="font-medium">
+                Sourcing · {c.label} <span className={c.configured() ? "text-ok" : "text-faint"}>{c.configured() ? "● Connected" : "○ Not connected"}</span>
+              </dt>
+              <dd className="text-muted">{c.configured() ? c.description : c.setupHint}</dd>
+            </div>
+          ))}
+          <div>
+            <dt className="font-medium">
+              Email sending <span className={getEmailProvider() ? "text-ok" : "text-faint"}>{getEmailProvider() ? "● Connected" : "○ Not connected"}</span>
+            </dt>
+            <dd className="text-muted">{SENDING_SETUP_HINT}</dd>
+          </div>
+          <div>
+            <dt className="font-medium">
+              ATS <span className={getAtsConnector() ? "text-ok" : "text-faint"}>{getAtsConnector() ? "● Connected" : "○ Not connected"}</span>
+            </dt>
+            <dd className="text-muted">{ATS_SETUP_HINT}</dd>
+          </div>
+        </dl>
+        <Link href="/settings/measures" className={buttonClass("secondary", "md", "mt-4")}>
+          View success measures
+        </Link>
       </Card>
 
       <Card className="p-5">

@@ -1,4 +1,4 @@
-# Architecture — Talyn In-house TA (Phase 1)
+# Architecture — Talyn In-house TA (Phases 1–2)
 
 ## Stack and tradeoffs
 
@@ -123,10 +123,51 @@ stage) → proposes → recruiter reviews → recruiter decides → product upda
 `src/lib/log.ts` logs event names, ids and error classes only. Prisma query logging is disabled.
 Never log candidate data, resume text, notes or secrets.
 
+## Phase 2: sourcing, outreach and governance
+
+**Data model additions.** `AuditEvent` (actor, action, entity ids, counts — no candidate
+content), `Task` (info requests, reply follow-ups), `Organization.retentionDays`,
+`ExtractedField.correctionReason`; `Icp` → `IcpItem` (category, text, origin, JD quote,
+verified flag); `SearchStrategy` (versioned filters + Boolean + criterion mapping) →
+`SearchRun` (connector, status incl. `setup_required`, counts) → `SourcedProfile` (signals with
+quotes, staleness, duplicate link, review state, feedback); `Application.priority*`;
+`Candidate.contactOptOut`; `OutreachTemplate`, `OutreachSequence` → `OutreachMessage`
+(approval state, due date, sent-via) and `OutreachEvent` (`providerConfirmed` flag); `Question`
+(core per role / follow-up per application, criterion link, status).
+
+**Connectors.** Three interfaces, each returning "not configured" until a provider is chosen:
+- `src/lib/sourcing/connectors.ts` — `talynRediscovery` (works: searches this org's own
+  candidates/resumes, quotes the matching text, flags profiles older than 18 months, sets aside
+  exclusions) and `externalProvider` (setup state, no results). No scraping.
+- `src/lib/outreach/provider.ts` — `getEmailProvider()` returns `null`; `/api/cron/outreach`
+  no-ops without it (and is not scheduled in `vercel.json`). Statuses such as delivered/opened
+  are only shown when `providerConfirmed`; manual entries are labeled "recorded by recruiter".
+- `src/lib/ats/connector.ts` — see `docs/ATS_INTEGRATION.md`.
+
+**AI.** ICP generation, search planning, outreach drafts, core and follow-up questions use the
+same structured-output path as Phase 1. Quotes are kept only when found verbatim in the source
+(JD or CV); otherwise the item is downgraded to *inferred*. Outreach drafts receive only an
+explicit fact list (`personalizationFacts`) and never contact details; templates are scrubbed of
+candidate values before saving.
+
+**Safety rules in code.** Activation requires an email on file, no opt-out, and every step
+approved; editing an approved step resets it to draft. Reply or opt-out stops the sequence (and
+opt-out blocks new sequences); bounce pauses it. Ranking and sourcing never change stage,
+decision or visibility. Tasks resolve without recording a decision.
+
+**Retention and deletion.** Daily `/api/cron/retention` (Bearer `CRON_SECRET`) deletes
+candidates with no activity beyond the org's retention period, including resumes, files,
+assessments, outreach and Talyn-sourced profiles; audit events keep ids only. Candidate and
+organization deletion cascade through the same tables.
+
+**Measures.** `src/lib/measures.ts` computes success measures from recorded data (e.g. ICP-to-
+shortlist time, save/contact/duplicate rates per source, match correction rate, unranked rate,
+outreach edit/approval/reply/bounce/opt-out rates, task completion).
+Below 5 data points a measure reads "Not enough data". These describe usage, not fairness or
+predictive validity.
+
 ## Extensibility (later phases, not implemented)
 
-- Sourcing/outreach (Phase 5) would add `Candidate.source` values and new modules alongside
-  `src/server/`; criteria and assessments are already source-agnostic.
-- Interview intelligence would attach to `Application` as new evidence sources
-  (`Evidence.source` is a discriminated string).
+- Interview recording/intelligence, a hiring-manager portal and advanced analytics are out of
+  scope; interview evidence would attach to `Application` as new evidence sources.
 - Auth is isolated behind `src/lib/auth.ts`; resume bytes behind the `ResumeFile` model and `/api/resumes/[id]`.

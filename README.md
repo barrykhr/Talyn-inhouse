@@ -3,8 +3,15 @@
 A recruiting workspace for internal talent acquisition teams: roles, structured criteria,
 candidates, pipelines, and evidence-based AI-assisted candidate review.
 
-**Phase 1 scope.** AI suggests and explains; recruiters review, edit and decide. Nothing is
-advanced, hidden or rejected by AI.
+**Phases 1–2.** Roles, criteria, CV/JD extraction and evidence-based assessment (Phase 1);
+review queue, provenance, audit and retention, Ideal Candidate Profiles, AI search planning,
+authorized sourcing, ranking, recruiter-approved outreach and interview questions (Phase 2).
+AI suggests and explains; recruiters review, edit and decide. Nothing is advanced, hidden,
+rejected or sent by AI.
+
+**Not connected yet:** no external sourcing provider, no email-sending provider and no ATS are
+configured. Talyn shows a setup state for each (Settings → Integrations & data providers);
+see [docs/ATS_INTEGRATION.md](docs/ATS_INTEGRATION.md).
 
 ## Deploy to Vercel
 
@@ -77,6 +84,8 @@ All configuration is via environment variables (`.env`):
 | `AI_PROVIDER` | no | `openai` or `anthropic`. Only needed if both keys are set (Anthropic wins otherwise). |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no | Enables **Continue with Google**. See "Sign in with Google" below. |
 | `GOOGLE_ALLOWED_DOMAINS` | no | Comma-separated email domains allowed to use Google sign-in (e.g. `acme.com`). |
+| `CRON_SECRET` | recommended | Protects `/api/cron/*`. Vercel sends it automatically to the daily retention job. |
+| `OUTREACH_FROM_EMAIL` | no | Sender address, used only once an email provider is connected. |
 | `APP_URL` | recommended | Public URL (e.g. `https://talyn-inhouse.vercel.app`); keeps the Google redirect URI exact. |
 
 ### Without an AI key
@@ -152,6 +161,32 @@ No output is ever presented as coming from a model unless it did.
 9. **Role → Export CSV** includes stage, decision, criteria version, score, coverage, AI
    recommendation, its review status and the final recommendation.
 
+## Phase 2 walkthrough
+
+1. **Queue** (`G` then `Q`) — everything waiting on a person: proposed criteria, CV reviews,
+   assessments to review, info requests, sourcing results, outreach to approve/send, replies.
+2. **Role → Sourcing → Ideal Candidate Profile** — generate from the JD and approved criteria
+   (or start blank). Every item shows its source; clarification questions are listed. Edit, then
+   **Approve**. Changes create a new version.
+3. **Search strategy** — plan from the approved ICP: titles, skills, locations, exclusions, a
+   Boolean string and a criterion mapping. Edit and save (versioned). **Run search** uses
+   connected sources only: today that is *Talyn rediscovery* (candidates already in your
+   workspace). The external provider slot shows a setup state and returns nothing.
+4. **Results** — each profile shows matched signals with quotes, staleness and duplicates. Save
+   to role, mark not relevant (with feedback) or leave for later. Nothing is auto-rejected.
+5. **Role → Ranked list** — *Role fit* (criteria alignment) and *Stage readiness* are separate
+   sorts; low-confidence/unassessed candidates are shown as unranked. Recruiters can set a
+   priority with a note; it never changes the stage.
+6. **Candidate → Outreach** — draft a sequence grounded only in the profile and role facts
+   (shown beside the draft). Approve each step, then **Activate**. Pause/stop any time. Without
+   an email provider, send from your own mailbox and **Record as sent**; replies, opt-outs and
+   bounces are recorded by the recruiter (reply/opt-out stop the sequence; opt-out blocks future
+   outreach).
+7. **Questions** — core questions per role (Criteria tab) and follow-ups per candidate
+   (Assessment tab), each linked to a criterion. Talyn never sends them.
+8. **Settings** — retention period and **Apply now**, audit log, integrations and data
+   providers, and **Success measures**.
+
 ## Project layout
 
 ```
@@ -162,5 +197,9 @@ src/app/(auth)/             Login / signup
 src/app/(app)/              Roles, candidates, import/export, settings
 src/app/api/                Authenticated resume download and CSV exports
 src/components/             UI primitives and shared widgets
+src/lib/sourcing/           Search filters, Boolean builder, sourcing connectors
+src/lib/outreach/           Email provider interface, grounded personalization facts
+src/lib/ats/                ATS connector interface (none active)
 docs/ARCHITECTURE.md        Decisions, data model, security and AI design
+docs/ATS_INTEGRATION.md     ATS field ownership, duplicates, conflicts, sync failures
 ```
