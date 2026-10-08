@@ -31,6 +31,8 @@ import { CV_LISTS, CV_SCALARS } from "@/lib/extraction-fields";
 import { CvReviewForm, type CvFact } from "./cv-review";
 import { DecisionForm } from "./decision";
 import { TasksCard } from "./tasks";
+import { OutreachPanel, type OutreachView } from "./outreach";
+import { SENDING_SETUP_HINT } from "@/lib/outreach/provider";
 import { DeleteCandidateButton, DeleteResumeButton, EditProfile, NoteForm, NoteItem, ResumeUpload } from "./panels";
 
 // AI proposals/assessments run as server actions on this page and can take a while.
@@ -43,11 +45,11 @@ export default async function CandidatePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ role?: string; resumeError?: string; notice?: string; saved?: string }>;
+  searchParams: Promise<{ role?: string; resumeError?: string; notice?: string; saved?: string; view?: string }>;
 }) {
   const auth = await requireAuth();
   const { id } = await params;
-  const { role: roleParam, resumeError, notice, saved } = await searchParams;
+  const { role: roleParam, resumeError, notice, saved, view } = await searchParams;
   await ownCandidate(auth, id);
   await auditAccess(auth, "candidate.viewed", { subjectType: "candidate", subjectId: id, candidateId: id });
 
@@ -126,6 +128,51 @@ export default async function CandidatePage({
 
   const stale = !!latest && (isStale(latest.criteriaSnapshot, app!.role.criteria) || (latest.criteriaVersion != null && latest.criteriaVersion !== app!.role.criteriaVersion));
   const stageSince = app?.stageEvents[0]?.createdAt ?? app?.createdAt;
+  const [sequences, templates] = app
+    ? await Promise.all([
+        db.outreachSequence.findMany({
+          where: { orgId: auth.orgId, applicationId: app.id },
+          orderBy: { createdAt: "desc" },
+          take: 3,
+          include: { messages: { orderBy: { step: "asc" } }, events: { orderBy: { createdAt: "desc" }, take: 40 } },
+        }),
+        db.outreachTemplate.findMany({ where: { orgId: auth.orgId }, select: { id: true, name: true }, orderBy: { updatedAt: "desc" }, take: 30 }),
+      ])
+    : [[], []];
+  const seq = sequences.find((x) => ["draft", "active", "paused"].includes(x.status)) ?? sequences[0] ?? null;
+  const outreach: OutreachView | null = app
+    ? {
+        applicationId: app.id,
+        email: candidate.email,
+        emailOrigin: candidate.email ? (ORIGIN_LABEL[origins.email ?? (candidate.source === "csv" ? "" : "recruiter")] ?? (candidate.source === "csv" ? "CSV import" : null)) : null,
+        optedOut: candidate.contactOptOut,
+        aiConfigured: ai.configured,
+        sendingHint: SENDING_SETUP_HINT,
+        templates,
+        sequence: seq && {
+          id: seq.id,
+          status: seq.status,
+          stopReason: seq.stopReason,
+          activatedByName: seq.activatedByName,
+          messages: seq.messages.map((m) => ({
+            id: m.id,
+            step: m.step,
+            delayDays: m.delayDays,
+            subject: m.subject,
+            body: m.body,
+            edited: m.subject !== m.draftSubject || m.body !== m.draftBody,
+            personalization: JSON.parse(m.personalizationJson),
+            generator: m.generator,
+            status: m.status,
+            approvedByName: m.approvedByName,
+            dueAt: m.dueAt?.toISOString() ?? null,
+            sentAt: m.sentAt?.toISOString() ?? null,
+            sentVia: m.sentVia,
+          })),
+          events: seq.events.map((e) => ({ id: e.id, type: e.type, actorName: e.actorName, providerConfirmed: e.providerConfirmed, note: e.note, createdAt: e.createdAt.toISOString() })),
+        },
+      }
+    : null;
   const fit = app ? roleFit(app.assessments, { criteria: app.role.criteria, criteriaVersion: app.role.criteriaVersion }) : null;
   const readiness = app
     ? stageReadiness({
@@ -134,7 +181,7 @@ export default async function CandidatePage({
         profileReviewed: !needsReview,
         assessment: latest ?? null,
         assessmentCurrent: !!latest && !stale,
-        openRequests: app.tasks.length,
+        openRequests: app.tasks.filter((t) => t.type === "gather_info").length,
         decision: app.decision,
       })
     : null;
@@ -623,8 +670,10 @@ export default async function CandidatePage({
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="min-w-0">
             <Tabs
+              initial={view === "outreach" ? 1 : 0}
               tabs={[
                 { label: "Assessment", content: assessmentMain },
+                { label: "Outreach", content: outreach ? <OutreachPanel v={outreach} /> : null },
                 { label: "CV & profile", content: cvProfile },
                 { label: "Notes & activity", count: candidate.notes.length, content: notesHistory },
               ]}

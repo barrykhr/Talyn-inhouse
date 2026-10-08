@@ -88,6 +88,7 @@ model Role {
   documents        JobDescription[]
   extracted        ExtractedField[]
   icps             Icp[]
+  searches         SearchStrategy[]
 
   @@index([orgId])
 }
@@ -189,6 +190,8 @@ model Candidate {
   source           String           @default("manual") // manual | csv | cv_upload
   fieldOriginsJson String           @default("{}") // { fieldName: "cv" | "cv_corrected" | "recruiter" }
   extractionStatus String? // null | needs_review | reviewed (when a CV extraction awaits review)
+  contactOptOut    Boolean          @default(false) // candidate asked not to be contacted: blocks all outreach
+  optOutAt         DateTime?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   org              Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -246,27 +249,28 @@ model Note {
 
 // A candidate's association with a role, and their place in that role's pipeline.
 model Application {
-  id             String       @id @default(cuid())
+  id             String             @id @default(cuid())
   orgId          String
   candidateId    String
   roleId         String
-  stage          String       @default("new")
+  stage          String             @default("new")
   decision       String? // advance | hold | decline — always recorded by a recruiter
   decisionNote   String?
   decidedById    String?
   decidedByName  String?
   decidedAt      DateTime?
-  priority       Int          @default(0) // recruiter override: 1 high, 0 normal, -1 low. Never changes the stage.
+  priority       Int                @default(0) // recruiter override: 1 high, 0 normal, -1 low. Never changes the stage.
   priorityNote   String?
   priorityByName String?
   priorityAt     DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  candidate      Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  role           Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  candidate      Candidate          @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  role           Role               @relation(fields: [roleId], references: [id], onDelete: Cascade)
   stageEvents    StageEvent[]
   assessments    Assessment[]
   tasks          Task[]
+  outreach       OutreachSequence[]
 
   @@unique([candidateId, roleId])
   @@index([orgId, roleId])
@@ -440,6 +444,7 @@ model SearchStrategy {
   generator        String
   createdByName    String      @default("")
   createdAt        DateTime    @default(now())
+  role             Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
   runs             SearchRun[]
 
   @@unique([roleId, version])
@@ -501,4 +506,82 @@ model SourcedProfile {
 
   @@index([orgId, roleId, status])
   @@index([runId])
+}
+
+model OutreachTemplate {
+  id            String   @id @default(cuid())
+  orgId         String
+  name          String
+  subject       String
+  body          String // may contain {{first_name}} {{role_title}} {{company}} {{current_title}}
+  createdByName String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([orgId])
+}
+
+// A recruiter-approved, role-specific outreach sequence for one application. Nothing is
+// sent unless a recruiter activates it; replies, opt-outs and bounces stop follow-ups.
+model OutreachSequence {
+  id              String    @id @default(cuid())
+  orgId           String
+  applicationId   String
+  status          String    @default("draft") // draft | active | paused | stopped | completed
+  stopReason      String? // replied | opted_out | bounced | recruiter
+  activatedByName String?
+  activatedAt     DateTime?
+  createdByName   String    @default("")
+  createdAt       DateTime  @default(now())
+
+  application Application       @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  messages    OutreachMessage[]
+  events      OutreachEvent[]
+
+  @@index([orgId, status])
+  @@index([applicationId])
+}
+
+model OutreachMessage {
+  id                  String           @id @default(cuid())
+  orgId               String
+  sequenceId          String
+  applicationId       String
+  step                Int
+  delayDays           Int              @default(0) // after the previous step was sent
+  subject             String
+  body                String
+  draftSubject        String // as first drafted (AI or template), to show recruiter edits
+  draftBody           String
+  personalizationJson String           @default("[]") // [{ key, label, value, source }]
+  generator           String // ai:<provider>:<model>/outreach-v1 | template:<id> | recruiter
+  status              String           @default("draft") // draft | approved | due | sent | delivered | replied | bounced | opted_out | cancelled
+  approvedByName      String?
+  approvedAt          DateTime?
+  dueAt               DateTime?
+  sentAt              DateTime?
+  sentVia             String? // manual | <provider key>
+  providerMessageId   String?
+  toEmail             String?
+  senderName          String?
+  createdAt           DateTime         @default(now())
+  sequence            OutreachSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, status])
+  @@index([sequenceId])
+}
+
+model OutreachEvent {
+  id                String           @id @default(cuid())
+  orgId             String
+  sequenceId        String
+  messageId         String?
+  type              String // drafted | approved | activated | paused | resumed | stopped | sent | delivered | replied | bounced | opted_out
+  providerConfirmed Boolean          @default(false) // true only when the sending provider reported it
+  note              String?
+  actorName         String           @default("")
+  createdAt         DateTime         @default(now())
+  sequence          OutreachSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  @@index([sequenceId])
 }

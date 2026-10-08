@@ -99,7 +99,13 @@ export async function deleteOrganization(_prev: ActionState, fd: FormData): Prom
   if (str(fd, "confirm") !== auth.orgName) return { error: "Type the organization name exactly to confirm." };
 
   const members = await db.membership.findMany({ where: { orgId: auth.orgId }, select: { userId: true } });
-  await db.organization.delete({ where: { id: auth.orgId } }); // cascades to all org data, including resume files
+  await db.organization.delete({ where: { id: auth.orgId } }); // cascades to roles, candidates, files, pipelines, sourcing, outreach
+  // Org-level records without a foreign key to Organization:
+  await db.$transaction([
+    db.auditEvent.deleteMany({ where: { orgId: auth.orgId } }),
+    db.outreachTemplate.deleteMany({ where: { orgId: auth.orgId } }),
+    db.pendingSignup.deleteMany({ where: { email: auth.email } }),
+  ]);
   // Remove users who no longer belong to any organization.
   await db.user.deleteMany({ where: { id: { in: members.map((m) => m.userId) }, memberships: { none: {} } } });
   await destroySession().catch(() => {});

@@ -49,7 +49,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
             take: 2,
             include: { items: { select: { criterionName: true, importance: true, result: true, overrideResult: true } } },
           },
-          _count: { select: { tasks: { where: { status: "open" } } } },
+          _count: { select: { tasks: { where: { status: "open", type: "gather_info" } } } },
         },
         orderBy: { updatedAt: "desc" },
       },

@@ -100,7 +100,9 @@ export async function updateCandidate(id: string, _prev: ActionState, fd: FormDa
 export async function deleteCandidate(id: string) {
   const auth = await requireAuth();
   await ownCandidate(auth, id);
-  await db.candidate.delete({ where: { id } }); // cascades to resumes, files, notes, applications, assessments
+  await db.candidate.delete({ where: { id } }); // cascades to resumes, files, notes, applications, assessments, tasks, outreach
+  // Sourcing results that point at this candidate (Talyn rediscovery) hold their name: remove them too.
+  await db.sourcedProfile.deleteMany({ where: { orgId: auth.orgId, source: "talyn", sourceRecordId: id } });
   // The audit trail keeps only the candidate id (no personal data) as evidence of deletion.
   await audit(auth, "candidate.deleted", { subjectType: "candidate", subjectId: id, candidateId: id });
   return goTo("/candidates");

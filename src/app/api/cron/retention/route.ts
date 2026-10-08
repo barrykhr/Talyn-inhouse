@@ -12,6 +12,7 @@ export async function GET(req: Request) {
     const ids = await eligibleForRetention(org.id, org.retentionDays!);
     if (!ids.length) continue;
     await db.candidate.deleteMany({ where: { orgId: org.id, id: { in: ids } } });
+    await db.sourcedProfile.deleteMany({ where: { orgId: org.id, source: "talyn", sourceRecordId: { in: ids } } });
     await db.auditEvent.create({
       data: { orgId: org.id, actorName: "Retention job", action: "retention.applied", subjectType: "org", subjectId: org.id, metaJson: JSON.stringify({ deleted: ids.length, days: org.retentionDays }) },
     });

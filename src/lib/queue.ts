@@ -18,7 +18,7 @@ const ACTIVE = { notIn: ["hired", "rejected"] };
 
 /** Actionable recruiter work, oldest first. Every item links to where the action happens. */
 export async function buildQueue(orgId: string): Promise<QueueSection[]> {
-  const [profiles, tasks, apps, sourced] = await Promise.all([
+  const [profiles, tasks, apps, sourced, dueMessages] = await Promise.all([
     db.candidate.findMany({
       where: { orgId, extractionStatus: "needs_review" },
       select: { id: true, fullName: true, updatedAt: true, applications: { select: { roleId: true }, take: 1 } },
@@ -41,6 +41,12 @@ export async function buildQueue(orgId: string): Promise<QueueSection[]> {
       take: 500,
     }),
     db.sourcedProfile.groupBy({ by: ["roleId"], where: { orgId, status: "new" }, _count: true, _min: { createdAt: true } }),
+    db.outreachMessage.findMany({
+      where: { orgId, status: "approved", sentAt: null, dueAt: { lte: new Date() }, sequence: { status: "active" } },
+      include: { sequence: { include: { application: { include: { candidate: { select: { id: true, fullName: true } }, role: { select: { id: true, title: true } } } } } } },
+      orderBy: { dueAt: "asc" },
+      take: 200,
+    }),
   ]);
   const sourcedRoles = sourced.length
     ? await db.role.findMany({ where: { orgId, id: { in: sourced.map((s) => s.roleId) } }, select: { id: true, title: true } })
@@ -117,6 +123,38 @@ export async function buildQueue(orgId: string): Promise<QueueSection[]> {
           href: href(a.candidate.id, a.role.id),
         }))
         .sort(byAge),
+    },
+    {
+      key: "outreach",
+      title: "Outreach to send",
+      hint: "Approved messages in active sequences that are due. No email provider is connected: send from your mail client, then record it.",
+      items: dueMessages.map((m) => ({
+        key: m.id,
+        candidateId: m.sequence.application.candidate.id,
+        candidateName: m.sequence.application.candidate.fullName,
+        roleId: m.sequence.application.role.id,
+        roleTitle: m.sequence.application.role.title,
+        since: m.dueAt!,
+        detail: `Step ${m.step}`,
+        href: `${href(m.sequence.application.candidate.id, m.sequence.application.role.id)}&view=outreach`,
+      })),
+    },
+    {
+      key: "replied",
+      title: "Candidate replied",
+      hint: "Replies you recorded. Follow-ups were stopped automatically.",
+      items: tasks
+        .filter((t) => t.type === "reply")
+        .map((t) => ({
+          key: t.id,
+          candidateId: t.application.candidate.id,
+          candidateName: t.application.candidate.fullName,
+          roleId: t.application.role.id,
+          roleTitle: t.application.role.title,
+          since: t.createdAt,
+          detail: "Respond to the candidate",
+          href: `${href(t.application.candidate.id, t.application.role.id)}&view=outreach`,
+        })),
     },
     {
       key: "sourcing",

@@ -26,7 +26,10 @@ export async function applyRetentionNow(): Promise<ActionState> {
   const org = await db.organization.findUniqueOrThrow({ where: { id: auth.orgId } });
   if (!org.retentionDays) return { error: "Set a retention period first." };
   const ids = await eligibleForRetention(auth.orgId, org.retentionDays);
-  if (ids.length) await db.candidate.deleteMany({ where: { orgId: auth.orgId, id: { in: ids } } });
+  if (ids.length) {
+    await db.candidate.deleteMany({ where: { orgId: auth.orgId, id: { in: ids } } });
+    await db.sourcedProfile.deleteMany({ where: { orgId: auth.orgId, source: "talyn", sourceRecordId: { in: ids } } });
+  }
   await audit(auth, "retention.applied", { subjectType: "org", subjectId: auth.orgId, meta: { deleted: ids.length, days: org.retentionDays } });
   revalidatePath("/settings");
   return { ok: true, message: `${ids.length} inactive candidate${ids.length === 1 ? "" : "s"} deleted.` };
