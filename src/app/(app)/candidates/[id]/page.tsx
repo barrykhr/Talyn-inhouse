@@ -31,6 +31,8 @@ import { CV_LISTS, CV_SCALARS } from "@/lib/extraction-fields";
 import { CvReviewForm, type CvFact } from "./cv-review";
 import { DecisionForm } from "./decision";
 import { TasksCard } from "./tasks";
+import { QuestionList } from "@/components/questions";
+import { generateFollowUps } from "@/server/question-actions";
 import { OutreachPanel, type OutreachView } from "./outreach";
 import { SENDING_SETUP_HINT } from "@/lib/outreach/provider";
 import { DeleteCandidateButton, DeleteResumeButton, EditProfile, NoteForm, NoteItem, ResumeUpload } from "./panels";
@@ -61,9 +63,11 @@ export default async function CandidatePage({
       notes: { orderBy: { createdAt: "desc" } },
       applications: {
         include: {
-          role: { include: { criteria: { where: { status: "approved" }, select: { id: true, updatedAt: true } } } }, // criteriaVersion on role
+
           stageEvents: { orderBy: { createdAt: "desc" } },
           tasks: { where: { status: "open" }, orderBy: { createdAt: "asc" } },
+          questions: { where: { kind: "follow_up" }, orderBy: [{ status: "asc" }, { createdAt: "asc" }] },
+          role: { include: { criteria: { where: { status: "approved" }, select: { id: true, updatedAt: true } }, questions: { where: { kind: "core", status: "approved" } } } },
           assessments: { orderBy: { createdAt: "desc" }, include: { items: true, resume: { select: { fileName: true } } } },
         },
         orderBy: { createdAt: "asc" },
@@ -462,6 +466,34 @@ export default async function CandidatePage({
               {items.map((i) => (
                 <ItemCard key={i.id} item={i} />
               ))}
+            </div>
+            <div className="border-t border-line px-4 py-4">
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-[13.5px] font-semibold">Questions for this candidate</h3>
+                <ActionButton action={generateFollowUps.bind(null, app.id)} variant="secondary" pendingLabel="Drafting…" successMessage="Follow-up questions proposed">
+                  {app.questions.length ? "Regenerate follow-ups" : "Suggest follow-ups from gaps"}
+                </ActionButton>
+              </div>
+              <p className="mb-2 text-[12px] text-muted">For you to ask — Talyn never sends questions to candidates.</p>
+              <div className="text-[11.5px] font-semibold uppercase tracking-wide text-faint">Core (same for every candidate)</div>
+              {app.role.questions.length ? (
+                <QuestionList
+                  readOnly
+                  questions={app.role.questions.map((q) => ({ id: q.id, text: q.text, criterionName: q.criterionName, rationale: q.rationale, evidence: {}, origin: q.origin, status: q.status }))}
+                />
+              ) : (
+                <p className="py-1 text-[12.5px] text-faint">
+                  No approved core questions. Add them on the role&apos;s{" "}
+                  <Link className="underline" href={`/roles/${app.roleId}?tab=criteria`}>
+                    Criteria tab
+                  </Link>
+                  .
+                </p>
+              )}
+              <div className="mt-3 text-[11.5px] font-semibold uppercase tracking-wide text-faint">Follow-ups (this candidate&apos;s gaps)</div>
+              <QuestionList
+                questions={app.questions.map((q) => ({ id: q.id, text: q.text, criterionName: q.criterionName, rationale: q.rationale, evidence: JSON.parse(q.evidenceJson), origin: q.origin, status: q.status }))}
+              />
             </div>
             <div className="border-t border-line px-4 py-2 text-[11.5px] text-faint">
               Criteria v{latest.criteriaVersion ?? "?"}

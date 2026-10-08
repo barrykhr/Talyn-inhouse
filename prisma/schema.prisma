@@ -89,6 +89,7 @@ model Role {
   extracted        ExtractedField[]
   icps             Icp[]
   searches         SearchStrategy[]
+  questions        Question[]
 
   @@index([orgId])
 }
@@ -271,6 +272,7 @@ model Application {
   assessments    Assessment[]
   tasks          Task[]
   outreach       OutreachSequence[]
+  questions      Question[]
 
   @@unique([candidateId, roleId])
   @@index([orgId, roleId])
@@ -584,4 +586,30 @@ model OutreachEvent {
   sequence          OutreachSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
 
   @@index([sequenceId])
+}
+
+// Recruiter questions tied to a role criterion. Core questions (applicationId = null) are the
+// same for every candidate in the role; follow-ups are candidate-specific and tied to an
+// evidence gap or quote. Never sent to candidates automatically.
+model Question {
+  id            String       @id @default(cuid())
+  orgId         String
+  roleId        String
+  criterionId   String?
+  criterionName String
+  applicationId String?
+  kind          String // core | follow_up
+  text          String
+  rationale     String       @default("")
+  evidenceJson  String       @default("{}") // { gap?: string, quote?: string, page?: number }
+  origin        String // ai | template | recruiter
+  generator     String       @default("")
+  status        String       @default("proposed") // proposed | approved | rejected
+  createdByName String       @default("")
+  createdAt     DateTime     @default(now())
+  role          Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, roleId])
+  @@index([applicationId])
 }

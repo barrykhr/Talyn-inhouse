@@ -16,6 +16,8 @@ import { compareFit, roleFit, stageReadiness } from "@/lib/ranking";
 import { isStale, summarize } from "@/lib/summary";
 import { deleteRole } from "@/server/role-actions";
 import { ownRole } from "@/server/scope";
+import { QuestionList } from "@/components/questions";
+import { generateCoreQuestions } from "@/server/question-actions";
 import { AddExisting } from "./add-existing";
 import { PrioritySelect } from "./priority";
 import { LIST_LABEL } from "@/lib/extraction-fields";
@@ -55,6 +57,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
       },
       documents: { orderBy: { createdAt: "desc" }, select: { id: true, fileName: true, createdAt: true, isCurrent: true, parserVersion: true } },
       extracted: { where: { status: { not: "rejected" } }, orderBy: { position: "asc" } },
+      questions: { where: { kind: "core" }, orderBy: [{ status: "asc" }, { createdAt: "asc" }] },
     },
   });
 
@@ -223,6 +226,26 @@ export default async function RolePage({ params, searchParams }: { params: Promi
               </div>
             )}
           </section>
+
+          {approved.length > 0 && (
+            <section>
+              <SectionTitle
+                hint="The same questions for every candidate in this role, so answers can be compared fairly. Never sent to candidates."
+                action={
+                  <ActionButton action={generateCoreQuestions.bind(null, role.id)} variant="secondary" pendingLabel="Drafting…" successMessage="Core questions proposed">
+                    {role.questions.length ? "Regenerate proposals" : "Propose core questions"}
+                  </ActionButton>
+                }
+              >
+                Core questions
+              </SectionTitle>
+              <Card className="px-4">
+                <QuestionList
+                  questions={role.questions.map((q) => ({ id: q.id, text: q.text, criterionName: q.criterionName, rationale: q.rationale, evidence: JSON.parse(q.evidenceJson), origin: q.origin, status: q.status }))}
+                />
+              </Card>
+            </section>
+          )}
 
           {rejected.length > 0 && (
             <details>
