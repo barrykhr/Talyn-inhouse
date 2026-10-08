@@ -9,6 +9,7 @@ import { useSourceViewer } from "@/components/source-viewer";
 import { StagedProgress } from "@/components/staged-progress";
 import { useToast } from "@/components/toast";
 import { markReviewed, overrideItem, reviewRecommendation, runAssessment } from "@/server/assessment-actions";
+import { createInfoRequest } from "@/server/task-actions";
 import type { ActionState } from "@/server/form";
 
 export type ItemView = {
@@ -195,9 +196,9 @@ export function ItemCard({ item }: { item: ItemView }) {
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[11.5px] text-muted">
                     <CitationButton evidence={e} />
                     {e.verified ? (
-                      <span className="text-ok">✓ found in source</span>
+                      <span className="text-ok" title="The quoted text appears in the candidate's material. A recruiter should still judge whether it meets the criterion.">✓ quote matched</span>
                     ) : (
-                      <span className="text-warn" title="This text could not be found verbatim in the candidate's material">⚠ not found verbatim — verify</span>
+                      <span className="text-warn" title="This text could not be found verbatim in the candidate's material">⚠ quote not matched — check the CV</span>
                     )}
                   </div>
                 </li>
@@ -281,6 +282,8 @@ export function ReviewControls({ assessmentId, reviewed, reviewedBy }: { assessm
 
 export type RecommendationView = {
   assessmentId: string;
+  applicationId: string;
+  openRequests: number;
   recommendation: string | null;
   rationale: string | null;
   criteriaCited: string[];
@@ -325,6 +328,7 @@ export function RecommendationPanel({ r }: { r: RecommendationView }) {
         </div>
       )}
       {r.adjustedNote && <Notice tone="warn">{r.adjustedNote}</Notice>}
+      {(r.finalRecommendation ?? r.recommendation) === "gather_more_info" && <InfoRequestFromRecommendation r={r} />}
 
       {reviewed ? (
         <div className="rounded-lg border border-line bg-sunken px-3 py-2 text-[13px]">
@@ -373,6 +377,30 @@ export function RecommendationPanel({ r }: { r: RecommendationView }) {
         </ActionForm>
       )}
     </div>
+  );
+}
+
+/** Turns a "Gather more information" suggestion into a real queued task, in one step. */
+function InfoRequestFromRecommendation({ r }: { r: RecommendationView }) {
+  const [state, action, pending] = useServerForm(createInfoRequest.bind(null, r.applicationId));
+  const toast = useToast();
+  useEffect(() => {
+    if (state?.ok) toast({ message: "Information request added to your queue" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+  if (r.openRequests > 0 || state?.ok)
+    return <p className="text-[12.5px] text-muted">An information request is open for this candidate — see Information requests below.</p>;
+  return (
+    <ActionForm action={action} pending={pending} className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-[#fbfaf8] px-3 py-2">
+      <input type="hidden" name="title" value="Gather more information" />
+      <input type="hidden" name="questions" value={r.questions.join("\n")} />
+      <input type="hidden" name="fromRecommendation" value="1" />
+      <span className="text-[12.5px] text-ink-2">Turn these questions into a task in your queue?</span>
+      <SubmitButton size="sm" variant="secondary" className="ml-auto" pendingLabel="Adding…">
+        Create information request
+      </SubmitButton>
+      {state?.error && <p className="w-full text-[12.5px] text-danger">{state.error}</p>}
+    </ActionForm>
   );
 }
 

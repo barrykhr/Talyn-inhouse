@@ -1,3 +1,4 @@
+import { auditAccess } from "@/lib/audit";
 import clsx from "clsx";
 import Link from "next/link";
 import { ActionButton } from "@/components/client";
@@ -12,7 +13,7 @@ import { Badge, Card, EmptyState, Notice, PageHeader, SectionTitle, formatDate, 
 import { aiStatus } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { DECISION_LABEL, ORIGIN_LABEL, RECOMMENDATION_LABEL, STAGE_LABEL, type Decision, type Recommendation, type Stage } from "@/lib/domain";
+import { CORRECTION_REASON_LABEL, DECISION_LABEL, ORIGIN_LABEL, RECOMMENDATION_LABEL, STAGE_LABEL, type Decision, type Recommendation, type Stage } from "@/lib/domain";
 import { pct } from "@/lib/score";
 import { computeScore } from "@/lib/score";
 import { parseEvidence } from "@/lib/evidence";
@@ -22,11 +23,13 @@ import { deleteAssessment } from "@/server/assessment-actions";
 import { extractFromCurrentResume, removeFromRole } from "@/server/candidate-actions";
 import { parseOrigins } from "@/server/resume-store";
 import { ownCandidate } from "@/server/scope";
+import { ActivityList, parseMeta } from "@/components/activity";
 import { AddToRole } from "./add-role";
 import { GeneratorTag, ItemCard, RecommendationPanel, ReviewControls, RunAssessment, StaleNotice, type ItemView } from "./assessment";
 import { CV_LISTS, CV_SCALARS } from "@/lib/extraction-fields";
 import { CvReviewForm, type CvFact } from "./cv-review";
 import { DecisionForm } from "./decision";
+import { TasksCard } from "./tasks";
 import { DeleteCandidateButton, DeleteResumeButton, EditProfile, NoteForm, NoteItem, ResumeUpload } from "./panels";
 
 // AI proposals/assessments run as server actions on this page and can take a while.
@@ -45,6 +48,7 @@ export default async function CandidatePage({
   const { id } = await params;
   const { role: roleParam, resumeError, notice, saved } = await searchParams;
   await ownCandidate(auth, id);
+  await auditAccess(auth, "candidate.viewed", { subjectType: "candidate", subjectId: id, candidateId: id });
 
   const candidate = await db.candidate.findFirstOrThrow({
     where: { id, orgId: auth.orgId },
@@ -56,12 +60,14 @@ export default async function CandidatePage({
         include: {
           role: { include: { criteria: { where: { status: "approved" }, select: { id: true, updatedAt: true } } } }, // criteriaVersion on role
           stageEvents: { orderBy: { createdAt: "desc" } },
+          tasks: { where: { status: "open" }, orderBy: { createdAt: "asc" } },
           assessments: { orderBy: { createdAt: "desc" }, include: { items: true, resume: { select: { fileName: true } } } },
         },
         orderBy: { createdAt: "asc" },
       },
     },
   });
+  const activity = await db.auditEvent.findMany({ where: { orgId: auth.orgId, candidateId: id }, orderBy: { createdAt: "desc" }, take: 60 });
   const allRoles = await db.role.findMany({ where: { orgId: auth.orgId }, select: { id: true, title: true, status: true }, orderBy: { title: "asc" } });
 
   const app = candidate.applications.find((a) => a.roleId === roleParam) ?? candidate.applications[0];
@@ -81,6 +87,8 @@ export default async function CandidatePage({
     verified: f.verified,
     extractor: f.extractor,
     status: f.status,
+    createdAt: f.createdAt.toISOString(),
+    correctionReason: f.correctionReason,
   }));
   const pendingFacts = facts.filter((f) => f.status === "pending");
   const reviewedFacts = facts.filter((f) => f.status !== "pending");
@@ -130,6 +138,7 @@ export default async function CandidatePage({
       if (stale) status.push({ tone: "attention", text: "The role's criteria changed since this assessment — re-run it to update" });
       if (latest.status !== "reviewed") status.push({ tone: "ai", text: "Assessment drafted — review the evidence" });
       if (latest.recommendation && latest.recommendationStatus === "pending") status.push({ tone: "ai", text: "AI recommendation awaiting your review" });
+      if (app.tasks.length) status.push({ tone: "attention", text: `${app.tasks.length} open information request${app.tasks.length > 1 ? "s" : ""}` });
       if (!app.decision) status.push({ tone: "attention", text: "Choose Advance, Hold or Decline" });
     }
     if (status.length === 0)
@@ -212,8 +221,13 @@ export default async function CandidatePage({
                           return (
                             <li key={f.id} className="text-[13px]">
                               <span>{text}</span>
-                              {f.status === "edited" && <span className="ml-1.5 text-[11px] text-warn">corrected</span>}
-                              <SourceRef doc="CV" quote={f.sourceQuote} page={f.sourcePage} section={f.sourceSection} verified={f.verified} extractor={f.extractor} />
+                              {f.status === "edited" && (
+                                <span className="ml-1.5 text-[11px] text-warn">
+                                  corrected{f.correctionReason ? ` · ${CORRECTION_REASON_LABEL[f.correctionReason] ?? f.correctionReason}` : ""}
+                                </span>
+                              )}
+                              {f.status === "accepted" && <span className="ml-1.5 text-[11px] text-faint">confirmed by recruiter</span>}
+                              <SourceRef doc="CV" quote={f.sourceQuote} page={f.sourcePage} section={f.sourceSection} verified={f.verified} extractor={f.extractor} at={f.createdAt} />
                             </li>
                           );
                         })}
@@ -276,6 +290,12 @@ export default async function CandidatePage({
   );
 
   // ---------------------------------------------------------------- tab: notes & history
+  const activityCardSlot = (
+    <Card className="p-4 xl:col-span-2">
+      <SectionTitle hint="Who viewed, downloaded, assessed, decided or changed this candidate. Views are recorded at most every 30 minutes per person.">Activity</SectionTitle>
+      <ActivityList rows={activity.map((a) => ({ id: a.id, action: a.action, actorName: a.actorName, createdAt: a.createdAt, meta: parseMeta(a.metaJson) }))} />
+    </Card>
+  );
   const notesHistory = (
     <div className="grid gap-5 xl:grid-cols-2">
       <Card className="p-4">
@@ -348,6 +368,7 @@ export default async function CandidatePage({
           )}
         </Card>
       )}
+      {activityCardSlot}
     </div>
   );
 
@@ -425,6 +446,8 @@ export default async function CandidatePage({
             <RecommendationPanel
               r={{
                 assessmentId: latest.id,
+                applicationId: app.id,
+                openRequests: app.tasks.length,
                 recommendation: latest.recommendation,
                 rationale: recJson.rationale ?? null,
                 criteriaCited: recJson.criteriaCited ?? [],
@@ -441,6 +464,22 @@ export default async function CandidatePage({
         ) : (
           <p className="text-[13px] text-muted">Shown after the score, for you to accept, edit or override.</p>
         )}
+      </Card>
+
+      <Card className="p-4">
+        <div className="mb-3 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Information requests</div>
+        <TasksCard
+          applicationId={app.id}
+          suggested={recJson.questions ?? []}
+          tasks={app.tasks.map((t) => ({
+            id: t.id,
+            title: t.title,
+            questions: (JSON.parse(t.detailsJson) as { questions?: string[] }).questions ?? [],
+            dueAt: t.dueAt?.toISOString() ?? null,
+            createdByName: t.createdByName,
+            createdAt: t.createdAt.toISOString(),
+          }))}
+        />
       </Card>
 
       <Card className="p-4">
@@ -532,7 +571,7 @@ export default async function CandidatePage({
       {!app ? (
         <>
           <EmptyState className="mb-6" title="Not in any role yet" body="Add this candidate to a role to assess them against its approved criteria and move them through its pipeline." />
-          <Tabs tabs={[{ label: "CV & profile", content: cvProfile }, { label: "Notes", count: candidate.notes.length, content: notesHistory }]} />
+          <Tabs tabs={[{ label: "CV & profile", content: cvProfile }, { label: "Notes & activity", count: candidate.notes.length, content: notesHistory }]} />
         </>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -541,7 +580,7 @@ export default async function CandidatePage({
               tabs={[
                 { label: "Assessment", content: assessmentMain },
                 { label: "CV & profile", content: cvProfile },
-                { label: "Notes & history", count: candidate.notes.length, content: notesHistory },
+                { label: "Notes & activity", count: candidate.notes.length, content: notesHistory },
               ]}
             />
           </div>

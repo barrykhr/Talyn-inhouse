@@ -52,7 +52,7 @@ export async function addCriterion(roleId: string, _prev: ActionState, fd: FormD
       position: await nextPosition(roleId),
     },
   });
-  await bumpCriteriaVersion(roleId);
+  await bumpCriteriaVersion(roleId, auth, "added");
   revalidatePath(`/roles/${roleId}`);
   return { ok: true };
 }
@@ -66,7 +66,7 @@ export async function updateCriterion(id: string, _prev: ActionState, fd: FormDa
     c.origin !== "manual" &&
     (parsed.data.name !== (c.originalName ?? c.name) || parsed.data.description !== (c.originalDescription ?? c.description));
   await db.criterion.update({ where: { id }, data: { ...parsed.data, edited } });
-  if (c.status === "approved") await bumpCriteriaVersion(c.roleId);
+  if (c.status === "approved") await bumpCriteriaVersion(c.roleId, auth, "edited");
   revalidatePath(`/roles/${c.roleId}`);
   return { ok: true };
 }
@@ -83,7 +83,7 @@ export async function setCriterionStatus(id: string, status: "approved" | "rejec
       approvedAt: s === "approved" ? new Date() : null,
     },
   });
-  if ((c.status === "approved") !== (s === "approved")) await bumpCriteriaVersion(c.roleId);
+  if ((c.status === "approved") !== (s === "approved")) await bumpCriteriaVersion(c.roleId, auth, s === "approved" ? "approved" : "unapproved");
   revalidatePath(`/roles/${c.roleId}`);
 }
 
@@ -94,7 +94,7 @@ export async function approveAllProposed(roleId: string) {
     where: { roleId, orgId: auth.orgId, status: "proposed" },
     data: { status: "approved", approvedById: auth.userId, approvedAt: new Date() },
   });
-  if (count) await bumpCriteriaVersion(roleId);
+  if (count) await bumpCriteriaVersion(roleId, auth, "approved_all");
   revalidatePath(`/roles/${roleId}`);
 }
 
@@ -102,7 +102,7 @@ export async function deleteCriterion(id: string) {
   const auth = await requireAuth();
   const c = await ownCriterion(auth, id);
   await db.criterion.delete({ where: { id } });
-  if (c.status === "approved") await bumpCriteriaVersion(c.roleId);
+  if (c.status === "approved") await bumpCriteriaVersion(c.roleId, auth, "deleted");
   revalidatePath(`/roles/${c.roleId}`);
 }
 

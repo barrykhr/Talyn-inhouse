@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { getAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { DECISION_LABEL, RECOMMENDATION_LABEL, RESULT_LABEL, STAGE_LABEL, type AssessmentResult, type Decision, type Recommendation, type Stage } from "@/lib/domain";
@@ -60,6 +61,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       }),
     ];
   });
+  await audit(auth, "export.pipeline", { subjectType: "role", subjectId: role.id, roleId: role.id, meta: { rows: rows.length } });
   return csvResponse(`talyn-${role.title}-pipeline-${today()}.csv`, headers, rows);
 }
 

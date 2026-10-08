@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { getAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 
@@ -9,6 +10,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const resume = await db.resume.findFirst({ where: { id, orgId: auth.orgId }, include: { file: true } });
   if (!resume) return new Response("Not found", { status: 404 });
 
+  await audit(auth, "resume.downloaded", { subjectType: "candidate", subjectId: resume.id, candidateId: resume.candidateId });
   const body = resume.file ? resume.file.data : Buffer.from((JSON.parse(resume.pagesJson) as string[]).join("\n\n"), "utf8");
   const ext = resume.mimeType === "application/pdf" ? "pdf" : resume.mimeType.includes("wordprocessingml") ? "docx" : "txt";
   return new Response(new Uint8Array(body), {

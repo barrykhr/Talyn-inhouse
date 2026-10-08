@@ -1,9 +1,11 @@
 "use server";
 
 import { z } from "zod";
+import { audit } from "@/lib/audit";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { DocumentParseError } from "@/lib/documents";
+import { CORRECTION_REASONS } from "@/lib/domain";
 import { logError } from "@/lib/log";
 import { goTo, str, type ActionState } from "./form";
 import { attach } from "./pipeline";
@@ -34,6 +36,7 @@ export async function uploadCv(fd: FormData): Promise<CvStepResult> {
   });
   await saveResume(auth, candidate.id, resume);
   const app = roleId ? await attach(auth, candidate.id, roleId) : null;
+  await audit(auth, "candidate.created", { subjectType: "candidate", subjectId: candidate.id, candidateId: candidate.id, roleId: roleId || null, meta: { source: "cv_upload", parser: resume.parsed.parserVersion } });
   return { ok: true, candidateId: candidate.id, applicationId: app?.id ?? null };
 }
 
@@ -46,6 +49,7 @@ export async function extractCvStep(candidateId: string): Promise<CvStepResult> 
   try {
     const notice = await extractIntoReview(auth, candidateId, resume.id, JSON.parse(resume.pagesJson) as string[]);
     const count = await db.extractedField.count({ where: { candidateId, orgId: auth.orgId, status: "pending" } });
+    await audit(auth, "cv.extracted", { subjectType: "candidate", subjectId: resume.id, candidateId, meta: { facts: count, fallback: !!notice } });
     return { ok: true, notice, count };
   } catch (err) {
     logError("cv.extract_failed", err, { candidateId });
@@ -109,12 +113,14 @@ export async function reviewCvExtraction(candidateId: string, _prev: ActionState
   const ops = facts.map((f) => {
     let status: string;
     let edited: unknown = null;
+    let reasonKey = "";
     if (f.field in SCALARS) {
       const used = fd.get(`use_${f.field}`) === "on";
       const v = str(fd, `value_${f.field}`, 300);
       const original = JSON.parse(f.valueJson) as string;
       status = !used ? "rejected" : (f.field === "email" ? v.toLowerCase() : v) === original ? "accepted" : "edited";
       if (status === "edited") edited = v;
+      reasonKey = `reason_${f.field}`;
     } else {
       const keys = LIST_KEYS[f.field] ?? [];
       if (fd.get(`keep_${f.id}`) !== "on") status = "rejected";
@@ -123,16 +129,25 @@ export async function reviewCvExtraction(candidateId: string, _prev: ActionState
         const value = keys.length ? Object.fromEntries(keys.map((k) => [k, str(fd, `f_${f.id}_${k}`, 200)])) : str(fd, `f_${f.id}_value`, 200);
         status = JSON.stringify(value) === JSON.stringify(original) ? "accepted" : "edited";
         if (status === "edited") edited = value;
+        reasonKey = `reason_${f.id}`;
       }
     }
     return db.extractedField.update({
       where: { id: f.id },
-      data: { status, editedValueJson: edited === null ? null : JSON.stringify(edited), reviewedByName: auth.userName, reviewedAt },
+      data: {
+        status,
+        editedValueJson: edited === null ? null : JSON.stringify(edited),
+        correctionReason: status === "edited" ? CORRECTION_REASONS.find((r) => r.value === str(fd, reasonKey))?.value ?? null : null,
+        reviewedByName: auth.userName,
+        reviewedAt,
+      },
     });
   });
   await db.$transaction([
     ...ops,
     db.candidate.update({ where: { id: candidateId }, data: { ...update, fieldOriginsJson: JSON.stringify(origins), extractionStatus: "reviewed" } }),
   ]);
+  const counts = ops.length;
+  await audit(auth, "cv.reviewed", { subjectType: "candidate", subjectId: candidateId, candidateId, meta: { facts: counts } });
   return goTo(`/candidates/${candidateId}?saved=profile`);
 }

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { audit } from "@/lib/audit";
 import { requireAuth, type AuthContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { DECISIONS, STAGES } from "@/lib/domain";
@@ -72,6 +73,7 @@ export async function createCandidate(_prev: ActionState, fd: FormData): Promise
   const note = str(fd, "note", 10000);
   if (note) await db.note.create({ data: { orgId: auth.orgId, candidateId: candidate.id, authorId: auth.userId, authorName: auth.userName, body: note } });
   if (roleId) await attach(auth, candidate.id, roleId);
+  await audit(auth, "candidate.created", { subjectType: "candidate", subjectId: candidate.id, candidateId: candidate.id, roleId: roleId || null, meta: { source: "manual", resume: !!resume } });
   return goTo(roleId ? `/candidates/${candidate.id}?role=${roleId}` : `/candidates/${candidate.id}`);
 }
 
@@ -89,6 +91,7 @@ export async function updateCandidate(id: string, _prev: ActionState, fd: FormDa
   const origins = parseOrigins(current.fieldOriginsJson);
   for (const f of PROFILE_FIELDS) if ((current[f] ?? null) !== (parsed.data[f] ?? null)) origins[f] = "recruiter";
   await db.candidate.update({ where: { id }, data: { ...parsed.data, fieldOriginsJson: JSON.stringify(origins) } });
+  await audit(auth, "candidate.updated", { subjectType: "candidate", subjectId: id, candidateId: id });
   revalidatePath(`/candidates/${id}`);
   return { ok: true, message: "Saved" };
 }
@@ -98,6 +101,8 @@ export async function deleteCandidate(id: string) {
   const auth = await requireAuth();
   await ownCandidate(auth, id);
   await db.candidate.delete({ where: { id } }); // cascades to resumes, files, notes, applications, assessments
+  // The audit trail keeps only the candidate id (no personal data) as evidence of deletion.
+  await audit(auth, "candidate.deleted", { subjectType: "candidate", subjectId: id, candidateId: id });
   return goTo("/candidates");
 }
 
@@ -122,6 +127,7 @@ export async function uploadResume(candidateId: string, _prev: ActionState, fd: 
     logError("resume.extract_failed", err, { candidateId });
     notice = "Resume saved, but details couldn't be extracted. You can still assess and edit the profile manually.";
   }
+  await audit(auth, "resume.uploaded", { subjectType: "candidate", subjectId: saved.id, candidateId, meta: { parser: resume.parsed.parserVersion } });
   revalidatePath(`/candidates/${candidateId}`);
   return { ok: true, message: notice ?? "Resume saved. Review the extracted details above." };
 }
@@ -146,6 +152,7 @@ export async function deleteResume(id: string) {
   const auth = await requireAuth();
   const r = await ownResume(auth, id);
   await db.resume.delete({ where: { id } }); // cascades to the stored file
+  await audit(auth, "resume.deleted", { subjectType: "candidate", subjectId: id, candidateId: r.candidateId });
   if (r.isCurrent) {
     const latest = await db.resume.findFirst({ where: { candidateId: r.candidateId, orgId: auth.orgId }, orderBy: { createdAt: "desc" } });
     if (latest) await db.resume.update({ where: { id: latest.id }, data: { isCurrent: true } });
@@ -176,7 +183,8 @@ export async function addToRole(candidateId: string, roleId: string) {
   const auth = await requireAuth();
   await ownCandidate(auth, candidateId);
   await ownRole(auth, roleId);
-  await attach(auth, candidateId, roleId);
+  const added = await attach(auth, candidateId, roleId);
+  await audit(auth, "candidate.added_to_role", { subjectType: "application", subjectId: added.id, candidateId, roleId, applicationId: added.id });
   revalidatePath(`/candidates/${candidateId}`);
   revalidatePath(`/roles/${roleId}`);
 }
@@ -185,6 +193,7 @@ export async function removeFromRole(applicationId: string) {
   const auth = await requireAuth();
   const app = await ownApplication(auth, applicationId);
   await db.application.delete({ where: { id: applicationId } });
+  await audit(auth, "candidate.removed_from_role", { subjectType: "application", subjectId: applicationId, candidateId: app.candidateId, roleId: app.roleId });
   revalidatePath(`/candidates/${app.candidateId}`);
   revalidatePath(`/roles/${app.roleId}`);
 }
@@ -201,6 +210,7 @@ export async function moveStage(applicationId: string, stage: string) {
       data: { orgId: auth.orgId, applicationId, fromStage: app.stage, toStage: to, actorId: auth.userId, actorName: auth.userName },
     }),
   ]);
+  await audit(auth, "stage.changed", { subjectType: "application", subjectId: applicationId, candidateId: app.candidateId, roleId: app.roleId, applicationId, meta: { from: app.stage, to } });
   revalidatePath(`/candidates/${app.candidateId}`);
   revalidatePath(`/roles/${app.roleId}`);
 }
@@ -216,6 +226,7 @@ export async function recordDecision(applicationId: string, _prev: ActionState, 
     where: { id: applicationId },
     data: { decision: decision.data, decisionNote: note || null, decidedById: auth.userId, decidedByName: auth.userName, decidedAt: new Date() },
   });
+  await audit(auth, "decision.recorded", { subjectType: "application", subjectId: applicationId, candidateId: app.candidateId, roleId: app.roleId, applicationId, meta: { decision: decision.data } });
   revalidatePath(`/candidates/${app.candidateId}`);
   revalidatePath(`/roles/${app.roleId}`);
   return { ok: true, message: "Decision recorded. Move the pipeline stage when you're ready." };

@@ -1,4 +1,6 @@
 import "server-only";
+import { audit } from "@/lib/audit";
+import type { AuthContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import type { CriterionDraft, FactDraft } from "@/lib/extraction";
 
@@ -57,9 +59,10 @@ export async function storeProposedCriteria(orgId: string, roleId: string, draft
   });
 }
 
-/** Call whenever the set or wording of APPROVED criteria changes. */
-export async function bumpCriteriaVersion(roleId: string) {
-  await db.role.update({ where: { id: roleId }, data: { criteriaVersion: { increment: 1 } } });
+/** Call whenever the set or wording of APPROVED criteria changes. Audited with the new version. */
+export async function bumpCriteriaVersion(roleId: string, auth: AuthContext, change: string) {
+  const r = await db.role.update({ where: { id: roleId }, data: { criteriaVersion: { increment: 1 } }, select: { criteriaVersion: true } });
+  await audit(auth, "criteria.changed", { subjectType: "role", subjectId: roleId, roleId, meta: { change, version: r.criteriaVersion } });
 }
 
 export function parseValue(json: string | null | undefined): unknown {

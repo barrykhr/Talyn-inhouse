@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { getAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { csvResponse, today } from "@/lib/export";
@@ -17,5 +18,6 @@ export async function GET() {
     if (r.criteria.length === 0) rows.push([...base, "", "", "", ""]);
     for (const c of r.criteria) rows.push([...base, c.name, c.importance, c.priority ?? "", c.description]);
   }
+  await audit(auth, "export.roles", { subjectType: "org", meta: { rows: rows.length } });
   return csvResponse(`talyn-roles-${today()}.csv`, ["role_id", "title", "department", "location", "employment_type", "status", "candidates", "criterion", "importance", "priority", "criterion_description"], rows);
 }

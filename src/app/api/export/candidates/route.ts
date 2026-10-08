@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { getAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { STAGE_LABEL, type Stage } from "@/lib/domain";
@@ -24,5 +25,6 @@ export async function GET() {
     c.applications.map((a) => `${a.role.title} (${STAGE_LABEL[a.stage as Stage] ?? a.stage})`).join("; "),
     c.createdAt,
   ]);
+  await audit(auth, "export.candidates", { subjectType: "org", meta: { rows: rows.length } });
   return csvResponse(`talyn-candidates-${today()}.csv`, ["id", "full_name", "email", "phone", "location", "current_title", "current_company", "linkedin_url", "source", "roles_and_stages", "created_at"], rows);
 }

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { ASSESSMENT_ENGINE_VERSION, AiRequestError, AiUnavailableError, aiStatus, assessWithAi, recommendWithAi } from "@/lib/ai";
+import { audit } from "@/lib/audit";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { RECOMMENDATIONS, RESULTS, type Evidence } from "@/lib/domain";
@@ -185,6 +186,14 @@ export async function runAssessment(applicationId: string, mode: "ai" | "keyword
       },
     },
   });
+  await audit(auth, "assessment.run", {
+    subjectType: "application",
+    subjectId: applicationId,
+    candidateId: app.candidateId,
+    roleId: app.roleId,
+    applicationId,
+    meta: { generator: mode, model: mode === "ai" ? `${ai.provider}:${ai.model}` : null, criteriaVersion: role.criteriaVersion, score: score.score, coverage: Math.round(score.coverage * 100) },
+  });
   // Moving "new" candidates into review is NOT automatic: the recruiter decides pipeline moves.
   revalidatePath(`/candidates/${app.candidateId}`);
   revalidatePath(`/roles/${app.roleId}`);
@@ -205,6 +214,7 @@ export async function overrideItem(itemId: string, _prev: ActionState, fd: FormD
     await db.assessmentItem.update({ where: { id: itemId }, data: { overrideResult: r.data, overrideNote: note, overriddenBy: auth.userName, overriddenAt: new Date() } });
   }
   const app = await db.application.findFirst({ where: { id: item.assessment.applicationId, orgId: auth.orgId } });
+  await audit(auth, "assessment.corrected", { subjectType: "assessment", subjectId: item.assessmentId, candidateId: app?.candidateId, roleId: app?.roleId, applicationId: app?.id, meta: { result: result || "cleared" } });
   if (app) revalidatePath(`/candidates/${app.candidateId}`);
   return { ok: true };
 }
@@ -214,6 +224,7 @@ export async function markReviewed(assessmentId: string) {
   const a = await ownAssessment(auth, assessmentId);
   await db.assessment.update({ where: { id: assessmentId }, data: { status: "reviewed", reviewedById: auth.userId, reviewedByName: auth.userName, reviewedAt: new Date() } });
   const app = await db.application.findFirst({ where: { id: a.applicationId, orgId: auth.orgId } });
+  await audit(auth, "assessment.reviewed", { subjectType: "assessment", subjectId: assessmentId, candidateId: app?.candidateId, roleId: app?.roleId, applicationId: a.applicationId });
   if (app) {
     revalidatePath(`/candidates/${app.candidateId}`);
     revalidatePath(`/roles/${app.roleId}`);
@@ -225,6 +236,7 @@ export async function deleteAssessment(assessmentId: string) {
   const a = await ownAssessment(auth, assessmentId);
   await db.assessment.delete({ where: { id: assessmentId } });
   const app = await db.application.findFirst({ where: { id: a.applicationId, orgId: auth.orgId } });
+  await audit(auth, "assessment.deleted", { subjectType: "assessment", subjectId: assessmentId, candidateId: app?.candidateId, roleId: app?.roleId, applicationId: a.applicationId });
   if (app) revalidatePath(`/candidates/${app.candidateId}`);
 }
 
@@ -260,6 +272,7 @@ export async function reviewRecommendation(assessmentId: string, _prev: ActionSt
     },
   });
   const app = await db.application.findFirst({ where: { id: a.applicationId, orgId: auth.orgId } });
+  await audit(auth, "recommendation.reviewed", { subjectType: "assessment", subjectId: assessmentId, candidateId: app?.candidateId, roleId: app?.roleId, applicationId: a.applicationId, meta: { status, recommendation: a.recommendation, final: finalRecommendation } });
   if (app) {
     revalidatePath(`/candidates/${app.candidateId}`);
     revalidatePath(`/roles/${app.roleId}`);

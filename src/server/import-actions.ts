@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { audit } from "@/lib/audit";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { normalize } from "@/lib/documents";
@@ -96,6 +97,7 @@ export async function importCandidates(rows: ImportRow[], roleId: string | null,
     if (email) existing.add(email);
     result.created++;
   }
+  await audit(auth, "import.csv", { subjectType: "org", roleId, meta: { created: result.created, skipped: result.skipped.length } });
   revalidatePath("/candidates");
   if (roleId) revalidatePath(`/roles/${roleId}`);
   return result;

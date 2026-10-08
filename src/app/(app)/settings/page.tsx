@@ -1,4 +1,7 @@
-import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
+import Link from "next/link";
+import { Badge, Card, PageHeader, SectionTitle, buttonClass } from "@/components/ui";
+import { eligibleForRetention } from "@/lib/retention";
+import { RetentionForm } from "./retention";
 import { PROVIDER_LABEL, aiStatus } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -9,6 +12,8 @@ export const metadata = { title: "Settings" };
 export default async function SettingsPage() {
   const auth = await requireAuth();
   const ai = aiStatus();
+  const org = await db.organization.findUniqueOrThrow({ where: { id: auth.orgId }, select: { retentionDays: true } });
+  const eligible = org.retentionDays ? (await eligibleForRetention(auth.orgId, org.retentionDays)).length : null;
   const [roles, candidates, members] = await Promise.all([
     db.role.count({ where: { orgId: auth.orgId } }),
     db.candidate.count({ where: { orgId: auth.orgId } }),
@@ -63,6 +68,24 @@ export default async function SettingsPage() {
           </p>
         </div>
       </Card>
+
+      <Card className="p-5">
+        <SectionTitle hint="How long inactive candidate data is kept. Activity = profile edits, pipeline changes, notes and assessments.">Data retention</SectionTitle>
+        {auth.membershipRole === "admin" ? (
+          <RetentionForm days={org.retentionDays} eligible={eligible} cronConfigured={Boolean(process.env.CRON_SECRET)} />
+        ) : (
+          <p className="text-[13px] text-ink-2">{org.retentionDays ? `${org.retentionDays} days of inactivity` : "Kept until deleted"} · set by a workspace admin.</p>
+        )}
+      </Card>
+
+      {auth.membershipRole === "admin" && (
+        <Card className="p-5">
+          <SectionTitle hint="Access, exports, assessments, decisions, stage changes, outreach and deletions — without candidate personal data.">Audit log</SectionTitle>
+          <Link href="/settings/audit" className={buttonClass("secondary")}>
+            Open audit log
+          </Link>
+        </Card>
+      )}
 
       {auth.membershipRole === "admin" && (
         <Card className="border-[#f1c9c4] p-5">

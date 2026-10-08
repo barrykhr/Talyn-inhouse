@@ -1,3 +1,4 @@
+import { audit } from "@/lib/audit";
 import { getAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 
@@ -8,6 +9,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const jd = await db.jobDescription.findFirst({ where: { id, orgId: auth.orgId }, include: { file: true } });
   if (!jd?.file) return new Response("Not found", { status: 404 });
+  await audit(auth, "jd.downloaded", { subjectType: "role", subjectId: jd.id, roleId: jd.roleId });
   const ext = jd.mimeType === "application/pdf" ? "pdf" : "docx";
   return new Response(new Uint8Array(jd.file.data), {
     headers: {

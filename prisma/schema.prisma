@@ -1,4 +1,4 @@
-// Talyn In-house TA — Phase 1 data model.
+// Talyn In-house TA — data model (Phase 1 recruiting workspace + Phase 2 sourcing & outreach).
 // Every business record carries `orgId`; all reads/writes are scoped by it on the server.
 // Enum-like fields are strings; allowed values live in src/lib/domain.ts and are validated with zod.
 
@@ -13,13 +13,14 @@ datasource db {
 }
 
 model Organization {
-  id          String       @id @default(cuid())
-  name        String
-  createdAt   DateTime     @default(now())
-  memberships Membership[]
-  sessions    Session[]
-  roles       Role[]
-  candidates  Candidate[]
+  id            String       @id @default(cuid())
+  name          String
+  retentionDays Int? // candidates inactive for longer are eligible for deletion; null = keep until deleted
+  createdAt     DateTime     @default(now())
+  memberships   Membership[]
+  sessions      Session[]
+  roles         Role[]
+  candidates    Candidate[]
 }
 
 model User {
@@ -118,27 +119,28 @@ model JobDescriptionFile {
 
 // A single fact extracted from a JD or CV, with its source and review state.
 model ExtractedField {
-  id              String     @id @default(cuid())
-  orgId           String
-  subjectType     String // role | candidate
-  roleId          String?
-  candidateId     String?
-  documentId      String? // JobDescription.id or Resume.id it came from
-  field           String // e.g. title, location, email, work_history, skill
-  valueJson       String // extracted value (string or object)
-  editedValueJson String? // recruiter-corrected value
-  sourceQuote     String?
-  sourcePage      Int?
-  sourceSection   String?
-  verified        Boolean    @default(false) // sourceQuote found in the document text
-  status          String     @default("pending") // pending | accepted | edited | rejected
-  extractor       String // e.g. "ai:openai:gpt-5.5/jd-extract-v1", "parser:jd-heuristic-v1"
-  reviewedByName  String?
-  reviewedAt      DateTime?
-  position        Int        @default(0)
-  createdAt       DateTime   @default(now())
-  role            Role?      @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  candidate       Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  id               String     @id @default(cuid())
+  orgId            String
+  subjectType      String // role | candidate
+  roleId           String?
+  candidateId      String?
+  documentId       String? // JobDescription.id or Resume.id it came from
+  field            String // e.g. title, location, email, work_history, skill
+  valueJson        String // extracted value (string or object)
+  editedValueJson  String? // recruiter-corrected value
+  correctionReason String? // why the recruiter corrected it (see CORRECTION_REASONS)
+  sourceQuote      String?
+  sourcePage       Int?
+  sourceSection    String?
+  verified         Boolean    @default(false) // sourceQuote found in the document text
+  status           String     @default("pending") // pending | accepted | edited | rejected
+  extractor        String // e.g. "ai:openai:gpt-5.5/jd-extract-v1", "parser:jd-heuristic-v1"
+  reviewedByName   String?
+  reviewedAt       DateTime?
+  position         Int        @default(0)
+  createdAt        DateTime   @default(now())
+  role             Role?      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  candidate        Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
 
   @@index([orgId, roleId])
   @@index([orgId, candidateId])
@@ -259,6 +261,7 @@ model Application {
   role          Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
   stageEvents   StageEvent[]
   assessments   Assessment[]
+  tasks         Task[]
 
   @@unique([candidateId, roleId])
   @@index([orgId, roleId])
@@ -329,4 +332,48 @@ model AssessmentItem {
   criterion      Criterion? @relation(fields: [criterionId], references: [id], onDelete: SetNull)
 
   @@index([assessmentId])
+}
+
+// Append-only record of meaningful actions (access, export, assessment, decision, outreach…).
+// metaJson holds ids and counts only — never candidate personal data or document text.
+model AuditEvent {
+  id            String   @id @default(cuid())
+  orgId         String
+  actorId       String?
+  actorName     String   @default("")
+  action        String // e.g. candidate.viewed, resume.downloaded, export.pipeline, assessment.run
+  subjectType   String // candidate | role | application | assessment | outreach | sourcing | org
+  subjectId     String?
+  roleId        String?
+  candidateId   String?
+  applicationId String?
+  metaJson      String   @default("{}")
+  createdAt     DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@index([orgId, candidateId])
+  @@index([orgId, action])
+}
+
+// Recruiter tasks, e.g. "Gather more information". Completing or cancelling a task never
+// records a hiring decision.
+model Task {
+  id             String      @id @default(cuid())
+  orgId          String
+  applicationId  String
+  type           String // gather_info | send_outreach
+  title          String
+  detailsJson    String      @default("{}") // { questions: string[], criteria: string[], messageId? }
+  status         String      @default("open") // open | done | cancelled
+  dueAt          DateTime?
+  createdById    String?
+  createdByName  String      @default("")
+  resolvedNote   String?
+  resolvedByName String?
+  resolvedAt     DateTime?
+  createdAt      DateTime    @default(now())
+  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, status])
+  @@index([applicationId])
 }

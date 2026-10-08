@@ -7,6 +7,7 @@ export function SourceRef({
   section,
   verified,
   extractor,
+  at,
 }: {
   doc: string;
   quote: string | null;
@@ -14,6 +15,8 @@ export function SourceRef({
   section?: string | null;
   verified?: boolean;
   extractor?: string | null;
+  /** When the fact was extracted or retrieved. */
+  at?: string | Date | null;
 }) {
   if (!quote) return <span className="text-[11.5px] text-faint">No source excerpt{extractor ? ` · ${extractorLabel(extractor)}` : ""}</span>;
   return (
@@ -24,8 +27,18 @@ export function SourceRef({
           {page ? ` · p.${page}` : ""}
           {section ? ` · ${section}` : ""}
         </span>{" "}
-        {verified ? <span className="text-ok">✓ found in document</span> : <span className="text-warn">⚠ not found verbatim — verify</span>}
-        {extractor && <span className="text-faint"> · {extractorLabel(extractor)}</span>}
+        {verified ? (
+          <span className="text-ok" title="The quoted text appears in the document. This does not mean the fact itself has been verified.">✓ quote matched in document</span>
+        ) : (
+          <span className="text-warn">⚠ quote not matched — check the document</span>
+        )}
+        {extractor && (
+          <span className="text-faint" title={extractor}>
+            {" "}
+            · {extractorLabel(extractor)}
+          </span>
+        )}
+        {at && <span className="text-faint"> · {new Date(at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>}
       </summary>
       <p className="quote mt-1 border-l-2 border-line-strong pl-2 text-ink-2">“{quote}”</p>
     </details>

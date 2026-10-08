@@ -3,6 +3,7 @@
 import { ActionForm, FormMessage, SubmitButton, useServerForm } from "@/components/client";
 import { SourceRef } from "@/components/source-ref";
 import { Card, Input } from "@/components/ui";
+import { CORRECTION_REASONS } from "@/lib/domain";
 import { CV_LISTS, CV_SCALARS } from "@/lib/extraction-fields";
 import { reviewCvExtraction } from "@/server/cv-actions";
 
@@ -17,7 +18,27 @@ export type CvFact = {
   verified: boolean;
   extractor: string;
   status: string;
+  createdAt?: string;
+  correctionReason?: string | null;
 };
+
+function ReasonSelect({ name }: { name: string }) {
+  return (
+    <select
+      name={name}
+      defaultValue=""
+      aria-label="Reason for correction"
+      className="h-7 rounded-md border border-line bg-surface px-1.5 text-[12px] text-muted focus:border-ink focus:outline-none"
+    >
+      <option value="">If you corrected it: why?</option>
+      {CORRECTION_REASONS.map((r) => (
+        <option key={r.value} value={r.value}>
+          {r.label}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 export function CvReviewForm({ candidateId, facts, current }: { candidateId: string; facts: CvFact[]; current: Record<string, string | null> }) {
   const [state, action, actionPending] = useServerForm(reviewCvExtraction.bind(null, candidateId));
@@ -27,8 +48,8 @@ export function CvReviewForm({ candidateId, facts, current }: { candidateId: str
       <div className="border-b border-line bg-[#fffaf6] px-5 py-3">
         <div className="font-semibold">Review details extracted from the CV</div>
         <p className="text-[13px] text-muted">
-          Nothing below is used until you save. Correct anything that&apos;s wrong and untick anything that shouldn&apos;t be used. Fields the CV didn&apos;t contain
-          are left blank — Talyn doesn&apos;t fill them in.
+          Everything below is AI- or parser-extracted and unreviewed. Nothing is used until you save. Correct anything that&apos;s wrong (and say why), untick
+          anything that shouldn&apos;t be used. Fields the CV didn&apos;t contain are left blank — Talyn doesn&apos;t fill them in.
         </p>
       </div>
       <ActionForm action={action} pending={actionPending} className="divide-y divide-line">
@@ -45,7 +66,10 @@ export function CvReviewForm({ candidateId, facts, current }: { candidateId: str
                 </label>
                 <Input name={`value_${field}`} defaultValue={extracted || existing} placeholder={f ? "" : "Not found in CV"} />
                 {f ? (
-                  <SourceRef doc="CV" quote={f.sourceQuote} page={f.sourcePage} section={f.sourceSection} verified={f.verified} extractor={f.extractor} />
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <SourceRef doc="CV" quote={f.sourceQuote} page={f.sourcePage} section={f.sourceSection} verified={f.verified} extractor={f.extractor} at={f.createdAt} />
+                    <ReasonSelect name={`reason_${field}`} />
+                  </div>
                 ) : (
                   <span className="text-[11.5px] text-faint">Not found in CV{existing ? " · showing current value" : ""} — tick to save a value you enter (recorded as recruiter-entered)</span>
                 )}
@@ -73,7 +97,10 @@ export function CvReviewForm({ candidateId, facts, current }: { candidateId: str
                             <Input key={k.key} name={`f_${f.id}_${k.key}`} defaultValue={v[k.key] ?? ""} placeholder={k.label} aria-label={k.label} className="h-8 text-[13px]" />
                           ))}
                         </div>
-                        <SourceRef doc="CV" quote={f.sourceQuote} page={f.sourcePage} section={f.sourceSection} verified={f.verified} extractor={f.extractor} />
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <SourceRef doc="CV" quote={f.sourceQuote} page={f.sourcePage} section={f.sourceSection} verified={f.verified} extractor={f.extractor} at={f.createdAt} />
+                          <ReasonSelect name={`reason_${f.id}`} />
+                        </div>
                       </div>
                     </div>
                   ) : (

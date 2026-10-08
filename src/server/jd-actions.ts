@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { audit } from "@/lib/audit";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { DocumentParseError, parseDocument } from "@/lib/documents";
@@ -63,6 +64,7 @@ export async function uploadJd(roleId: string | null, fd: FormData): Promise<Ste
     },
   });
   await db.role.update({ where: { id: roleId }, data: { extractionStatus: "needs_review" } });
+  await audit(auth, "jd.uploaded", { subjectType: "role", subjectId: roleId, roleId, meta: { parser: upload.parsed.parserVersion } });
   return { ok: true, roleId };
 }
 
@@ -80,6 +82,7 @@ export async function extractJdStep(roleId: string): Promise<StepResult> {
   try {
     const out = await extractJdDetails(cur.pages);
     await storeFacts(auth.orgId, { type: "role", roleId }, cur.jd.id, out.facts);
+    await audit(auth, "jd.extracted", { subjectType: "role", subjectId: cur.jd.id, roleId, meta: { facts: out.facts.length, method: out.method } });
     return { ok: true, notice: out.notice, count: out.facts.length };
   } catch (err) {
     logError("jd.extract_failed", err, { roleId });
@@ -98,6 +101,7 @@ export async function mapJdCriteriaStep(roleId: string): Promise<StepResult> {
     const title = titleFact ? (JSON.parse(titleFact.valueJson) as string) : role.title;
     const out = await draftJdCriteria(title, cur.pages);
     await storeProposedCriteria(auth.orgId, roleId, out.criteria, out.method === "ai" ? "ai" : "extracted");
+    await audit(auth, "jd.criteria_drafted", { subjectType: "role", subjectId: roleId, roleId, meta: { criteria: out.criteria.length, method: out.method } });
     return { ok: true, notice: out.notice, count: out.criteria.length };
   } catch (err) {
     logError("jd.criteria_failed", err, { roleId });
@@ -152,5 +156,6 @@ export async function reviewRoleExtraction(roleId: string, _prev: ActionState, f
     });
   });
   await db.$transaction([...ops, db.role.update({ where: { id: roleId }, data: { ...update, extractionStatus: "reviewed" } })]);
+  await audit(auth, "jd.reviewed", { subjectType: "role", subjectId: roleId, roleId, meta: { facts: facts.length } });
   return goTo(`/roles/${roleId}?tab=criteria&saved=details`);
 }

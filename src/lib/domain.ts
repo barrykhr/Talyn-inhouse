@@ -89,11 +89,24 @@ export const DECISION_LABEL: Record<Decision, string> = {
   decline: "Decline",
 };
 
+// Provenance of profile fields. "Confirmed" means a recruiter reviewed and accepted the
+// AI/parser extraction — never that the fact itself was independently verified.
 export const ORIGIN_LABEL: Record<string, string> = {
-  cv: "From CV",
-  cv_corrected: "From CV, corrected by recruiter",
+  cv: "From CV · confirmed by recruiter",
+  cv_corrected: "From CV · corrected by recruiter",
   recruiter: "Entered by recruiter",
+  sourced: "From sourcing provider",
 };
+
+export const CORRECTION_REASONS = [
+  { value: "extracted_incorrectly", label: "Extracted incorrectly" },
+  { value: "incomplete", label: "Incomplete" },
+  { value: "out_of_date", label: "Out of date" },
+  { value: "clarified_with_candidate", label: "Clarified with candidate" },
+  { value: "wording", label: "Wording or formatting" },
+  { value: "other", label: "Other" },
+] as const;
+export const CORRECTION_REASON_LABEL: Record<string, string> = Object.fromEntries(CORRECTION_REASONS.map((r) => [r.value, r.label]));
 
 export const GENERATOR_LABEL: Record<string, string> = {
   ai: "AI assessment",
