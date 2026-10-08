@@ -7,7 +7,7 @@
 | App | Next.js 15 (App Router), React 19, TypeScript | One deployable for UI and server. Server components + server actions keep data access on the server. Tradeoff: framework coupling. |
 | Data | Prisma 6 + Postgres (Neon on Vercel; Docker locally) | Typed queries and versioned migrations (`prisma/migrations`), applied on every Vercel deploy. Enum-like fields are strings; allowed values live in `src/lib/domain.ts` and are validated with zod. |
 | Auth | Built-in email/password, DB sessions | No third-party credentials needed to run. scrypt password hashes; random 256-bit session tokens stored only as SHA-256 hashes; httpOnly, SameSite=Lax cookies. Swap for SSO (SAML/OIDC) later. |
-| AI | Anthropic SDK, structured outputs (zod schemas) | Typed, validated JSON instead of free text. Optional — the app runs fully without a key. Server-side refusal fallback is enabled. |
+| AI | Pluggable provider: OpenAI (Responses API) or Anthropic, both via official SDKs with structured outputs (zod schemas) | Typed, validated JSON instead of free text; same prompts and verification for both. Optional — the app runs fully without a key. OpenAI calls use `store: false`; Anthropic calls enable server-side refusal fallback. |
 | Files | Original resumes stored as bytes in Postgres (`ResumeFile`) | Works on serverless hosting with no extra service or credentials, private by default, deleted with the resume via cascade. Fine at Phase 1 scale (≤4 MB files); move to a private object store (S3/GCS/R2) if volume grows. |
 | Hosting | Vercel | Serverless functions: request bodies ≤4.5 MB (uploads capped at 4 MB, CSV import batched), AI pages set `maxDuration = 300`. |
 | UI | Tailwind v4 + small in-house primitives | Distinct Talyn look without a heavy component kit. |

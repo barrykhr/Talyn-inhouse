@@ -72,7 +72,7 @@ export function RunAssessment({ applicationId, aiConfigured, hasAssessment, disa
           variant="signal"
           disabled={pending || !aiConfigured || !!disabledReason}
           onClick={() => run("ai")}
-          title={aiConfigured ? "AI reads the resume against each approved criterion and cites evidence" : "Set ANTHROPIC_API_KEY to enable"}
+          title={aiConfigured ? "AI reads the resume against each approved criterion and cites evidence" : "Add an AI API key in Settings to enable"}
         >
           {pending && mode === "ai" && <Spinner />}
           {pending && mode === "ai" ? "Assessing…" : hasAssessment ? "Re-assess with AI" : "Assess with AI"}
@@ -83,7 +83,7 @@ export function RunAssessment({ applicationId, aiConfigured, hasAssessment, disa
       </div>
       {disabledReason && <p className="mt-2 text-[13px] text-warn">{disabledReason}</p>}
       {!aiConfigured && !disabledReason && (
-        <p className="mt-2 text-[12.5px] text-muted">AI assessment is off. Set <code className="font-mono">ANTHROPIC_API_KEY</code> to enable it.</p>
+        <p className="mt-2 text-[12.5px] text-muted">AI assessment is off. Set <code className="font-mono">OPENAI_API_KEY</code> or <code className="font-mono">ANTHROPIC_API_KEY</code> to enable it.</p>
       )}
       {state?.error && <p className="mt-2 text-[13px] text-danger">{state.error}</p>}
     </div>

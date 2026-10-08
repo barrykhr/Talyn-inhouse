@@ -1,5 +1,5 @@
 import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
-import { aiStatus } from "@/lib/ai";
+import { PROVIDER_LABEL, aiStatus } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { DeleteOrg } from "./delete-org";
@@ -36,9 +36,13 @@ export default async function SettingsPage() {
 
       <Card className="p-5">
         <SectionTitle>AI assist</SectionTitle>
-        <div className="mb-3 flex items-center gap-2 text-[13px]">
-          {ai.configured ? <Badge tone="ok">Configured</Badge> : <Badge>Not configured</Badge>}
-          {ai.configured && <span className="font-mono text-[12px] text-muted">{ai.model}</span>}
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
+          {ai.configured ? <Badge tone="ok">On</Badge> : <Badge>Off</Badge>}
+          {ai.configured && ai.provider && (
+            <span className="text-muted">
+              {PROVIDER_LABEL[ai.provider]} · <span className="font-mono text-[12px]">{ai.model}</span>
+            </span>
+          )}
         </div>
         <div className="space-y-2 text-[13px] text-ink-2">
           <p>
@@ -47,14 +51,15 @@ export default async function SettingsPage() {
           </p>
           {!ai.configured && (
             <p>
-              To enable it, set <code className="font-mono">ANTHROPIC_API_KEY</code> in <code className="font-mono">.env</code> and restart the server. Optionally set{" "}
-              <code className="font-mono">TALYN_AI_MODEL</code>. Without a key, you can still add criteria manually, extract them from JD bullet points, and run
+              To turn it on, add <code className="font-mono">OPENAI_API_KEY</code> (OpenAI) or <code className="font-mono">ANTHROPIC_API_KEY</code> (Anthropic) to
+              your hosting environment variables and redeploy. Without a key you can still add criteria manually, extract them from JD bullet points, and run
               keyword checks — these are always labeled as non-AI.
             </p>
           )}
           <p className="text-muted">
             What is sent to the AI provider: the role title, approved criteria, resume text and candidate-provided information, with email addresses and
             phone numbers redacted. Profile contact fields, LinkedIn URL and recruiter notes are not sent.
+            {ai.provider === "openai" && " Requests are sent with storage disabled (store: false)."}
           </p>
         </div>
       </Card>

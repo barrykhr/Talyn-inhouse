@@ -62,7 +62,7 @@ export function ProposePanel({ roleId, aiConfigured, hasDescription, hasCriteria
             variant="signal"
             onClick={() => run("ai")}
             disabled={pending || !hasDescription || !aiConfigured}
-            title={aiConfigured ? "Ask AI to propose criteria with citations from the job description" : "Set ANTHROPIC_API_KEY to enable"}
+            title={aiConfigured ? "Ask AI to propose criteria with citations from the job description" : "Add an AI API key in Settings to enable"}
           >
             {pending && which === "ai" ? <Spinner /> : null}
             {pending && which === "ai" ? "Reading description…" : "Propose with AI"}
@@ -71,7 +71,7 @@ export function ProposePanel({ roleId, aiConfigured, hasDescription, hasCriteria
       </div>
       {!hasDescription && <p className="mt-2 text-[13px] text-warn">Add a job description to the role first.</p>}
       {!aiConfigured && hasDescription && (
-        <p className="mt-2 text-[12.5px] text-muted">AI proposals are off. Set <code className="font-mono">ANTHROPIC_API_KEY</code> to enable them; bullet extraction and manual criteria work without it.</p>
+        <p className="mt-2 text-[12.5px] text-muted">AI proposals are off. Set <code className="font-mono">OPENAI_API_KEY</code> or <code className="font-mono">ANTHROPIC_API_KEY</code> to enable them; bullet extraction and manual criteria work without it.</p>
       )}
       {state && <div className="mt-2"><FormMessage state={state} /></div>}
     </Card>

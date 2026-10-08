@@ -15,7 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
         <NavLinks />
         <div className="hidden px-5 pb-5 text-[12px] md:mt-auto md:block">
-          <div className="mb-3 flex items-center gap-1.5 text-muted" title={ai.configured ? `Model: ${ai.model}` : "Set ANTHROPIC_API_KEY to enable AI"}>
+          <div className="mb-3 flex items-center gap-1.5 text-muted" title={ai.configured ? `Model: ${ai.model}` : "See Settings to enable AI"}>
             <span className={`inline-block h-1.5 w-1.5 rounded-full ${ai.configured ? "bg-ok" : "bg-faint"}`} />
             {ai.configured ? "AI assist on" : "AI assist off"}
           </div>

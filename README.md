@@ -13,8 +13,8 @@ advanced, hidden or rejected by AI.
 2. **Add a database.** Add **Prisma Postgres** (offered on the import screen) or **Neon** from
    **Storage**, connected to all environments. Either sets `DATABASE_URL` automatically. Any
    Postgres works: set `DATABASE_URL`, plus `DATABASE_URL_UNPOOLED` if that URL is a pooled one.
-3. **Optional — enable AI.** In **Settings → Environment Variables**, add `ANTHROPIC_API_KEY`
-   (and optionally `TALYN_AI_MODEL`).
+3. **Optional — enable AI.** In **Settings → Environment Variables**, add `OPENAI_API_KEY` or
+   `ANTHROPIC_API_KEY` (and optionally a model override).
 4. **Deploy** (or redeploy after adding variables). The `vercel-build` script runs
    `prisma migrate deploy` to create/upgrade tables, then builds the app.
 5. Open the deployment URL and click **Create a workspace**.
@@ -70,8 +70,11 @@ All configuration is via environment variables (`.env`):
 | --- | --- | --- |
 | `DATABASE_URL` | yes | Postgres connection used by the app. |
 | `DATABASE_URL_UNPOOLED` | no | Direct connection for migrations when `DATABASE_URL` is pooled (set automatically by Neon). |
-| `ANTHROPIC_API_KEY` | no | Enables AI-proposed criteria and AI assessments (Claude). |
-| `TALYN_AI_MODEL` | no | Override the model (default `claude-opus-5-5`). |
+| `OPENAI_API_KEY` | no | Enables AI features using OpenAI. |
+| `OPENAI_MODEL` | no | OpenAI model (default `gpt-5.5`). |
+| `ANTHROPIC_API_KEY` | no | Enables AI features using Anthropic (Claude). |
+| `TALYN_AI_MODEL` | no | Anthropic model (default `claude-opus-5-5`). |
+| `AI_PROVIDER` | no | `openai` or `anthropic`. Only needed if both keys are set (Anthropic wins otherwise). |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no | Enables **Continue with Google**. See "Sign in with Google" below. |
 | `GOOGLE_ALLOWED_DOMAINS` | no | Comma-separated email domains allowed to use Google sign-in (e.g. `acme.com`). |
 | `APP_URL` | recommended | Public URL (e.g. `https://talyn-inhouse.vercel.app`); keeps the Google redirect URI exact. |
