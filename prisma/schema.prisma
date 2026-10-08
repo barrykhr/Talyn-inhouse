@@ -7,9 +7,9 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL") // pooled connection (used by the app)
-  directUrl = env("DATABASE_URL_UNPOOLED") // direct connection (used by migrations)
+  provider = "postgresql"
+  // Migrations run with DATABASE_URL_UNPOOLED when it is set (Neon); see the vercel-build script.
+  url      = env("DATABASE_URL")
 }
 
 model Organization {

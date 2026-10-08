@@ -10,10 +10,9 @@ advanced, hidden or rejected by AI.
 
 1. **Import the repo** at [vercel.com/new](https://vercel.com/new) and pick this repository
    (choose the branch to deploy). Framework preset: **Next.js** — no other build settings needed.
-2. **Add a database.** In the project, open **Storage → Create Database → Neon (Postgres)** and
-   connect it to the project for all environments. This sets `DATABASE_URL` and
-   `DATABASE_URL_UNPOOLED` automatically. (Any Postgres works — set both variables yourself:
-   pooled URL and direct URL.)
+2. **Add a database.** Add **Prisma Postgres** (offered on the import screen) or **Neon** from
+   **Storage**, connected to all environments. Either sets `DATABASE_URL` automatically. Any
+   Postgres works: set `DATABASE_URL`, plus `DATABASE_URL_UNPOOLED` if that URL is a pooled one.
 3. **Optional — enable AI.** In **Settings → Environment Variables**, add `ANTHROPIC_API_KEY`
    (and optionally `TALYN_AI_MODEL`).
 4. **Deploy** (or redeploy after adding variables). The `vercel-build` script runs
@@ -48,8 +47,8 @@ All configuration is via environment variables (`.env`):
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | yes | Postgres connection used by the app (pooled on Neon). |
-| `DATABASE_URL_UNPOOLED` | yes | Direct Postgres connection used by migrations. Locally, same as `DATABASE_URL`. |
+| `DATABASE_URL` | yes | Postgres connection used by the app. |
+| `DATABASE_URL_UNPOOLED` | no | Direct connection for migrations when `DATABASE_URL` is pooled (set automatically by Neon). |
 | `ANTHROPIC_API_KEY` | no | Enables AI-proposed criteria and AI assessments (Claude). |
 | `TALYN_AI_MODEL` | no | Override the model (default `claude-opus-5-5`). |
 
