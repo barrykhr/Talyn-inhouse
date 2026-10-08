@@ -1,6 +1,7 @@
 import "server-only";
 
-export const MAX_RESUME_BYTES = 10 * 1024 * 1024;
+// Vercel caps request bodies at ~4.5 MB, so uploads stay under 4 MB.
+export const MAX_RESUME_BYTES = 4 * 1024 * 1024;
 
 export type ExtractedResume = { pages: string[]; mimeType: string; ext: string };
 
@@ -14,7 +15,7 @@ const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
  */
 export async function extractResume(fileName: string, data: Buffer): Promise<ExtractedResume> {
   if (data.length === 0) throw new Error("The file is empty.");
-  if (data.length > MAX_RESUME_BYTES) throw new Error("Resume files must be 10 MB or smaller.");
+  if (data.length > MAX_RESUME_BYTES) throw new Error("Resume files must be 4 MB or smaller.");
 
   if (data.subarray(0, 5).toString("latin1") === PDF_MAGIC) {
     const { extractText, getDocumentProxy } = await import("unpdf");

@@ -19,6 +19,9 @@ import { GeneratorTag, ItemCard, ReviewControls, RunAssessment, StaleNotice, typ
 import { DecisionForm } from "./decision";
 import { DeleteCandidateButton, DeleteResumeButton, EditProfile, NoteForm, NoteItem, ResumeUpload } from "./panels";
 
+// AI proposals/assessments run as server actions on this page and can take a while.
+export const maxDuration = 300;
+
 export const metadata = { title: "Candidate" };
 
 export default async function CandidatePage({
@@ -248,7 +251,7 @@ export default async function CandidatePage({
               action={
                 resume && (
                   <span className="flex items-center gap-1">
-                    {resume.storageKey && (
+                    {resume.hasFile && (
                       <a href={`/api/resumes/${resume.id}`} target="_blank" rel="noopener" className="text-[12.5px] font-medium text-muted underline-offset-2 hover:text-ink hover:underline">
                         Original
                       </a>

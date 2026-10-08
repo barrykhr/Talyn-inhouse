@@ -30,9 +30,10 @@ export type ImportResult = {
   error?: string;
 };
 
-const MAX_ROWS = 1000;
+const MAX_ROWS = 200; // per request; the importer sends larger files in batches
 
-export async function importCandidates(rows: ImportRow[], roleId: string | null): Promise<ImportResult> {
+/** `offset` is the index of rows[0] in the whole file, so skipped-row numbers match the CSV. */
+export async function importCandidates(rows: ImportRow[], roleId: string | null, offset = 0): Promise<ImportResult> {
   const auth = await requireAuth();
   if (!Array.isArray(rows) || rows.length === 0) return { created: 0, attached: 0, skipped: [], error: "No rows to import." };
   if (rows.length > MAX_ROWS) return { created: 0, attached: 0, skipped: [], error: `Import at most ${MAX_ROWS} rows at a time.` };
@@ -46,22 +47,22 @@ export async function importCandidates(rows: ImportRow[], roleId: string | null)
   for (let i = 0; i < rows.length; i++) {
     const parsed = Row.safeParse(rows[i]);
     if (!parsed.success) {
-      result.skipped.push({ row: i + 2, reason: "A value is too long or malformed" });
+      result.skipped.push({ row: offset + i + 2, reason: "A value is too long or malformed" });
       continue;
     }
     const r = trimAll(parsed.data);
     const fullName = r.fullName || [r.firstName, r.lastName].filter(Boolean).join(" ");
     if (!fullName) {
-      result.skipped.push({ row: i + 2, reason: "Missing name" });
+      result.skipped.push({ row: offset + i + 2, reason: "Missing name" });
       continue;
     }
     const email = r.email?.toLowerCase() || null;
     if (email && !z.string().email().safeParse(email).success) {
-      result.skipped.push({ row: i + 2, reason: "Invalid email" });
+      result.skipped.push({ row: offset + i + 2, reason: "Invalid email" });
       continue;
     }
     if (email && existing.has(email)) {
-      result.skipped.push({ row: i + 2, reason: "A candidate with this email already exists" });
+      result.skipped.push({ row: offset + i + 2, reason: "A candidate with this email already exists" });
       continue;
     }
     const linkedinUrl = r.linkedinUrl && /^https?:\/\//i.test(r.linkedinUrl) ? r.linkedinUrl : null;

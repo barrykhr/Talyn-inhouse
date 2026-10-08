@@ -55,9 +55,23 @@ export function Importer({ roles, defaultRole }: { roles: { id: string; title: s
       return o;
     });
     start(async () => {
-      const res = await importCandidates(payload, roleId || null);
+      // Send in batches so each request stays well under the hosting body-size limit.
+      const res: ImportResult = { created: 0, attached: 0, skipped: [] };
+      for (let start = 0; start < payload.length; ) {
+        let end = Math.min(start + 100, payload.length);
+        while (end - start > 1 && JSON.stringify(payload.slice(start, end)).length > 3_000_000) end = start + Math.ceil((end - start) / 2);
+        const part = await importCandidates(payload.slice(start, end), roleId || null, start);
+        if (part.error) {
+          res.error = res.created ? `${part.error} (${res.created} rows were imported before this.)` : part.error;
+          break;
+        }
+        res.created += part.created;
+        res.attached += part.attached;
+        res.skipped.push(...part.skipped);
+        start = end;
+      }
       if (res.error) setError(res.error);
-      else {
+      if (res.created || !res.error) {
         setResult(res);
         setRows([]);
         setHeaders([]);

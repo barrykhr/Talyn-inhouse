@@ -8,7 +8,6 @@ import { db } from "@/lib/db";
 import { DECISIONS, STAGES } from "@/lib/domain";
 import { logError } from "@/lib/log";
 import { extractResume, normalize } from "@/lib/resume";
-import { deleteStoredFile, saveFile } from "@/lib/storage";
 import { optStr, str, type ActionState } from "./form";
 import { ownApplication, ownCandidate, ownNote, ownResume, ownRole } from "./scope";
 
@@ -44,17 +43,16 @@ function parseCandidate(fd: FormData) {
 async function storeResume(auth: AuthContext, candidateId: string, fd: FormData): Promise<string | null> {
   const file = fd.get("resume");
   const pasted = str(fd, "resumeText", 100000);
-  let record: { fileName: string; mimeType: string; sizeBytes: number; storageKey: string | null; pages: string[] } | null = null;
+  let record: { fileName: string; mimeType: string; sizeBytes: number; data: Buffer | null; pages: string[] } | null = null;
 
   if (file instanceof File && file.size > 0) {
     const data = Buffer.from(await file.arrayBuffer());
     const extracted = await extractResume(file.name, data); // throws user-facing errors
     if (extracted.pages.join("").trim().length === 0)
       throw new Error("No text could be read from this file (it may be a scanned image). Paste the resume text instead.");
-    const storageKey = await saveFile(auth.orgId, extracted.ext, data);
-    record = { fileName: file.name.slice(0, 200), mimeType: extracted.mimeType, sizeBytes: data.length, storageKey, pages: extracted.pages };
+    record = { fileName: file.name.slice(0, 200), mimeType: extracted.mimeType, sizeBytes: data.length, data, pages: extracted.pages };
   } else if (pasted) {
-    record = { fileName: "Pasted resume text", mimeType: "text/plain", sizeBytes: pasted.length, storageKey: null, pages: [normalize(pasted)] };
+    record = { fileName: "Pasted resume text", mimeType: "text/plain", sizeBytes: pasted.length, data: null, pages: [normalize(pasted)] };
   }
   if (!record) return null;
 
@@ -66,9 +64,10 @@ async function storeResume(auth: AuthContext, candidateId: string, fd: FormData)
       fileName: record.fileName,
       mimeType: record.mimeType,
       sizeBytes: record.sizeBytes,
-      storageKey: record.storageKey,
+      hasFile: record.data !== null,
       pagesJson: JSON.stringify(record.pages),
       isCurrent: true,
+      ...(record.data ? { file: { create: { orgId: auth.orgId, data: new Uint8Array(record.data) } } } : {}),
     },
   });
   return r.id;
@@ -119,13 +118,11 @@ export async function updateCandidate(id: string, _prev: ActionState, fd: FormDa
   return { ok: true, message: "Saved" };
 }
 
-/** Permanently deletes a candidate, their resumes (including stored files), notes, applications and assessments. */
+/** Permanently deletes a candidate, their resumes (including original files), notes, applications and assessments. */
 export async function deleteCandidate(id: string) {
   const auth = await requireAuth();
   await ownCandidate(auth, id);
-  const resumes = await db.resume.findMany({ where: { candidateId: id, orgId: auth.orgId }, select: { storageKey: true } });
-  await db.candidate.delete({ where: { id } });
-  await Promise.all(resumes.map((r) => deleteStoredFile(r.storageKey)));
+  await db.candidate.delete({ where: { id } }); // cascades to resumes, files, notes, applications, assessments
   revalidatePath("/candidates");
   redirect("/candidates");
 }
@@ -147,8 +144,7 @@ export async function uploadResume(candidateId: string, _prev: ActionState, fd: 
 export async function deleteResume(id: string) {
   const auth = await requireAuth();
   const r = await ownResume(auth, id);
-  await db.resume.delete({ where: { id } });
-  await deleteStoredFile(r.storageKey);
+  await db.resume.delete({ where: { id } }); // cascades to the stored file
   if (r.isCurrent) {
     const latest = await db.resume.findFirst({ where: { candidateId: r.candidateId, orgId: auth.orgId }, orderBy: { createdAt: "desc" } });
     if (latest) await db.resume.update({ where: { id: latest.id }, data: { isCurrent: true } });

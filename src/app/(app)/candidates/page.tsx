@@ -16,7 +16,14 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
       where: {
         orgId: auth.orgId,
         ...(query
-          ? { OR: [{ fullName: { contains: query } }, { email: { contains: query.toLowerCase() } }, { currentTitle: { contains: query } }, { currentCompany: { contains: query } }] }
+          ? {
+              OR: [
+                { fullName: { contains: query, mode: "insensitive" as const } },
+                { email: { contains: query, mode: "insensitive" as const } },
+                { currentTitle: { contains: query, mode: "insensitive" as const } },
+                { currentCompany: { contains: query, mode: "insensitive" as const } },
+              ],
+            }
           : {}),
         ...(role ? { applications: { some: { roleId: role } } } : {}),
       },

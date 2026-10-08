@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ["unpdf", "mammoth"],
   experimental: {
-    serverActions: { bodySizeLimit: "12mb" },
+    serverActions: { bodySizeLimit: "4.5mb" },
   },
   async headers() {
     return [

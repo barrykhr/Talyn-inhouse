@@ -15,6 +15,9 @@ import { ownRole } from "@/server/scope";
 import { AddExisting } from "./add-existing";
 import { AddCriterion, CriterionRow, ProposePanel, ReviewBanner, type CriterionView } from "./criteria";
 
+// AI proposals/assessments run as server actions on this page and can take a while.
+export const maxDuration = 300;
+
 export const metadata = { title: "Role" };
 
 type Tab = "pipeline" | "criteria" | "description";

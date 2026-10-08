@@ -5,7 +5,6 @@ import { z } from "zod";
 import { createSession, destroySession, requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/password";
-import { deleteStoredFile } from "@/lib/storage";
 import { str, type ActionState } from "./form";
 
 const SignupSchema = z.object({
@@ -66,10 +65,8 @@ export async function deleteOrganization(_prev: ActionState, fd: FormData): Prom
   if (auth.membershipRole !== "admin") return { error: "Only admins can delete the organization." };
   if (str(fd, "confirm") !== auth.orgName) return { error: "Type the organization name exactly to confirm." };
 
-  const resumes = await db.resume.findMany({ where: { orgId: auth.orgId }, select: { storageKey: true } });
   const members = await db.membership.findMany({ where: { orgId: auth.orgId }, select: { userId: true } });
-  await db.organization.delete({ where: { id: auth.orgId } });
-  await Promise.all(resumes.map((r) => deleteStoredFile(r.storageKey)));
+  await db.organization.delete({ where: { id: auth.orgId } }); // cascades to all org data, including resume files
   // Remove users who no longer belong to any organization.
   await db.user.deleteMany({ where: { id: { in: members.map((m) => m.userId) }, memberships: { none: {} } } });
   await destroySession().catch(() => {});

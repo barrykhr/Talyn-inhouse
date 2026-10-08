@@ -1,14 +1,15 @@
 // Talyn In-house TA — Phase 1 data model.
 // Every business record carries `orgId`; all reads/writes are scoped by it on the server.
-// Enum-like fields are strings (SQLite has no enums); allowed values live in src/lib/domain.ts.
+// Enum-like fields are strings; allowed values live in src/lib/domain.ts and are validated with zod.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled connection (used by the app)
+  directUrl = env("DATABASE_URL_UNPOOLED") // direct connection (used by migrations)
 }
 
 model Organization {
@@ -130,14 +131,25 @@ model Resume {
   fileName    String
   mimeType    String
   sizeBytes   Int          @default(0)
-  storageKey  String? // null when the resume was pasted as text
+  hasFile     Boolean      @default(false) // true when the original upload is stored in ResumeFile
   pagesJson   String // JSON string[] of extracted text, one entry per page
   isCurrent   Boolean      @default(true)
   createdAt   DateTime     @default(now())
   candidate   Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  file        ResumeFile? // original upload; null when the resume was pasted as text
   assessments Assessment[]
 
   @@index([orgId, candidateId])
+}
+
+// Original resume bytes, kept in a separate table so normal resume queries never load them.
+// Stored in Postgres (private, deleted with the resume) — no public file storage involved.
+model ResumeFile {
+  id       String @id @default(cuid())
+  resumeId String @unique
+  orgId    String
+  data     Bytes
+  resume   Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 }
 
 model Note {

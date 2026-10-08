@@ -15,7 +15,7 @@ export function NewCandidateForm({ roles, roleId }: { roles: { id: string; title
         <CandidateFields />
       </Card>
       <Card className="p-6">
-        <SectionTitle hint="PDF, DOCX or TXT up to 10 MB — or paste the text. Stored privately in your workspace.">Resume</SectionTitle>
+        <SectionTitle hint="PDF, DOCX or TXT up to 4 MB — or paste the text. Stored privately in your workspace.">Resume</SectionTitle>
         <div className="space-y-4">
           <Input name="resume" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" className="h-auto py-1.5" />
           <Field label="…or paste resume text">

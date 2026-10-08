@@ -6,13 +6,36 @@ candidates, pipelines, and evidence-based AI-assisted candidate review.
 **Phase 1 scope.** AI suggests and explains; recruiters review, edit and decide. Nothing is
 advanced, hidden or rejected by AI.
 
-## Quick start
+## Deploy to Vercel
 
-Requirements: Node.js 20.9+ and npm.
+1. **Import the repo** at [vercel.com/new](https://vercel.com/new) and pick this repository
+   (choose the branch to deploy). Framework preset: **Next.js** — no other build settings needed.
+2. **Add a database.** In the project, open **Storage → Create Database → Neon (Postgres)** and
+   connect it to the project for all environments. This sets `DATABASE_URL` and
+   `DATABASE_URL_UNPOOLED` automatically. (Any Postgres works — set both variables yourself:
+   pooled URL and direct URL.)
+3. **Optional — enable AI.** In **Settings → Environment Variables**, add `ANTHROPIC_API_KEY`
+   (and optionally `TALYN_AI_MODEL`).
+4. **Deploy** (or redeploy after adding variables). The `vercel-build` script runs
+   `prisma migrate deploy` to create/upgrade tables, then builds the app.
+5. Open the deployment URL and click **Create a workspace**.
+
+Notes for Vercel:
+- Resume uploads are limited to **4 MB** (Vercel's request size limit is ~4.5 MB). Original
+  files are stored privately in Postgres and served only to members of the owning workspace.
+- AI requests can take up to a minute; the role and candidate pages allow up to 300 s.
+- Large CSV files are imported in batches automatically.
+- Anyone with the URL can create their own (isolated) workspace. To restrict access to your
+  team, enable **Deployment Protection** in Vercel project settings.
+
+## Run locally
+
+Requirements: Node.js 20.9+, npm, and Postgres (Docker is easiest).
 
 ```bash
+docker compose up -d # local Postgres on :5432 (or point .env at any Postgres)
 npm install          # also generates the Prisma client
-npm run setup        # creates .env from .env.example (if missing) and the local SQLite database
+npm run setup        # creates .env from .env.example (if missing) and applies migrations
 npm run dev          # http://localhost:3000
 ```
 
@@ -25,8 +48,8 @@ All configuration is via environment variables (`.env`):
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | yes | `file:./dev.db` for local SQLite. Use a `postgresql://` URL in production and change `provider` in `prisma/schema.prisma` to `"postgresql"`. |
-| `STORAGE_DIR` | no | Where uploaded resumes are stored (default `./storage`). Outside the web root; served only via an authenticated route. |
+| `DATABASE_URL` | yes | Postgres connection used by the app (pooled on Neon). |
+| `DATABASE_URL_UNPOOLED` | yes | Direct Postgres connection used by migrations. Locally, same as `DATABASE_URL`. |
 | `ANTHROPIC_API_KEY` | no | Enables AI-proposed criteria and AI assessments (Claude). |
 | `TALYN_AI_MODEL` | no | Override the model (default `claude-opus-5-5`). |
 
@@ -50,8 +73,8 @@ No output is ever presented as coming from a model unless it did.
 | `npm run dev` | Development server |
 | `npm run build` / `npm start` | Production build / server |
 | `npm run typecheck` | TypeScript check |
-| `npm run db:push` | Sync the schema to the database (development) |
-| `npm run db:migrate` | Create/apply a migration (use for production databases) |
+| `npm run db:migrate` | Create a new migration after changing `prisma/schema.prisma` (development) |
+| `npm run db:deploy` | Apply pending migrations (what Vercel runs on deploy) |
 | `npm run db:studio` | Browse the database |
 
 ## Manual walkthrough
@@ -64,7 +87,7 @@ No output is ever presented as coming from a model unless it did.
    rationale ("Why this criterion?"). Edit wording, switch essential/preferred, set a priority,
    then **Approve** or **Reject**. You can also **+ Add criterion** yourself (active immediately).
 4. **Candidates → New candidate** (or **Import & export** for a CSV) — add profile, contact
-   details, candidate-provided information, a resume (PDF/DOCX/TXT or pasted text), a private
+   details, candidate-provided information, a resume (PDF/DOCX/TXT up to 4 MB, or pasted text), a private
    note, and optionally attach to a role.
 5. **Candidate profile** — select the role chip, then **Assess with AI** (or **Keyword check**).
    For each approved criterion you see: *Supported / Inferred / Not stated*, verbatim evidence
@@ -84,8 +107,8 @@ No output is ever presented as coming from a model unless it did.
 ## Project layout
 
 ```
-prisma/schema.prisma        Data model (all business tables carry orgId)
-src/lib/                    Server utilities: auth, db, storage, resume extraction, AI, evidence
+prisma/                     Data model (all business tables carry orgId) and migrations
+src/lib/                    Server utilities: auth, db, resume extraction, AI, evidence
 src/server/                 Server actions (mutations) + org-scoped ownership checks
 src/app/(auth)/             Login / signup
 src/app/(app)/              Roles, candidates, import/export, settings
