@@ -5,9 +5,9 @@ import { useEffect, useState } from "react";
 import { ActionButton, ActionForm, FormMessage, SubmitButton, usePendingTask, useServerForm } from "@/components/client";
 import { StagedProgress } from "@/components/staged-progress";
 import { useToast } from "@/components/toast";
-import { Button, Card, Field, Notice, Textarea } from "@/components/ui";
+import { Button, Card, Field, Input, Notice, Textarea } from "@/components/ui";
 import { FILTER_LABEL, toBoolean, parseList, type SearchFilters } from "@/lib/sourcing/filters";
-import { planSearch, runSearch, saveStrategy, type PlanResult } from "@/server/sourcing-actions";
+import { importSourcingFile, planSearch, runSearch, saveStrategy, type PlanResult } from "@/server/sourcing-actions";
 
 type Plan = NonNullable<PlanResult["plan"]>;
 
@@ -155,5 +155,37 @@ export function RunSearchButton({ strategyId, sourceKey, label, disabled }: { st
     <ActionButton action={() => runSearch(strategyId, sourceKey)} variant="secondary" pendingLabel="Searching…" successMessage="Search complete — results are ready for review">
       {disabled ? `${label} (not connected)` : label}
     </ActionButton>
+  );
+}
+
+/** Import profiles exported from a source the organization is licensed to use. */
+export function ImportExportForm({ strategyId, version }: { strategyId: string; version: number }) {
+  const [state, action, pending] = useServerForm(importSourcingFile.bind(null, strategyId));
+  return (
+    <details className="mt-2 text-[12.5px]">
+      <summary className="cursor-pointer text-muted">Import an authorized export</summary>
+      <ActionForm action={action} pending={pending} className="mt-2 space-y-3 rounded-lg bg-sunken p-3">
+        <p className="text-muted">
+          CSV from a tool or list your organization is licensed to use for recruiting (for example an export from a recruiting product, an event list with consent, or referrals). Columns:{" "}
+          <code className="font-mono">name</code> (required), <code className="font-mono">title</code>, <code className="font-mono">company</code>, <code className="font-mono">location</code>,{" "}
+          <code className="font-mono">email</code>, <code className="font-mono">linkedin_url</code>, <code className="font-mono">profile_url</code>, <code className="font-mono">skills</code>,{" "}
+          <code className="font-mono">summary</code>, <code className="font-mono">updated_at</code>. Rows are matched against search v{version}; contact details are kept only if the file has them.
+        </p>
+        <Field label="Source">
+          <Input name="sourceName" required maxLength={120} placeholder="e.g. Recruiting tool export, Spring career fair sign-ups" />
+        </Field>
+        <Field label="File (.csv, up to 1,000 rows)">
+          <Input name="file" type="file" accept=".csv,text/csv" required />
+        </Field>
+        <label className="flex items-start gap-2">
+          <input type="checkbox" name="attest" className="mt-0.5" required />
+          <span>I confirm my organization is licensed or has consent to use this data for recruiting, and the source&apos;s terms allow this use.</span>
+        </label>
+        <FormMessage state={state} />
+        <SubmitButton variant="secondary" pendingLabel="Importing…">
+          Import and match
+        </SubmitButton>
+      </ActionForm>
+    </details>
   );
 }

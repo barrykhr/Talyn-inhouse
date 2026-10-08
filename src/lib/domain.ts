@@ -96,6 +96,7 @@ export const ORIGIN_LABEL: Record<string, string> = {
   cv_corrected: "From CV · corrected by recruiter",
   recruiter: "Entered by recruiter",
   sourced: "From sourcing provider",
+  ats: "From ATS",
 };
 
 export const CORRECTION_REASONS = [

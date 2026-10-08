@@ -9,9 +9,10 @@ authorized sourcing, ranking, recruiter-approved outreach and interview question
 AI suggests and explains; recruiters review, edit and decide. Nothing is advanced, hidden,
 rejected or sent by AI.
 
-**Not connected yet:** no external sourcing provider, no email-sending provider and no ATS are
-configured. Talyn shows a setup state for each (Settings → Integrations & data providers);
-see [docs/ATS_INTEGRATION.md](docs/ATS_INTEGRATION.md).
+**Integrations are built but off.** Email sending (any SMTP service), a sourcing-provider API
+and an ATS sync are implemented vendor-neutrally and switch on when their environment variables
+are set. Until then Talyn shows a setup state for each (Settings → Integrations). See
+[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) and [docs/ATS_INTEGRATION.md](docs/ATS_INTEGRATION.md).
 
 ## Deploy to Vercel
 
@@ -84,8 +85,10 @@ All configuration is via environment variables (`.env`):
 | `AI_PROVIDER` | no | `openai` or `anthropic`. Only needed if both keys are set (Anthropic wins otherwise). |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no | Enables **Continue with Google**. See "Sign in with Google" below. |
 | `GOOGLE_ALLOWED_DOMAINS` | no | Comma-separated email domains allowed to use Google sign-in (e.g. `acme.com`). |
-| `CRON_SECRET` | recommended | Protects `/api/cron/*`. Vercel sends it automatically to the daily retention job. |
-| `OUTREACH_FROM_EMAIL` | no | Sender address, used only once an email provider is connected. |
+| `CRON_SECRET` | recommended | Protects `/api/cron/*` (retention, outreach sending, ATS sync). Vercel sends it automatically. |
+| `SMTP_*`, `OUTREACH_*`, `EMAIL_WEBHOOK_SECRET` | no | Email sending. See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md). |
+| `SOURCING_*` | no | Sourcing provider API. See docs/INTEGRATIONS.md. |
+| `ATS_*` | no | ATS sync. See docs/INTEGRATIONS.md. |
 | `APP_URL` | recommended | Public URL (e.g. `https://talyn-inhouse.vercel.app`); keeps the Google redirect URI exact. |
 
 ### Without an AI key
@@ -170,8 +173,8 @@ No output is ever presented as coming from a model unless it did.
    **Approve**. Changes create a new version.
 3. **Search strategy** — plan from the approved ICP: titles, skills, locations, exclusions, a
    Boolean string and a criterion mapping. Edit and save (versioned). **Run search** uses
-   connected sources only: today that is *Talyn rediscovery* (candidates already in your
-   workspace). The external provider slot shows a setup state and returns nothing.
+   connected sources only: *Talyn rediscovery* (candidates already in your workspace), and the
+   external provider once `SOURCING_*` is set. **Import an authorized export** (CSV) works now.
 4. **Results** — each profile shows matched signals with quotes, staleness and duplicates. Save
    to role, mark not relevant (with feedback) or leave for later. Nothing is auto-rejected.
 5. **Role → Ranked list** — *Role fit* (criteria alignment) and *Stage readiness* are separate
@@ -181,11 +184,14 @@ No output is ever presented as coming from a model unless it did.
    (shown beside the draft). Approve each step, then **Activate**. Pause/stop any time. Without
    an email provider, send from your own mailbox and **Record as sent**; replies, opt-outs and
    bounces are recorded by the recruiter (reply/opt-out stop the sequence; opt-out blocks future
-   outreach).
+   outreach). With SMTP configured, Talyn sends due approved messages itself, with an unsubscribe
+   link, and records provider events from the email webhook.
 7. **Questions** — core questions per role (Criteria tab) and follow-ups per candidate
    (Assessment tab), each linked to a criterion. Talyn never sends them.
-8. **Settings** — retention period and **Apply now**, audit log, integrations and data
-   providers, and **Success measures**.
+8. **Settings** — retention period and **Apply now**, audit log, **Integrations** (status of
+   each variable, test email, send now, ATS link/sync/history), and **Success measures**.
+9. **ATS** (once configured) — link the workspace, then on each role's **ATS** tab link the ATS
+   job and map stages. Differences the sync won't overwrite appear in the queue.
 
 ## Project layout
 
@@ -199,7 +205,8 @@ src/app/api/                Authenticated resume download and CSV exports
 src/components/             UI primitives and shared widgets
 src/lib/sourcing/           Search filters, Boolean builder, sourcing connectors
 src/lib/outreach/           Email provider interface, grounded personalization facts
-src/lib/ats/                ATS connector interface (none active)
+src/lib/ats/                ATS connector (REST contract) and sync engine — off until configured
 docs/ARCHITECTURE.md        Decisions, data model, security and AI design
+docs/INTEGRATIONS.md        Email, sourcing and ATS setup and API contracts
 docs/ATS_INTEGRATION.md     ATS field ownership, duplicates, conflicts, sync failures
 ```

@@ -131,18 +131,28 @@ content), `Task` (info requests, reply follow-ups), `Organization.retentionDays`
 verified flag); `SearchStrategy` (versioned filters + Boolean + criterion mapping) →
 `SearchRun` (connector, status incl. `setup_required`, counts) → `SourcedProfile` (signals with
 quotes, staleness, duplicate link, review state, feedback); `Application.priority*`;
-`Candidate.contactOptOut`; `OutreachTemplate`, `OutreachSequence` → `OutreachMessage`
+`Candidate.contactOptOut`, `Candidate/Application/Role.atsExternalId`; `AtsSyncRun`, `AtsConflict`,
+`AtsStageMap`, `AtsOutbox`; `OutreachTemplate`, `OutreachSequence` → `OutreachMessage`
 (approval state, due date, sent-via) and `OutreachEvent` (`providerConfirmed` flag); `Question`
 (core per role / follow-up per application, criterion link, status).
 
-**Connectors.** Three interfaces, each returning "not configured" until a provider is chosen:
-- `src/lib/sourcing/connectors.ts` — `talynRediscovery` (works: searches this org's own
-  candidates/resumes, quotes the matching text, flags profiles older than 18 months, sets aside
-  exclusions) and `externalProvider` (setup state, no results). No scraping.
-- `src/lib/outreach/provider.ts` — `getEmailProvider()` returns `null`; `/api/cron/outreach`
-  no-ops without it (and is not scheduled in `vercel.json`). Statuses such as delivered/opened
-  are only shown when `providerConfirmed`; manual entries are labeled "recorded by recruiter".
-- `src/lib/ats/connector.ts` — see `docs/ATS_INTEGRATION.md`.
+**Integrations.** Built in, vendor-neutral, and off until their environment variables are set
+(`src/lib/integrations/env.ts` reports set/missing, never values). Contracts: `docs/INTEGRATIONS.md`.
+- Sourcing (`src/lib/sourcing/connectors.ts`): `talynRediscovery` (the org's own candidates,
+  quoting matching text, stale >18 months, exclusions set aside); `externalProvider` POSTs the
+  saved search to `SOURCING_API_URL` and validates each returned record; and authorized CSV
+  import (recruiter names the source and attests the licence). All three produce the same
+  reviewable `SourcedProfile`s via `profileFromRecord`. No scraping.
+- Email (`src/lib/outreach/`): SMTP via nodemailer (file/URL access disabled). `send.ts` sends due
+  approved messages in active sequences, re-checking opt-out/status/email per message, with
+  signed unsubscribe links and one-click `List-Unsubscribe`. `outcomes.ts` holds the stop rules
+  shared by recruiter entries, `/api/webhooks/email` (bearer secret) and `/api/unsubscribe/[token]`.
+  Only provider/candidate events are marked `providerConfirmed`.
+- ATS (`src/lib/ats/`): `connector.ts` speaks a REST contract; `sync.ts` pulls incrementally into
+  the one linked workspace (`Organization.atsLinkedAt`), writes a field only when Talyn's value is
+  empty or ATS-set, otherwise records `AtsConflict`; per-role `AtsStageMap`; recruiter stage
+  changes go through `AtsOutbox` (ordered, backoff, 5 attempts); runs in `AtsSyncRun`.
+- Crons (`vercel.json`, daily, `CRON_SECRET`): retention, outreach, ATS. Each no-ops when off.
 
 **AI.** ICP generation, search planning, outreach drafts, core and follow-up questions use the
 same structured-output path as Phase 1. Quotes are kept only when found verbatim in the source

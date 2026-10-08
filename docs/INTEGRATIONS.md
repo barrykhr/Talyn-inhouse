@@ -1,0 +1,157 @@
+# Integrations
+
+Talyn has three built-in, vendor-neutral integrations. **Each is off until its environment
+variables are set** (Vercel → Project → Settings → Environment Variables, then redeploy).
+Settings → Integrations shows which variables are set or missing — never their values — and the
+controls for each integration once it's on.
+
+| Integration | Turns on with | Until then |
+| --- | --- | --- |
+| Email sending (SMTP) | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `OUTREACH_FROM_EMAIL`, `OUTREACH_SECRET` | Recruiters send from their own mail client and click **Record as sent**. |
+| Sourcing provider | `SOURCING_PROVIDER_NAME`, `SOURCING_API_URL`, `SOURCING_API_KEY` | Talyn rediscovery + **Import an authorized export** (CSV). |
+| ATS | `ATS_NAME`, `ATS_API_URL`, `ATS_API_KEY` (+ `ATS_PUSH_STAGES=true` for write-back), then an admin clicks **Link this workspace** | CSV import/export. |
+
+Scheduled jobs (`vercel.json`, daily) need `CRON_SECRET`: retention, `/api/cron/outreach`,
+`/api/cron/ats`. Each no-ops while its integration is off. On Vercel Hobby crons run at most
+daily; on Pro you can make `/api/cron/outreach` hourly. Admins also have **Send due messages
+now** and **Sync now**.
+
+---
+
+## 1. Email sending (SMTP)
+
+Works with any SMTP service: Google Workspace (`smtp.gmail.com`, app password), Microsoft 365
+(`smtp.office365.com`), Amazon SES, SendGrid, Postmark, Mailgun, etc. The sender address must be
+authorized by that service (SPF/DKIM set up on your domain).
+
+What Talyn does when it's on:
+- Sends only **approved** messages in sequences a recruiter **activated**, when due.
+- Immediately before each send it re-checks: sequence still active, candidate not opted out,
+  email on file. Any failure leaves the message unsent and logs a `send_failed` event; it is
+  retried on the next run.
+- Adds an unsubscribe link (signed with `OUTREACH_SECRET`) and RFC 8058 one-click
+  `List-Unsubscribe` headers. Unsubscribing stops **every** live sequence for that candidate and
+  blocks future outreach.
+- Marks a message **sent** when the mail server accepts it. That is all SMTP confirms.
+- **Send me a test email** (admins) sends one message to your own address.
+
+### Event webhook (optional)
+
+To record delivered / bounced / replied / opted-out automatically, have your mail service — or a
+small relay that translates its webhooks — call:
+
+```
+POST {APP_URL}/api/webhooks/email
+Authorization: Bearer $EMAIL_WEBHOOK_SECRET
+Content-Type: application/json
+
+{ "events": [
+  { "messageId": "<the Message-ID returned when Talyn sent it>", "type": "delivered" },
+  { "messageId": "…", "type": "bounced" },
+  { "messageId": "…", "type": "replied" },
+  { "messageId": "…", "type": "opted_out" },
+  { "messageId": "…", "type": "complained" }   // treated as opted_out
+] }
+```
+
+Rules applied (same as recruiter-recorded outcomes): **replied** → stop sequence + reply task;
+**opted_out / complained** → stop all sequences + block candidate; **bounced** → pause;
+**delivered** → mark delivered. Events from the webhook are labeled provider-confirmed; unknown
+message ids are ignored. Up to 500 events per request.
+
+---
+
+## 2. Sourcing provider contract
+
+Talyn never scrapes websites or automates logins. Connect a source your organization is licensed
+to use by exposing (or wrapping it in) one HTTPS endpoint:
+
+```
+POST $SOURCING_API_URL
+Authorization: Bearer $SOURCING_API_KEY
+
+{ "filters": { "titles": [], "skills_required": [], "skills_preferred": [], "locations": [],
+               "seniority": [], "industries": [], "exclusions": [] },
+  "booleanQuery": "(\"Backend Engineer\" OR …) AND …",
+  "limit": 100 }
+```
+
+Response:
+
+```
+{ "estimatedTotal": 1234,                // optional
+  "profiles": [ {
+    "id": "provider-record-id",          // required
+    "name": "Full Name",                 // required
+    "url": "https://…",                  // link to the record in the provider (optional)
+    "title": "…", "company": "…", "location": "…",
+    "email": "…",                        // only if your licence includes contact data
+    "linkedinUrl": "https://…",
+    "skills": ["…"],
+    "summary": "…",
+    "experience": [ { "title": "…", "company": "…", "start": "2021-03", "end": null, "description": "…" } ],
+    "updatedAt": "2026-08-01T00:00:00Z"  // used for staleness (>18 months = stale)
+  } ] }
+```
+
+Talyn matches every signal against the returned text and quotes it; profiles with no update date
+or little text are flagged *limited evidence*; duplicates are detected by email, LinkedIn URL, or
+name + company; exclusions are set aside, never deleted. Malformed records are skipped. Nothing is
+contacted, rejected or added to a pipeline automatically.
+
+### Authorized export import (available now)
+
+Role → Sourcing → *Import an authorized export*: a CSV (≤ 1,000 rows, ≤ 4 MB) with columns
+`name` (required), `title`, `company`, `location`, `email`, `linkedin_url`, `profile_url`,
+`skills`, `summary`, `updated_at`, `id`. The recruiter names the source and confirms the licence;
+both are recorded. Rows are matched against the latest saved search and reviewed like any other
+results.
+
+---
+
+## 3. ATS contract
+
+No specific ATS is assumed. Point `ATS_API_URL` at an endpoint implementing this contract —
+directly, or via a thin adapter in front of your ATS's API (Greenhouse, Lever, Ashby, Workable,
+SmartRecruiters, Workday, …). A dedicated connector can replace the adapter later without other
+changes (`src/lib/ats/connector.ts`).
+
+```
+GET  {ATS_API_URL}/jobs
+  → { "jobs": [ { "id": "…", "title": "…", "status": "open" } ] }
+
+GET  {ATS_API_URL}/jobs/{jobId}/stages
+  → { "stages": [ "Application Review", "Phone Screen", "Onsite", "Offer", "Hired", "Rejected" ] }
+
+GET  {ATS_API_URL}/candidates?updated_since=<ISO date>&cursor=<cursor>
+  → { "candidates": [ {
+        "id": "…", "name": "…", "email": "…", "phone": "…", "location": "…",
+        "title": "…", "company": "…", "linkedinUrl": "…",
+        "updatedAt": "<ISO date>",
+        "applications": [ { "id": "…", "jobId": "…", "stage": "Phone Screen" } ]
+      } ],
+      "nextCursor": "…" | null }
+
+POST {ATS_API_URL}/applications/{applicationId}/stage      (only if ATS_PUSH_STAGES=true)
+  { "stage": "Phone Screen", "changedBy": "Recruiter Name", "changedAt": "<ISO date>" }
+  → any 2xx
+```
+
+All requests carry `Authorization: Bearer $ATS_API_KEY`. How Talyn uses it:
+
+1. **Link** — an admin links one workspace (only one workspace can sync with an ATS).
+2. **Per role** — on the role's **ATS** tab, link the role to an ATS job and map each Talyn stage
+   to an ATS stage or *Don't sync*.
+3. **Pull** (daily, or **Sync now**) — incremental since the last successful sync. Match by ATS id
+   → email → otherwise create (labeled *From ATS*). Field rules in
+   [ATS_INTEGRATION.md](ATS_INTEGRATION.md): a field is written only if Talyn's value is empty or
+   was last set by the ATS; otherwise an **ATS difference** is queued for a recruiter (Keep Talyn
+   value / Use ATS value). Empty ATS values never erase Talyn data. Applications attach only to
+   linked roles; a *mapped* ATS stage change moves the Talyn stage (a person made it in the ATS),
+   unless a Talyn change is still waiting to be pushed.
+4. **Push** — only stage changes a recruiter makes in Talyn, never AI output. Unmapped stages are
+   recorded as *not synced*. Pushes go in order per application with exponential backoff (5
+   attempts); permanent failures appear in the queue and Settings with **Retry** / **Dismiss**.
+5. **Failures** — a failed pull changes nothing further and is shown in sync history; the next run
+   resumes from the last successful sync. Logs hold ids and counts only.
+6. **Unlink** — stops syncing, cancels unsent pushes, keeps existing records.

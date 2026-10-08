@@ -4,11 +4,11 @@ import { aiStatus } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ownRole } from "@/server/scope";
-import { CONNECTORS } from "@/lib/sourcing/connectors";
+import { CONNECTORS, sourceLabel } from "@/lib/sourcing/connectors";
 import { FILTER_LABEL, type SearchFilters } from "@/lib/sourcing/filters";
 import { GenerateIcpButton, IcpApprovedView, IcpDraftEditor, type IcpView } from "./icp-editor";
 import { ResultRow, type ProfileView } from "./results";
-import { RunSearchButton, StrategyPlanner } from "./strategy";
+import { ImportExportForm, RunSearchButton, StrategyPlanner } from "./strategy";
 
 export const metadata = { title: "Sourcing" };
 // ICP generation and searches run as server actions on this page.
@@ -53,7 +53,7 @@ export default async function SourcingPage({ params, searchParams }: { params: P
     : null;
   const profileView = (p: (typeof profiles)[number]): ProfileView => ({
     ...p,
-    sourceLabel: CONNECTORS.find((c) => c.key === p.source)?.label ?? p.source,
+    sourceLabel: sourceLabel(p.source),
     retrievedAt: p.retrievedAt.toISOString(),
     fields: JSON.parse(p.fieldsJson),
     signals: JSON.parse(p.signalsJson),
@@ -172,12 +172,13 @@ export default async function SourcingPage({ params, searchParams }: { params: P
                         ))}
                       </div>
                     </details>
+                    {i === 0 && <ImportExportForm strategyId={st.id} version={st.version} />}
                     {st.runs.length > 0 && (
                       <ul className="mt-2 space-y-0.5 border-t border-line pt-2 text-[12px]">
                         {st.runs.map((r) => (
                           <li key={r.id} className="flex flex-wrap gap-x-2">
                             <Link href={`/roles/${role.id}/sourcing?run=${r.id}#results`} className={r.id === currentRun?.id ? "font-medium text-ink" : "text-muted hover:text-ink"}>
-                              {r.createdAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {CONNECTORS.find((c) => c.key === r.source)?.label ?? r.source}
+                              {r.createdAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {sourceLabel(r.source)}
                             </Link>
                             <span className="text-faint">
                               {r.status === "completed"
@@ -186,6 +187,7 @@ export default async function SourcingPage({ params, searchParams }: { params: P
                                   ? "source not connected"
                                   : "failed"}
                             </span>
+                            {r.source === "file" && <span className="text-faint">· {r.query}</span>}
                           </li>
                         ))}
                       </ul>
@@ -213,7 +215,7 @@ export default async function SourcingPage({ params, searchParams }: { params: P
       {currentRun && (
         <section id="results" className="scroll-mt-6" aria-labelledby="results-h">
           <SectionTitle
-            hint={`Search v${currentRun.strategyVersion} on ${CONNECTORS.find((c) => c.key === currentRun.source)?.label ?? currentRun.source} · ${currentRun.createdAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}${feedbackCounts ? ` · ${feedbackCounts.useful} marked useful, ${feedbackCounts.irrelevant} not relevant` : ""}`}
+            hint={`Search v${currentRun.strategyVersion} on ${sourceLabel(currentRun.source)} · ${currentRun.createdAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}${feedbackCounts ? ` · ${feedbackCounts.useful} marked useful, ${feedbackCounts.irrelevant} not relevant` : ""}`}
           >
             <span id="results-h">Results to review</span>
           </SectionTitle>

@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { getAtsConnector } from "@/lib/ats/connector";
 import Link from "next/link";
 import { ActionButton } from "@/components/client";
 import { StageSelect } from "@/components/stage-select";
@@ -191,6 +192,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
         <TabLink href={`/roles/${role.id}?tab=criteria`} active={tab === "criteria"} label="Criteria" count={approved.length} attention={proposed.length} />
         <TabLink href={`/roles/${role.id}?tab=description`} active={tab === "description"} label="Job description" attention={needsReview ? pendingFacts.length || 1 : 0} />
         <TabLink href={`/roles/${role.id}/sourcing`} active={false} label="Sourcing" />
+        {getAtsConnector() && <TabLink href={`/roles/${role.id}/ats`} active={false} label="ATS" />}
       </div>
 
       {tab === "criteria" && (

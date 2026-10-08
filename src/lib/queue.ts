@@ -18,7 +18,7 @@ const ACTIVE = { notIn: ["hired", "rejected"] };
 
 /** Actionable recruiter work, oldest first. Every item links to where the action happens. */
 export async function buildQueue(orgId: string): Promise<QueueSection[]> {
-  const [profiles, tasks, apps, sourced, dueMessages] = await Promise.all([
+  const [profiles, tasks, apps, sourced, dueMessages, atsConflicts, failedPushes] = await Promise.all([
     db.candidate.findMany({
       where: { orgId, extractionStatus: "needs_review" },
       select: { id: true, fullName: true, updatedAt: true, applications: { select: { roleId: true }, take: 1 } },
@@ -47,7 +47,15 @@ export async function buildQueue(orgId: string): Promise<QueueSection[]> {
       orderBy: { dueAt: "asc" },
       take: 200,
     }),
+    db.atsConflict.groupBy({ by: ["candidateId"], where: { orgId, status: "open" }, _count: true, _min: { createdAt: true } }),
+    db.atsOutbox.findMany({ where: { orgId, status: "failed" }, orderBy: { createdAt: "asc" }, take: 100 }),
   ]);
+  const conflictCandidates = atsConflicts.length
+    ? await db.candidate.findMany({ where: { orgId, id: { in: atsConflicts.map((c) => c.candidateId) } }, select: { id: true, fullName: true } })
+    : [];
+  const pushApps = failedPushes.length
+    ? await db.application.findMany({ where: { orgId, id: { in: failedPushes.map((f) => f.applicationId) } }, select: { id: true, candidate: { select: { id: true, fullName: true } }, role: { select: { id: true, title: true } } } })
+    : [];
   const sourcedRoles = sourced.length
     ? await db.role.findMany({ where: { orgId, id: { in: sourced.map((s) => s.roleId) } }, select: { id: true, title: true } })
     : [];
@@ -174,6 +182,28 @@ export async function buildQueue(orgId: string): Promise<QueueSection[]> {
           };
         })
         .sort(byAge),
+    },
+    {
+      key: "ats",
+      title: "ATS differences",
+      hint: "The ATS has a different value than a person entered in Talyn. Nothing was overwritten.",
+      items: atsConflicts
+        .flatMap((g) => {
+          const c = conflictCandidates.find((x) => x.id === g.candidateId);
+          return c ? [{ key: g.candidateId, candidateId: c.id, candidateName: c.fullName, since: g._min.createdAt ?? new Date(), detail: `${g._count} field${g._count === 1 ? "" : "s"} to resolve`, href: `/candidates/${c.id}#ats-conflicts` }] : [];
+        })
+        .sort(byAge),
+    },
+    {
+      key: "ats_push",
+      title: "Stage changes not in the ATS",
+      hint: "The ATS didn't accept these recruiter stage changes. Retry or update the ATS manually.",
+      items: failedPushes.flatMap((f) => {
+        const a = pushApps.find((x) => x.id === f.applicationId);
+        return a
+          ? [{ key: f.id, candidateId: a.candidate.id, candidateName: a.candidate.fullName, roleId: a.role.id, roleTitle: a.role.title, since: f.createdAt, detail: `${f.talynStage} → ${f.atsStage} · ${f.lastError ?? "failed"}`, href: "/settings/integrations" }]
+          : [];
+      }),
     },
   ];
 }

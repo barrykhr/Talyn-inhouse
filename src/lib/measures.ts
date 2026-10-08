@@ -2,6 +2,8 @@ import "server-only";
 import { db } from "./db";
 import { buildQueue } from "./queue";
 import { computeScore } from "./score";
+import { getAtsConnector } from "./ats/connector";
+import { sourceLabel } from "./sourcing/connectors";
 
 // Product success measures (Phase 2). Each has an explicit definition and is computed from
 // stored data. Values with too little data are reported as such — never extrapolated.
@@ -26,6 +28,8 @@ export async function computeMeasures(orgId: string): Promise<Measure[]> {
     db.task.findMany({ where: { orgId }, select: { status: true, createdAt: true, resolvedAt: true } }),
     buildQueue(orgId),
   ]);
+  const atsRuns = await db.atsSyncRun.findMany({ where: { orgId, status: { not: "running" } }, select: { status: true } });
+  const atsOk = atsRuns.filter((r) => r.status === "completed").length;
   const corrected = await db.assessmentItem.count({ where: { assessment: { orgId }, overrideResult: { not: null } } });
 
   // 1. ICP → shortlist
@@ -72,14 +76,14 @@ export async function computeMeasures(orgId: string): Promise<Measure[]> {
     },
     ...[...bySource.entries()].map(([src, b]) => ({
       group: "Sourcing",
-      name: `Save rate · ${src === "talyn" ? "Talyn rediscovery" : src}`,
+      name: `Save rate · ${sourceLabel(src)}`,
       definition: "Profiles saved to a role ÷ profiles shown (excluding those set aside by approved exclusions).",
       value: pctOf(b.saved, b.shown),
       sample: b.shown,
     })),
     ...[...bySource.entries()].map(([src, b]) => ({
       group: "Sourcing",
-      name: `Contact rate · ${src === "talyn" ? "Talyn rediscovery" : src}`,
+      name: `Contact rate · ${sourceLabel(src)}`,
       definition: "Saved profiles whose application had an outreach sequence activated ÷ saved profiles.",
       value: pctOf(b.contacted, b.saved),
       sample: b.saved,
@@ -125,7 +129,14 @@ export async function computeMeasures(orgId: string): Promise<Measure[]> {
       value: hours(median(waits)),
       sample: waits.length,
     },
-    { group: "ATS", name: "ATS sync success / error rate", definition: "Successful sync runs ÷ all sync runs, per connector.", value: null, sample: 0, note: "No ATS connector is configured." },
+    {
+      group: "ATS",
+      name: "ATS sync success rate",
+      definition: "Sync runs that completed without problems ÷ all finished sync runs (pulls and stage pushes).",
+      value: pctOf(atsOk, atsRuns.length),
+      sample: atsRuns.length,
+      note: getAtsConnector() ? undefined : "No ATS connector is configured.",
+    },
   ];
   return out;
 }

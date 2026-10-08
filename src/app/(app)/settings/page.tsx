@@ -91,18 +91,23 @@ export default async function SettingsPage() {
             <dt className="font-medium">
               Email sending <span className={getEmailProvider() ? "text-ok" : "text-faint"}>{getEmailProvider() ? "● Connected" : "○ Not connected"}</span>
             </dt>
-            <dd className="text-muted">{SENDING_SETUP_HINT}</dd>
+            <dd className="text-muted">{getEmailProvider() ? "SMTP — sends only approved messages in sequences a recruiter activated." : SENDING_SETUP_HINT}</dd>
           </div>
           <div>
             <dt className="font-medium">
               ATS <span className={getAtsConnector() ? "text-ok" : "text-faint"}>{getAtsConnector() ? "● Connected" : "○ Not connected"}</span>
             </dt>
-            <dd className="text-muted">{ATS_SETUP_HINT}</dd>
+            <dd className="text-muted">{getAtsConnector() ? `${getAtsConnector()!.label} — configured. Link and sync in Integrations.` : ATS_SETUP_HINT}</dd>
           </div>
         </dl>
-        <Link href="/settings/measures" className={buttonClass("secondary", "md", "mt-4")}>
-          View success measures
-        </Link>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link href="/settings/integrations" className={buttonClass("primary")}>
+            Manage integrations
+          </Link>
+          <Link href="/settings/measures" className={buttonClass("secondary")}>
+            View success measures
+          </Link>
+        </div>
       </Card>
 
       <Card className="p-5">

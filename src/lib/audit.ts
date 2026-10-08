@@ -3,6 +3,9 @@ import type { AuthContext } from "./auth";
 import { db } from "./db";
 import { logError } from "./log";
 
+/** A signed-in user, or a system actor (cron, provider webhook, candidate unsubscribe) with userId null. */
+type Actor = { orgId: string; userId: string | null; userName: string };
+
 type Ref = {
   subjectType: string;
   subjectId?: string | null;
@@ -14,7 +17,7 @@ type Ref = {
 };
 
 /** Records a meaningful action. Never throws: an audit failure must not break the recruiter's work. */
-export async function audit(auth: Pick<AuthContext, "orgId" | "userId" | "userName">, action: string, ref: Ref) {
+export async function audit(auth: Actor, action: string, ref: Ref) {
   try {
     await db.auditEvent.create({
       data: {
@@ -95,6 +98,16 @@ export const AUDIT_LABEL: Record<string, string> = {
   "outreach.sent_recorded": "Recorded message as sent",
   "outreach.reply_recorded": "Recorded candidate reply",
   "outreach.opt_out_recorded": "Recorded opt-out",
+  "outreach.sent": "Sent outreach message (email provider)",
+  "outreach.delivered": "Delivery confirmed by email provider",
+  "outreach.test_sent": "Sent a test email",
+  "sourcing.file_imported": "Imported sourcing file",
+  "ats.linked": "Linked workspace to ATS",
+  "ats.unlinked": "Unlinked workspace from ATS",
+  "ats.sync": "Ran ATS sync",
+  "ats.conflict_resolved": "Resolved ATS conflict",
+  "ats.stage_map_saved": "Saved ATS stage mapping",
+  "ats.stage_queued": "Queued stage change for ATS",
   "questions.generated": "Generated questions",
   "priority.changed": "Changed recruiter priority",
 };

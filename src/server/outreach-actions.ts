@@ -9,6 +9,9 @@ import { db } from "@/lib/db";
 import { EMPLOYMENT_TYPE_LABEL, type EmploymentType } from "@/lib/domain";
 import { logError } from "@/lib/log";
 import { OPT_OUT_FOOTER, fillTemplate, personalizationFacts } from "@/lib/outreach/facts";
+import { applyOutcome } from "@/lib/outreach/outcomes";
+import { getEmailProvider } from "@/lib/outreach/provider";
+import { sendDueMessages } from "@/lib/outreach/send";
 import { str, type ActionState } from "./form";
 import { ownApplication } from "./scope";
 
@@ -222,38 +225,38 @@ export async function recordOutcome(sequenceId: string, type: "replied" | "opted
   const seq = await ownSequence(auth, sequenceId);
   if (!seq) return { error: "Sequence not found." };
   const t = z.enum(["replied", "opted_out", "bounced"]).parse(type);
-  const lastSent = [...seq.messages].reverse().find((m) => m.sentAt);
-  const candidateId = seq.application.candidateId;
-  if (lastSent) await db.outreachMessage.update({ where: { id: lastSent.id }, data: { status: t } });
-  if (t === "bounced") {
-    if (seq.status === "active") await db.outreachSequence.update({ where: { id: sequenceId }, data: { status: "paused", stopReason: "bounced" } });
-  } else {
-    await stopInternal(auth, sequenceId, t);
-  }
-  if (t === "opted_out") await db.candidate.update({ where: { id: candidateId }, data: { contactOptOut: true, optOutAt: new Date() } });
-  if (t === "replied")
-    await db.task.create({
-      data: {
-        orgId: auth.orgId,
-        applicationId: seq.applicationId,
-        type: "reply",
-        title: "Respond to candidate reply",
-        detailsJson: JSON.stringify({ sequenceId }),
-        createdById: auth.userId,
-        createdByName: auth.userName,
-      },
-    });
-  await event(auth.orgId, sequenceId, t, auth.userName, { messageId: lastSent?.id, note: note?.slice(0, 500) });
-  await audit(auth, t === "replied" ? "outreach.reply_recorded" : t === "opted_out" ? "outreach.opt_out_recorded" : "outreach.paused", {
-    subjectType: "outreach",
-    subjectId: sequenceId,
-    candidateId,
-    roleId: seq.application.roleId,
-    applicationId: seq.applicationId,
-    meta: { outcome: t },
-  });
-  refresh(candidateId);
+  await applyOutcome({ orgId: auth.orgId, userId: auth.userId, userName: auth.userName, providerConfirmed: false }, sequenceId, t, { note });
+  refresh(seq.application.candidateId);
   return { ok: true };
+}
+
+/** Admin: send due messages now instead of waiting for the scheduled run. Only with a provider. */
+export async function sendDueNow(): Promise<ActionState> {
+  const auth = await requireAuth();
+  if (auth.membershipRole !== "admin") return { error: "Only workspace admins can do this." };
+  const r = await sendDueMessages({ orgId: auth.orgId, triggeredBy: auth.userName });
+  if (!r) return { error: "No email provider is connected." };
+  revalidatePath("/queue");
+  revalidatePath("/settings/integrations");
+  return { ok: true, message: r.due ? `${r.sent} sent${r.skipped ? ` · ${r.skipped} skipped (opt-out, no email or no longer active)` : ""}${r.failed ? ` · ${r.failed} failed, will retry` : ""}.` : "Nothing is due." };
+}
+
+/** Admin: sends one test email to the admin's own address to check SMTP settings. */
+export async function sendTestEmail(): Promise<ActionState> {
+  const auth = await requireAuth();
+  if (auth.membershipRole !== "admin") return { error: "Only workspace admins can do this." };
+  const provider = getEmailProvider();
+  if (!provider) return { error: "No email provider is connected." };
+  const me = await db.user.findUnique({ where: { id: auth.userId }, select: { email: true } });
+  if (!me?.email) return { error: "Your account has no email address." };
+  try {
+    await provider.send({ to: me.email, from: process.env.OUTREACH_FROM_EMAIL!, replyTo: process.env.OUTREACH_REPLY_TO || undefined, subject: "Talyn test email", text: "This is a test from Talyn In-house TA. Your email settings work." });
+  } catch (err) {
+    logError("outreach.test_failed", err);
+    return { error: "The mail server didn't accept the test message. Check SMTP host, port, user, password and sender address." };
+  }
+  await audit(auth, "outreach.test_sent", { subjectType: "org", subjectId: auth.orgId });
+  return { ok: true, message: "Test email sent to your address." };
 }
 
 /**

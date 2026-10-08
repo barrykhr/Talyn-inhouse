@@ -1,6 +1,8 @@
 import "server-only";
 import { db } from "../db";
 import { locateQuote } from "../evidence";
+import { z } from "zod";
+import { checkEnv } from "../integrations/env";
 import type { SearchFilters } from "./filters";
 
 /**
@@ -146,28 +148,133 @@ const talynRediscovery: SourcingConnector = {
   },
 };
 
+/** A profile record from an authorized external source (provider API or an imported export). */
+export const ExternalRecord = z.object({
+  id: z.string().min(1).max(200),
+  url: z.string().url().max(500).nullish(),
+  name: z.string().min(1).max(200),
+  title: z.string().max(200).nullish(),
+  company: z.string().max(200).nullish(),
+  location: z.string().max(200).nullish(),
+  email: z.string().email().max(200).nullish(),
+  linkedinUrl: z.string().url().max(500).nullish(),
+  skills: z.array(z.string().max(100)).max(200).nullish(),
+  summary: z.string().max(20000).nullish(),
+  experience: z
+    .array(z.object({ title: z.string().max(200).nullish(), company: z.string().max(200).nullish(), start: z.string().max(40).nullish(), end: z.string().max(40).nullish(), description: z.string().max(5000).nullish() }))
+    .max(50)
+    .nullish(),
+  updatedAt: z.string().max(40).nullish(),
+});
+export type ExternalRecord = z.infer<typeof ExternalRecord>;
+
 /**
- * External provider slot. No provider is selected for this workspace, so this connector reports
- * a setup state and never returns results. Implementing a provider = a SourcingConnector that
- * calls the provider's licensed API with credentials from the environment.
+ * Turns a source record into a reviewable profile. Signals are quoted only from text the source
+ * returned; contact details are kept only if the source provided them (never inferred).
+ */
+export async function profileFromRecord(orgId: string, r: ExternalRecord, filters: SearchFilters, sourceLabel: string, opts: { relevanceGate: boolean }): Promise<RawProfile | null> {
+  const asOf = r.updatedAt && !Number.isNaN(Date.parse(r.updatedAt)) ? new Date(r.updatedAt).toISOString() : new Date().toISOString();
+  const lines = [
+    [r.title, r.company].filter(Boolean).join(" at "),
+    r.location ?? "",
+    r.skills?.length ? `Skills: ${r.skills.join(", ")}` : "",
+    ...(r.experience ?? []).flatMap((e) => [[e.title, e.company, [e.start, e.end].filter(Boolean).join("–")].filter(Boolean).join(" · "), e.description ?? ""]),
+    r.summary ?? "",
+  ].filter((l) => l.trim());
+  const text = [lines.join("\n")];
+  const sig = (category: string, term: string): Signal => {
+    const hit = findTerm(text, term);
+    return { category, term, matched: !!hit, quote: hit?.quote ?? null, page: null };
+  };
+  const signals = [
+    ...filters.titles.map((t) => sig("title", t)),
+    ...filters.skills_required.map((t) => sig("skill_required", t)),
+    ...filters.skills_preferred.map((t) => sig("skill_preferred", t)),
+    ...filters.locations.map((t) => sig("location", t)),
+  ];
+  if (opts.relevanceGate && !signals.some((s) => s.matched && (s.category === "title" || s.category === "skill_required"))) return null;
+  const excl = filters.exclusions.find((e) => findTerm(text, e));
+  const ageMonths = r.updatedAt && !Number.isNaN(Date.parse(r.updatedAt)) ? (Date.now() - Date.parse(r.updatedAt)) / (30 * 86400000) : null;
+  const dup = await findDuplicate(orgId, { email: r.email, linkedinUrl: r.linkedinUrl, name: r.name, company: r.company });
+  const fact = (v: string | null | undefined) => (v ? { value: v, source: sourceLabel, asOf } : null);
+  const fields = Object.fromEntries(
+    (
+      [
+        ["current_title", fact(r.title)],
+        ["current_company", fact(r.company)],
+        ["location", fact(r.location)],
+        ["email", fact(r.email)],
+        ["linkedin_url", fact(r.linkedinUrl)],
+      ] as const
+    ).filter(([, f]) => f) as [string, FieldFact][],
+  );
+  return {
+    sourceRecordId: r.id,
+    sourceUrl: r.url ?? null,
+    displayName: r.name,
+    currentTitle: r.title ?? null,
+    currentCompany: r.company ?? null,
+    location: r.location ?? null,
+    fields,
+    signals,
+    evidenceStatus: lines.length <= 1 ? "insufficient" : ageMonths !== null && ageMonths > STALE_MONTHS ? "stale" : "ok",
+    staleReason: lines.length <= 1 ? "The source returned little profile text" : ageMonths !== null && ageMonths > STALE_MONTHS ? `Profile last updated ${Math.round(ageMonths)} months ago` : !r.updatedAt ? "The source didn't say when this profile was last updated" : null,
+    excludedBy: excl ?? null,
+    duplicateCandidateId: dup?.id ?? null,
+    duplicateReason: dup?.reason ?? null,
+  };
+}
+
+export const SOURCING_ENV = [
+  { name: "SOURCING_PROVIDER_NAME", purpose: "Name shown to recruiters, e.g. the licensed provider or your internal talent-data service" },
+  { name: "SOURCING_API_URL", purpose: "HTTPS endpoint implementing the Talyn sourcing contract (docs/INTEGRATIONS.md)" },
+  { name: "SOURCING_API_KEY", purpose: "Bearer token for that endpoint", secret: true },
+];
+
+const SearchResponse = z.object({ estimatedTotal: z.number().int().nonnegative().nullish(), profiles: z.array(z.unknown()).max(500) });
+
+/**
+ * Authorized provider API. Vendor-neutral: Talyn POSTs the saved search to an endpoint you
+ * control or license (a provider's API, or a small adapter in front of one) and reviews what it
+ * returns. Off until SOURCING_* variables are set. Talyn never scrapes or automates logins.
  */
 const externalProvider: SourcingConnector = {
   key: "external",
-  label: "External talent data provider",
+  get label() {
+    return process.env.SOURCING_PROVIDER_NAME?.trim() || "External talent data provider";
+  },
   kind: "external",
   description: "A licensed people-data provider or job-board API connected with your organization's credentials.",
-  configured: () => false,
+  configured: () => checkEnv(SOURCING_ENV).ready && /^https:\/\//.test(process.env.SOURCING_API_URL ?? ""),
   setupHint:
-    "Not connected. Choose a licensed talent-data provider (or a job board with an approved API), confirm your organization's licence covers this use, and add its API credentials. Talyn will not scrape websites or automate access without an authorized data path.",
-  syntaxNote: "Each provider has its own query syntax and limits; the Boolean query is translated per provider and may not behave identically.",
+    "Not connected. Choose a licensed talent-data provider (or a job board with an approved API), confirm your organization's licence covers this use, and set SOURCING_PROVIDER_NAME, SOURCING_API_URL and SOURCING_API_KEY. Meanwhile you can import an export from a source you're licensed to use. Talyn will not scrape websites or automate access without an authorized data path.",
+  syntaxNote: "Talyn sends the structured filters and the generic Boolean string; the provider decides how to interpret them, so results may not match Boolean semantics exactly.",
   renderQuery: (_f, b) => b,
-  async search() {
-    throw new Error("External sourcing provider is not configured.");
+  async search({ orgId, filters, booleanQuery }) {
+    const res = await fetch(process.env.SOURCING_API_URL!, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${process.env.SOURCING_API_KEY}` },
+      body: JSON.stringify({ filters, booleanQuery, limit: 100 }),
+      signal: AbortSignal.timeout(60_000),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`Sourcing provider responded ${res.status}`);
+    const body = SearchResponse.parse(await res.json());
+    const profiles: RawProfile[] = [];
+    for (const raw of body.profiles) {
+      const rec = ExternalRecord.safeParse(raw);
+      if (!rec.success) continue; // malformed records are skipped, not guessed at
+      const p = await profileFromRecord(orgId, rec.data, filters, this.label, { relevanceGate: false });
+      if (p) profiles.push(p);
+    }
+    return { profiles, estimatedTotal: body.estimatedTotal ?? null, query: booleanQuery };
   },
 };
 
 export const CONNECTORS: SourcingConnector[] = [talynRediscovery, externalProvider];
 export const connector = (key: string) => CONNECTORS.find((c) => c.key === key);
+/** Display label for a stored source key (connectors plus imported files). */
+export const sourceLabel = (key: string) => (key === "file" ? "Imported file" : (connector(key)?.label ?? key));
 
 /** Duplicate check against existing Talyn candidates (used for external profiles). */
 export async function findDuplicate(orgId: string, p: { email?: string | null; linkedinUrl?: string | null; name: string; company?: string | null }) {

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { audit } from "@/lib/audit";
+import { queueStageChange } from "@/lib/ats/sync";
 import { requireAuth, type AuthContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { DECISIONS, STAGES } from "@/lib/domain";
@@ -213,6 +214,7 @@ export async function moveStage(applicationId: string, stage: string) {
     }),
   ]);
   await audit(auth, "stage.changed", { subjectType: "application", subjectId: applicationId, candidateId: app.candidateId, roleId: app.roleId, applicationId, meta: { from: app.stage, to } });
+  await queueStageChange(auth, app, to); // no-op unless an ATS is connected, linked and mapped
   revalidatePath(`/candidates/${app.candidateId}`);
   revalidatePath(`/roles/${app.roleId}`);
 }

@@ -31,6 +31,8 @@ import { CV_LISTS, CV_SCALARS } from "@/lib/extraction-fields";
 import { CvReviewForm, type CvFact } from "./cv-review";
 import { DecisionForm } from "./decision";
 import { TasksCard } from "./tasks";
+import { AtsConflictsCard } from "./ats-conflicts";
+import { FIELD_LABEL as ATS_FIELD_LABEL, FIELD_OWNERSHIP, getAtsConnector } from "@/lib/ats/connector";
 import { QuestionList } from "@/components/questions";
 import { generateFollowUps } from "@/server/question-actions";
 import { OutreachPanel, type OutreachView } from "./outreach";
@@ -193,6 +195,8 @@ export default async function CandidatePage({
 
   // What Talyn has done, what needs review, and the next available action — most important first.
   const status: StatusItem[] = [];
+  const atsConflicts = await db.atsConflict.findMany({ where: { orgId: auth.orgId, candidateId: candidate.id, status: "open" }, orderBy: { createdAt: "asc" } });
+  if (atsConflicts.length) status.push({ tone: "attention", text: `${atsConflicts.length} field${atsConflicts.length === 1 ? "" : "s"} differ from the ATS`, href: "#ats-conflicts", action: "Resolve" });
   if (needsReview) status.push({ tone: "attention", text: "Details extracted from the CV are waiting for your review", href: "#cv-review", action: "Review" });
   if (app) {
     if (!latest) {
@@ -664,6 +668,13 @@ export default async function CandidatePage({
       )}
 
       <StatusLine items={status} />
+
+      {atsConflicts.length > 0 && (
+        <AtsConflictsCard
+          atsLabel={getAtsConnector()?.label ?? "the ATS"}
+          conflicts={atsConflicts.map((c) => ({ id: c.id, field: c.field, label: ATS_FIELD_LABEL[c.field] ?? c.field, talynValue: c.talynValue, atsValue: c.atsValue, ownership: FIELD_OWNERSHIP[c.field] ?? "recruiter_choice" }))}
+        />
+      )}
 
       {needsReview && (
         <div id="cv-review" className="mb-6 scroll-mt-6">
