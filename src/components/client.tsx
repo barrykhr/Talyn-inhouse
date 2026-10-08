@@ -78,7 +78,8 @@ export function ActionForm({
         className={className}
         onSubmit={(e) => {
           e.preventDefault();
-          action(new FormData(e.currentTarget));
+          // Include the clicked submit button (name/value), like a native submission would.
+          action(new FormData(e.currentTarget, (e.nativeEvent as SubmitEvent).submitter));
         }}
       >
         {children}
@@ -93,17 +94,21 @@ export function SubmitButton({
   variant = "primary",
   size = "md",
   className,
+  name,
+  value,
 }: {
   children: ReactNode;
   pendingLabel?: string;
   variant?: "primary" | "secondary" | "ghost" | "danger" | "signal";
   size?: "sm" | "md";
   className?: string;
+  name?: string;
+  value?: string;
 }) {
   const status = useFormStatus();
   const pending = useContext(FormPending) || status.pending;
   return (
-    <button type="submit" disabled={pending} aria-busy={pending} className={buttonClass(variant, size, className)}>
+    <button type="submit" name={name} value={value} disabled={pending} aria-busy={pending} className={buttonClass(variant, size, className)}>
       {pending ? <Spinner /> : null}
       {pending && pendingLabel ? pendingLabel : children}
     </button>

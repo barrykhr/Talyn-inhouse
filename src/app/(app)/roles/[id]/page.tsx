@@ -147,6 +147,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
         <TabLink href={`/roles/${role.id}?tab=pipeline`} active={tab === "pipeline"} label="Pipeline" count={role.applications.length} />
         <TabLink href={`/roles/${role.id}?tab=criteria`} active={tab === "criteria"} label="Criteria" count={approved.length} attention={proposed.length} />
         <TabLink href={`/roles/${role.id}?tab=description`} active={tab === "description"} label="Job description" attention={needsReview ? pendingFacts.length || 1 : 0} />
+        <TabLink href={`/roles/${role.id}/sourcing`} active={false} label="Sourcing" />
       </div>
 
       {tab === "criteria" && (

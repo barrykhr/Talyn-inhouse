@@ -87,6 +87,7 @@ model Role {
   applications     Application[]
   documents        JobDescription[]
   extracted        ExtractedField[]
+  icps             Icp[]
 
   @@index([orgId])
 }
@@ -376,4 +377,43 @@ model Task {
 
   @@index([orgId, status])
   @@index([applicationId])
+}
+
+// Ideal Candidate Profile: the recruiter-approved description of who to look for. Versioned;
+// only an approved version drives sourcing. Ambiguity becomes clarification questions, never filters.
+model Icp {
+  id                 String    @id @default(cuid())
+  orgId              String
+  roleId             String
+  version            Int
+  status             String    @default("draft") // draft | approved | superseded
+  generator          String // e.g. "ai:openai:gpt-5.5/icp-v1", "parser:icp-from-criteria-v1"
+  criteriaVersion    Int
+  clarificationsJson String    @default("[]") // [{ question, why, answer? }]
+  approvedByName     String?
+  approvedAt         DateTime?
+  createdByName      String    @default("")
+  createdAt          DateTime  @default(now())
+  role               Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  items              IcpItem[]
+
+  @@unique([roleId, version])
+  @@index([orgId, roleId])
+}
+
+model IcpItem {
+  id          String  @id @default(cuid())
+  icpId       String
+  category    String // see ICP_CATEGORIES in src/lib/domain.ts
+  value       String
+  origin      String // jd | criteria | ai_inferred | recruiter
+  rationale   String?
+  sourceQuote String?
+  sourcePage  Int?
+  status      String  @default("proposed") // proposed | approved | rejected
+  edited      Boolean @default(false)
+  position    Int     @default(0)
+  icp         Icp     @relation(fields: [icpId], references: [id], onDelete: Cascade)
+
+  @@index([icpId])
 }

@@ -127,3 +127,26 @@ export type Evidence = {
 export function isOneOf<T extends readonly string[]>(list: T, v: unknown): v is T[number] {
   return typeof v === "string" && (list as readonly string[]).includes(v);
 }
+
+// ---------------------------------------------------------------- Phase 2: sourcing
+
+export const ICP_CATEGORIES = [
+  { key: "target_title", label: "Target titles", hint: "Titles that match the role directly" },
+  { key: "adjacent_title", label: "Adjacent titles", hint: "Synonyms and closely related titles" },
+  { key: "skill_essential", label: "Essential skills", hint: "From essential criteria" },
+  { key: "skill_preferred", label: "Preferred skills", hint: "Nice to have" },
+  { key: "experience", label: "Experience", hint: "Relevant experience and scope" },
+  { key: "seniority", label: "Seniority", hint: "Level of the role" },
+  { key: "industry", label: "Industries & company contexts", hint: "Where relevant experience is often found" },
+  { key: "location", label: "Location", hint: "Geography constraints stated for the role" },
+  { key: "work_model", label: "Work model", hint: "Onsite, hybrid or remote" },
+  { key: "transferable", label: "Transferable backgrounds", hint: "Non-obvious backgrounds worth considering" },
+  { key: "exclusion", label: "Exclusions", hint: "Job-related only, and only when you approve them" },
+] as const;
+export type IcpCategory = (typeof ICP_CATEGORIES)[number]["key"];
+export const ICP_ORIGIN_LABEL: Record<string, string> = {
+  jd: "Stated in the JD",
+  criteria: "From approved criteria",
+  ai_inferred: "Inferred by AI",
+  recruiter: "Added by recruiter",
+};
