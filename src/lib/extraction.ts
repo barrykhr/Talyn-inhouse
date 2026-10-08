@@ -1,5 +1,5 @@
 import "server-only";
-import { AiRequestError, AiUnavailableError, aiStatus, extractCvWithAi, extractJdWithAi } from "./ai";
+import { AiRequestError, AiUnavailableError, aiStatus, extractCvWithAi, extractJdWithAi, proposeCriteriaWithAi } from "./ai";
 import { locateQuote } from "./evidence";
 import { extractCriteriaFromJd } from "./heuristics";
 import { logError } from "./log";
@@ -58,7 +58,8 @@ function fallbackNotice(err: unknown) {
 
 // ---------------------------------------------------------------- JD
 
-export async function extractJobDescription(pages: string[]): Promise<ExtractionOutcome<{ facts: FactDraft[]; criteria: CriterionDraft[] }>> {
+/** Stage "Extracting information": role details from the JD (no criteria). */
+export async function extractJdDetails(pages: string[]): Promise<ExtractionOutcome<{ facts: FactDraft[] }>> {
   const text = pages.join("\n\n");
   const ai = aiStatus();
   if (ai.configured) {
@@ -73,7 +74,35 @@ export async function extractJobDescription(pages: string[]): Promise<Extraction
       for (const x of r.responsibilities) facts.push(fact(pages, ex, "responsibility", x.value, x.source_quote));
       for (const x of r.qualifications) facts.push(fact(pages, ex, "qualification", x.value, x.source_quote));
       for (const x of r.experience_requirements) facts.push(fact(pages, ex, "experience_requirement", x.value, x.source_quote));
-      const criteria: CriterionDraft[] = r.criteria.map((c) => {
+      return { facts, method: "ai", extractor: ex, notice: null };
+    } catch (err) {
+      if (!(err instanceof AiRequestError)) logError("extract.jd_ai_failed", err);
+      return { ...heuristicJdDetails(pages), notice: fallbackNotice(err) };
+    }
+  }
+  return { ...heuristicJdDetails(pages), notice: fallbackNotice(new AiUnavailableError()) };
+}
+
+/** Stage "Mapping to criteria": proposed screening criteria, each located in the JD. */
+export async function draftJdCriteria(title: string, pages: string[]): Promise<ExtractionOutcome<{ criteria: CriterionDraft[] }>> {
+  const ai = aiStatus();
+  const heuristic = () =>
+    extractCriteriaFromJd(pages.join("\n\n")).map((c) => {
+      const loc = locate(pages, c.sourceText);
+      return {
+        name: c.name,
+        description: "",
+        importance: c.importance,
+        sourceText: c.sourceText,
+        sourcePage: loc.sourcePage,
+        sourceSection: loc.sourceSection,
+        rationale: "Bullet point from a requirements section of the job description.",
+      };
+    });
+  if (ai.configured) {
+    try {
+      const proposed = await proposeCriteriaWithAi({ title, description: pages.join("\n\n") });
+      const criteria: CriterionDraft[] = proposed.map((c) => {
         const loc = locate(pages, c.source_quote);
         return {
           name: c.name.slice(0, 200),
@@ -85,18 +114,18 @@ export async function extractJobDescription(pages: string[]): Promise<Extraction
           rationale: c.rationale || null,
         };
       });
-      return { facts, criteria, method: "ai", extractor: ex, notice: null };
+      return { criteria, method: "ai", extractor: `ai:${ai.provider}:${ai.model}/${JD_EXTRACT_VERSION}`, notice: null };
     } catch (err) {
-      if (!(err instanceof AiRequestError)) logError("extract.jd_ai_failed", err);
-      return { ...heuristicJd(pages), notice: fallbackNotice(err) };
+      if (!(err instanceof AiRequestError)) logError("extract.jd_criteria_failed", err);
+      return { criteria: heuristic(), method: "parser", extractor: JD_PARSER_VERSION, notice: fallbackNotice(err) };
     }
   }
-  return { ...heuristicJd(pages), notice: fallbackNotice(new AiUnavailableError()) };
+  return { criteria: heuristic(), method: "parser", extractor: JD_PARSER_VERSION, notice: fallbackNotice(new AiUnavailableError()) };
 }
 
 const LABELLED = (label: string) => new RegExp(`^\\s*(?:${label})\\s*[:\\-–]\\s*(.{2,120})$`, "im");
 
-function heuristicJd(pages: string[]) {
+function heuristicJdDetails(pages: string[]) {
   const text = pages.join("\n\n");
   const ex = JD_PARSER_VERSION;
   const facts: FactDraft[] = [];
@@ -116,20 +145,8 @@ function heuristicJd(pages: string[]) {
     const v = type[1].toLowerCase().replace(/[- ]/, "_").replace("contractor", "contract");
     facts.push(fact(pages, ex, "employment_type", v, type[0]));
   }
-  const criteria: CriterionDraft[] = extractCriteriaFromJd(text).map((c) => {
-    const loc = locate(pages, c.sourceText);
-    return {
-      name: c.name,
-      description: "",
-      importance: c.importance,
-      sourceText: c.sourceText,
-      sourcePage: loc.sourcePage,
-      sourceSection: loc.sourceSection,
-      rationale: "Bullet point from a requirements section of the job description.",
-    };
-  });
-  for (const c of criteria) facts.push(fact(pages, ex, "qualification", c.name, c.sourceText));
-  return { facts, criteria, method: "parser" as const, extractor: ex };
+  for (const c of extractCriteriaFromJd(text)) facts.push(fact(pages, ex, "qualification", c.name, c.sourceText));
+  return { facts, method: "parser" as const, extractor: ex };
 }
 
 // ---------------------------------------------------------------- CV

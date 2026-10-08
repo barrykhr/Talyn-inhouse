@@ -2,11 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireAuth, type AuthContext } from "@/lib/auth";
+import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { DocumentParseError, parseDocument } from "@/lib/documents";
 import { EMPLOYMENT_TYPES } from "@/lib/domain";
-import { extractJobDescription } from "@/lib/extraction";
+import { draftJdCriteria, extractJdDetails } from "@/lib/extraction";
 import { logError } from "@/lib/log";
 import { storeFacts, storeProposedCriteria } from "./facts";
 import { goTo, str, type ActionState } from "./form";
@@ -20,10 +20,37 @@ async function readUpload(fd: FormData) {
   return { file, data, parsed };
 }
 
-/** Stores the JD, extracts details and proposes criteria. Nothing is applied to the role until reviewed. */
-async function ingestJd(auth: AuthContext, roleId: string, upload: Awaited<ReturnType<typeof readUpload>>) {
+export type StepResult = { ok?: boolean; error?: string; notice?: string | null; roleId?: string; count?: number };
+
+/**
+ * Stage 1 — "Uploading": reads the file and stores it. With no roleId a new draft role is
+ * created (its description is the JD text, the source document). Nothing is extracted yet.
+ */
+export async function uploadJd(roleId: string | null, fd: FormData): Promise<StepResult> {
+  const auth = await requireAuth();
+  if (roleId) await ownRole(auth, roleId);
+  let upload;
+  try {
+    upload = await readUpload(fd);
+  } catch (err) {
+    if (err instanceof DocumentParseError) return { error: err.message };
+    logError("jd.parse_failed", err);
+    return { error: "The file couldn't be read. Try again, or enter the role details manually." };
+  }
+  if (!roleId) {
+    const role = await db.role.create({
+      data: {
+        orgId: auth.orgId,
+        title: `Untitled role (from ${upload.file.name.replace(/\.[^.]+$/, "").slice(0, 80)})`,
+        description: upload.parsed.pages.join("\n\n").slice(0, 30000),
+        status: "draft",
+        createdById: auth.userId,
+      },
+    });
+    roleId = role.id;
+  }
   await db.jobDescription.updateMany({ where: { roleId, orgId: auth.orgId }, data: { isCurrent: false } });
-  const jd = await db.jobDescription.create({
+  await db.jobDescription.create({
     data: {
       orgId: auth.orgId,
       roleId,
@@ -35,57 +62,47 @@ async function ingestJd(auth: AuthContext, roleId: string, upload: Awaited<Retur
       file: { create: { orgId: auth.orgId, data: new Uint8Array(upload.data) } },
     },
   });
-  const extraction = await extractJobDescription(upload.parsed.pages);
-  await storeFacts(auth.orgId, { type: "role", roleId }, jd.id, extraction.facts);
-  await storeProposedCriteria(auth.orgId, roleId, extraction.criteria, extraction.method === "ai" ? "ai" : "extracted");
   await db.role.update({ where: { id: roleId }, data: { extractionStatus: "needs_review" } });
-  return extraction.notice;
+  return { ok: true, roleId };
 }
 
-export async function createRoleFromJd(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const auth = await requireAuth();
-  let upload;
-  try {
-    upload = await readUpload(fd);
-  } catch (err) {
-    if (err instanceof DocumentParseError) return { error: err.message };
-    logError("jd.parse_failed", err);
-    return { error: "The file couldn't be read. Try again, or enter the role details manually." };
-  }
-  // The JD text is the source document, so it becomes the role description. Extracted
-  // details (title, department, …) wait for recruiter review.
-  const role = await db.role.create({
-    data: {
-      orgId: auth.orgId,
-      title: `Untitled role (from ${upload.file.name.replace(/\.[^.]+$/, "").slice(0, 80)})`,
-      description: upload.parsed.pages.join("\n\n").slice(0, 30000),
-      status: "draft",
-      createdById: auth.userId,
-    },
-  });
-  let notice: string | null = null;
-  try {
-    notice = await ingestJd(auth, role.id, upload);
-  } catch (err) {
-    logError("jd.ingest_failed", err, { roleId: role.id });
-    notice = "The JD was saved, but details couldn't be extracted. Enter them manually.";
-  }
-  return goTo(`/roles/${role.id}?tab=description${notice ? `&notice=${encodeURIComponent(notice)}` : ""}`);
+async function currentJd(orgId: string, roleId: string) {
+  const jd = await db.jobDescription.findFirst({ where: { roleId, orgId, isCurrent: true } });
+  return jd ? { jd, pages: JSON.parse(jd.pagesJson) as string[] } : null;
 }
 
-export async function uploadJdToRole(roleId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+/** Stage 2 — "Extracting information": role details from the current JD, as pending facts. */
+export async function extractJdStep(roleId: string): Promise<StepResult> {
   const auth = await requireAuth();
   await ownRole(auth, roleId);
-  let notice: string | null;
+  const cur = await currentJd(auth.orgId, roleId);
+  if (!cur) return { error: "No uploaded job description found for this role." };
   try {
-    notice = await ingestJd(auth, roleId, await readUpload(fd));
+    const out = await extractJdDetails(cur.pages);
+    await storeFacts(auth.orgId, { type: "role", roleId }, cur.jd.id, out.facts);
+    return { ok: true, notice: out.notice, count: out.facts.length };
   } catch (err) {
-    if (err instanceof DocumentParseError) return { error: err.message };
-    logError("jd.upload_failed", err, { roleId });
-    return { error: "The JD couldn't be processed. Please try again." };
+    logError("jd.extract_failed", err, { roleId });
+    return { error: "Details couldn't be extracted. The JD is saved — you can enter the details yourself." };
   }
-  revalidatePath(`/roles/${roleId}`);
-  return { ok: true, message: notice ?? "JD uploaded. Review the extracted details below." };
+}
+
+/** Stage 3 — "Mapping to criteria": proposed criteria from the JD, inactive until approved. */
+export async function mapJdCriteriaStep(roleId: string): Promise<StepResult> {
+  const auth = await requireAuth();
+  const role = await ownRole(auth, roleId);
+  const cur = await currentJd(auth.orgId, roleId);
+  if (!cur) return { error: "No uploaded job description found for this role." };
+  try {
+    const titleFact = await db.extractedField.findFirst({ where: { roleId, orgId: auth.orgId, field: "title", status: "pending" } });
+    const title = titleFact ? (JSON.parse(titleFact.valueJson) as string) : role.title;
+    const out = await draftJdCriteria(title, cur.pages);
+    await storeProposedCriteria(auth.orgId, roleId, out.criteria, out.method === "ai" ? "ai" : "extracted");
+    return { ok: true, notice: out.notice, count: out.criteria.length };
+  } catch (err) {
+    logError("jd.criteria_failed", err, { roleId });
+    return { error: "Criteria couldn't be drafted. You can add or draft them on the Criteria tab." };
+  }
 }
 
 const SCALAR_FIELDS = ["title", "department", "location", "employment_type"] as const;

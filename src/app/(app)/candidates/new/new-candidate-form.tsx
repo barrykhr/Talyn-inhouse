@@ -5,13 +5,13 @@ import { useState } from "react";
 import { CandidateFields } from "@/components/candidate-fields";
 import { ActionForm, FormMessage, SubmitButton, useServerForm } from "@/components/client";
 import { Card, Field, Input, LinkButton, Notice, Select, SectionTitle, Textarea } from "@/components/ui";
+import { CvUploadFlow, type RoleOption } from "@/components/upload-flows";
 import { createCandidate } from "@/server/candidate-actions";
-import { createCandidateFromCv } from "@/server/cv-actions";
 
-export function NewCandidateForm({ roles, roleId, aiConfigured }: { roles: { id: string; title: string }[]; roleId: string; aiConfigured: boolean }) {
+export function NewCandidateForm({ roles, roleId, aiConfigured }: { roles: RoleOption[]; roleId: string; aiConfigured: boolean }) {
   const [tab, setTab] = useState<"upload" | "manual">("upload");
   const [role, setRole] = useState(roleId);
-  const [cvState, cvAction, cvActionPending] = useServerForm(createCandidateFromCv);
+  const [cvError, setCvError] = useState<string | null>(null);
   const [state, action, actionPending] = useServerForm(createCandidate);
   const cancelHref = roleId ? `/roles/${roleId}` : "/candidates";
 
@@ -28,49 +28,35 @@ export function NewCandidateForm({ roles, roleId, aiConfigured }: { roles: { id:
 
   return (
     <>
-      <div className="mb-4 inline-flex rounded-lg border border-line-strong bg-surface p-0.5">
+      <div role="tablist" aria-label="How to add the candidate" className="mb-4 inline-flex rounded-lg border border-line-strong bg-surface p-0.5">
         {(["upload", "manual"] as const).map((t) => (
           <button
             key={t}
+            role="tab"
+            aria-selected={tab === t}
             type="button"
             onClick={() => setTab(t)}
-            className={clsx("rounded-md px-3 py-1.5 text-[13px] font-medium", tab === t ? "bg-ink text-white" : "text-muted hover:text-ink")}
+            className={clsx("rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors", tab === t ? "bg-ink text-white" : "text-muted hover:text-ink")}
           >
-            {t === "upload" ? "Upload CV" : "Enter manually"}
+            {t === "upload" ? "From a CV" : "Enter manually"}
           </button>
         ))}
       </div>
 
+      <div key={tab} className="motion-fade">
       {tab === "upload" ? (
-        <ActionForm action={cvAction} pending={cvActionPending} className="space-y-5">
-          <Card className="space-y-4 p-6">
-            <SectionTitle hint="PDF or DOCX, up to 4 MB. Stored privately in your workspace.">Upload a CV</SectionTitle>
-            <p className="text-[13px] text-muted">
-              Talyn reads the CV and extracts contact details, work history, education, skills and certifications — each with the CV text it came from. You
-              review and correct everything before it&apos;s used. Contact details are read locally and never sent to an AI provider.
-              {!aiConfigured && " AI is off, so a basic parser (not AI) will extract what it can."}
-            </p>
-            <Input name="cv" type="file" required accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="h-auto py-1.5" />
-            <div className="max-w-sm">{roleSelect}</div>
-            {cvState?.error && (
-              <Notice tone="danger">
-                {cvState.error}{" "}
-                <button type="button" onClick={() => setTab("manual")} className="font-medium underline">
-                  Enter details manually
-                </button>
-              </Notice>
-            )}
-          </Card>
-          <div className="flex items-center gap-3">
-            <div className="ml-auto flex gap-2">
-              <LinkButton href={cancelHref} variant="ghost">Cancel</LinkButton>
-              <SubmitButton pendingLabel="Reading CV and extracting details…">Upload and extract</SubmitButton>
-            </div>
-          </div>
-        </ActionForm>
+        <CvUploadFlow
+          roles={roles}
+          defaultRole={roleId}
+          aiConfigured={aiConfigured}
+          onManual={(err) => {
+            setCvError(err ?? null);
+            setTab("manual");
+          }}
+        />
       ) : (
         <ActionForm action={action} pending={actionPending} className="space-y-5">
-          {cvState?.error && <Notice tone="warn">The CV couldn&apos;t be read ({cvState.error.split(".")[0].toLowerCase()}). Enter the details below instead.</Notice>}
+          {cvError && <Notice tone="warn">The CV couldn&apos;t be used: {cvError} Enter the details below instead.</Notice>}
           <Card className="p-6">
             <SectionTitle hint="Everything entered here is recorded as recruiter-entered.">Profile</SectionTitle>
             <CandidateFields />
@@ -99,6 +85,7 @@ export function NewCandidateForm({ roles, roleId, aiConfigured }: { roles: { id:
           </div>
         </ActionForm>
       )}
+      </div>
     </>
   );
 }

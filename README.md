@@ -103,6 +103,12 @@ No output is ever presented as coming from a model unless it did.
 | `npm run db:deploy` | Apply pending migrations (what Vercel runs on deploy) |
 | `npm run db:studio` | Browse the database |
 
+## Keyboard
+
+- **⌘K / Ctrl+K** — search roles and candidates, or jump anywhere
+- **G then R / G then C** — go to roles / candidates
+- Tabs support arrow keys; dialogs close with **Esc**
+
 ## Manual walkthrough
 
 1. **Sign up** (email/password or Google) — creates your organization and an admin account.
@@ -125,7 +131,10 @@ No output is ever presented as coming from a model unless it did.
    - Review on the candidate page: correct or untick anything, then **Save reviewed profile**.
      The Profile card labels each field *From CV*, *From CV, corrected by recruiter*, or
      *Entered by recruiter*.
-5. **Assess with AI** (or **Keyword check**) on the candidate's role. Per criterion: *Supported,
+5. **Assess with AI** (or **Keyword check**) on the candidate's role — or tick *Also map the CV to
+   this role's criteria* when uploading, which runs it as the final upload stage. Evidence is on
+   the left; the score, recommendation and your decision stay in the right-hand panel (a
+   *Review & decide* drawer on small screens). Click any citation to open the CV at that passage. Per criterion: *Supported,
    Partially supported, Inferred, Conflicting evidence* or *Not stated*, with verbatim evidence and
    its location (✓ found / ⚠ not found — unverifiable "supported" claims are downgraded),
    explanation, missing information and confidence. **Correct this** overrides a result with a

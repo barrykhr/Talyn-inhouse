@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ActionForm, FormMessage, SubmitButton, useServerForm } from "@/components/client";
 import { SourceRef } from "@/components/source-ref";
 import { Button, Card, Input, Notice, Select, Textarea } from "@/components/ui";
 import { EMPLOYMENT_TYPES, EMPLOYMENT_TYPE_LABEL } from "@/lib/domain";
 import { LIST_LABEL } from "@/lib/extraction-fields";
-import { reviewRoleExtraction, uploadJdToRole } from "@/server/jd-actions";
+import { JdUploadFlow } from "@/components/upload-flows";
+import { reviewRoleExtraction } from "@/server/jd-actions";
 
 export type FactView = {
   id: string;
@@ -113,11 +114,6 @@ export function RoleReviewForm({
 
 export function UploadJd({ roleId, hasJd }: { roleId: string; hasJd: boolean }) {
   const [open, setOpen] = useState(false);
-  const [key, setKey] = useState(0);
-  const [state, action, actionPending] = useServerForm(uploadJdToRole.bind(null, roleId));
-  useEffect(() => {
-    if (state?.ok) setKey((k) => k + 1);
-  }, [state]);
   if (!open)
     return (
       <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
@@ -125,14 +121,8 @@ export function UploadJd({ roleId, hasJd }: { roleId: string; hasJd: boolean }) 
       </Button>
     );
   return (
-    <ActionForm key={key} action={action} pending={actionPending} className="w-full space-y-2">
-      <Input name="jd" type="file" required accept=".pdf,.docx" className="h-auto py-1.5 text-[13px]" />
-      {state?.error && <Notice tone="danger">{state.error}</Notice>}
-      {state?.ok && state.message && <Notice tone="ok">{state.message}</Notice>}
-      <div className="flex justify-end gap-2">
-        <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>Close</Button>
-        <SubmitButton size="sm" pendingLabel="Reading the JD…">Upload and extract</SubmitButton>
-      </div>
-    </ActionForm>
+    <div className="motion-fade w-full">
+      <JdUploadFlow roleId={roleId} onCancelHref={`/roles/${roleId}?tab=description`} />
+    </div>
   );
 }

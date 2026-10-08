@@ -4,7 +4,8 @@ import clsx from "clsx";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ActionForm, ActionButton, FormMessage, Spinner, SubmitButton, useServerForm, usePendingTask } from "@/components/client";
-import { AiMark, Badge, Button, Card, Field, Input, Notice, Select, Textarea } from "@/components/ui";
+import { useToast } from "@/components/toast";
+import { AiMark, Button, Card, Field, Input, Notice, Select, Textarea } from "@/components/ui";
 import { CRITERION_ORIGIN_LABEL } from "@/lib/domain";
 import {
   addCriterion,
@@ -92,7 +93,7 @@ export function ReviewBanner({ roleId, count }: { roleId: string; count: number 
       <span>
         <strong>{count} proposed {count === 1 ? "criterion needs" : "criteria need"} review.</strong> Edit wording, set essential or preferred, then approve. Only approved criteria are used in assessments.
       </span>
-      <ActionButton action={() => approveAllProposed(roleId)} variant="secondary" confirm={`Approve all ${count} proposed criteria as currently worded?`}>
+      <ActionButton action={() => approveAllProposed(roleId)} variant="secondary" confirm={`Approve all ${count} proposed criteria as currently worded?`} successMessage={`${count} criteria approved`}>
         Approve all as written
       </ActionButton>
     </Notice>
@@ -117,15 +118,15 @@ export function CriterionRow({ c }: { c: CriterionView }) {
       ) : (
         <div className="flex flex-wrap items-start gap-3">
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <span className="font-medium">{c.name}</span>
-              <Badge tone={c.importance === "essential" ? "ink" : "neutral"}>{c.importance === "essential" ? "Essential" : "Preferred"}</Badge>
-              {c.priority != null && <Badge title="Priority (1 = highest)">P{c.priority}</Badge>}
-              {c.origin === "ai" && <AiMark label="AI proposed" />}
-              {c.origin === "extracted" && <Badge title={CRITERION_ORIGIN_LABEL.extracted}>From JD</Badge>}
-              {c.edited && <Badge tone="warn" title={`Originally: ${c.originalName ?? ""}`}>Edited by recruiter</Badge>}
-              {proposed && <Badge tone="signal">Awaiting approval</Badge>}
-              {rejected && <Badge tone="gap">Rejected</Badge>}
+              {(proposed || rejected) && <span className="text-[12px] text-muted">{c.importance === "essential" ? "Essential" : "Preferred"}</span>}
+              {c.priority != null && <span className="text-[12px] text-muted" title="Priority (1 = highest)">Priority {c.priority}</span>}
+            </div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-faint">
+              {c.origin === "ai" ? <AiMark label="AI proposed" /> : <span>{c.origin === "extracted" ? "From JD bullet (not AI)" : "Added by recruiter"}</span>}
+              {c.edited && <span className="text-warn" title={`Originally: ${c.originalName ?? ""}`}>· edited by recruiter</span>}
+              {c.sourcePage || c.sourceSection ? <span>· JD{c.sourcePage ? ` p.${c.sourcePage}` : ""}{c.sourceSection ? ` · ${c.sourceSection}` : ""}</span> : null}
             </div>
             {c.description && <p className="mt-1 text-[13px] text-ink-2">{c.description}</p>}
             {(c.sourceText || c.rationale) && (
@@ -156,8 +157,8 @@ export function CriterionRow({ c }: { c: CriterionView }) {
           <div className="flex flex-wrap items-center gap-1">
             {proposed && (
               <>
-                <ActionButton action={() => setCriterionStatus(c.id, "approved")} variant="primary">Approve</ActionButton>
-                <ActionButton action={() => setCriterionStatus(c.id, "rejected")} variant="ghost">Reject</ActionButton>
+                <ActionButton action={() => setCriterionStatus(c.id, "approved")} variant="primary" successMessage="Criterion approved — now used in assessments">Approve</ActionButton>
+                <ActionButton action={() => setCriterionStatus(c.id, "rejected")} variant="ghost" successMessage="Criterion rejected">Reject</ActionButton>
               </>
             )}
             {rejected && <ActionButton action={() => setCriterionStatus(c.id, "proposed")} variant="ghost">Restore</ActionButton>}
@@ -187,8 +188,10 @@ export function CriterionForm({
 }) {
   const [state, formAction, formActionPending] = useServerForm(action);
   const [key, setKey] = useState(0);
+  const toast = useToast();
   useEffect(() => {
     if (state?.ok) {
+      toast({ message: "Criterion saved" });
       onDone?.();
       setKey((k) => k + 1);
     }

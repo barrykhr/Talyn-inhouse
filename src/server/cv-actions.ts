@@ -10,12 +10,13 @@ import { attach } from "./pipeline";
 import { extractIntoReview, parseOrigins, prepareResume, saveResume } from "./resume-store";
 import { ownCandidate, ownRole } from "./scope";
 
+export type CvStepResult = { ok?: boolean; error?: string; notice?: string | null; candidateId?: string; applicationId?: string | null; count?: number };
+
 /**
- * Adds a candidate from an uploaded CV. The file is parsed first; on failure nothing is
- * created and the recruiter is told why. Extracted details are stored as a pending review —
- * the profile itself stays empty until the recruiter reviews them.
+ * Stage 1 — "Uploading": parses the CV first; on failure nothing is created and the recruiter
+ * is told why. On success a candidate shell is created (profile empty until review).
  */
-export async function createCandidateFromCv(_prev: ActionState, fd: FormData): Promise<ActionState> {
+export async function uploadCv(fd: FormData): Promise<CvStepResult> {
   const auth = await requireAuth();
   const roleId = str(fd, "roleId");
   if (roleId) await ownRole(auth, roleId);
@@ -28,23 +29,28 @@ export async function createCandidateFromCv(_prev: ActionState, fd: FormData): P
     logError("cv.parse_failed", err);
     return { error: "The CV couldn't be read. Try another file, or enter the details manually." };
   }
-
   const candidate = await db.candidate.create({
     data: { orgId: auth.orgId, fullName: "Unnamed candidate (CV awaiting review)", source: "cv_upload", extractionStatus: "needs_review" },
   });
-  const saved = await saveResume(auth, candidate.id, resume);
-  if (roleId) await attach(auth, candidate.id, roleId);
-  let notice: string | null = null;
+  await saveResume(auth, candidate.id, resume);
+  const app = roleId ? await attach(auth, candidate.id, roleId) : null;
+  return { ok: true, candidateId: candidate.id, applicationId: app?.id ?? null };
+}
+
+/** Stage 2 — "Extracting information": profile facts from the current CV, pending review. */
+export async function extractCvStep(candidateId: string): Promise<CvStepResult> {
+  const auth = await requireAuth();
+  await ownCandidate(auth, candidateId);
+  const resume = await db.resume.findFirst({ where: { candidateId, orgId: auth.orgId, isCurrent: true } });
+  if (!resume) return { error: "No CV found for this candidate." };
   try {
-    notice = await extractIntoReview(auth, candidate.id, saved.id, resume.parsed.pages);
+    const notice = await extractIntoReview(auth, candidateId, resume.id, JSON.parse(resume.pagesJson) as string[]);
+    const count = await db.extractedField.count({ where: { candidateId, orgId: auth.orgId, status: "pending" } });
+    return { ok: true, notice, count };
   } catch (err) {
-    logError("cv.extract_failed", err, { candidateId: candidate.id });
-    notice = "The CV was saved, but details couldn't be extracted. Enter the profile manually with Edit profile.";
+    logError("cv.extract_failed", err, { candidateId });
+    return { error: "Details couldn't be extracted. The CV is saved — you can fill in the profile yourself." };
   }
-  const q = new URLSearchParams();
-  if (roleId) q.set("role", roleId);
-  if (notice) q.set("notice", notice);
-  return goTo(`/candidates/${candidate.id}${q.size ? `?${q}` : ""}`);
 }
 
 const SCALARS = {

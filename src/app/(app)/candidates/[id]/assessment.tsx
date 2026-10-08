@@ -5,6 +5,9 @@ import { useEffect, useState } from "react";
 import { ActionForm, ActionButton, FormMessage, Spinner, SubmitButton, useServerForm } from "@/components/client";
 import { AiMark, Badge, Button, Field, Notice, Select, Textarea } from "@/components/ui";
 import { RECOMMENDATIONS, RECOMMENDATION_LABEL, RESULT_HELP, RESULT_LABEL, RESULTS, type AssessmentResult, type Evidence, type Recommendation } from "@/lib/domain";
+import { useSourceViewer } from "@/components/source-viewer";
+import { StagedProgress } from "@/components/staged-progress";
+import { useToast } from "@/components/toast";
 import { markReviewed, overrideItem, reviewRecommendation, runAssessment } from "@/server/assessment-actions";
 import type { ActionState } from "@/server/form";
 
@@ -95,27 +98,58 @@ export function RunAssessment({ applicationId, aiConfigured, hasAssessment, disa
     setPending(false);
   };
   return (
-    <div>
-      <div className="flex flex-wrap gap-2">
+    <div className="flex flex-col items-end gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
         <Button
           variant="signal"
           disabled={pending || !aiConfigured || !!disabledReason}
           onClick={() => run("ai")}
-          title={aiConfigured ? "AI reads the resume against each approved criterion and cites evidence" : "Add an AI API key in Settings to enable"}
+          title={aiConfigured ? "AI reads the CV against each approved criterion and cites evidence" : "Add an AI API key in Settings to enable"}
         >
-          {pending && mode === "ai" && <Spinner />}
-          {pending && mode === "ai" ? "Assessing…" : hasAssessment ? "Re-assess with AI" : "Assess with AI"}
+          {hasAssessment ? "Re-assess with AI" : "Assess with AI"}
         </Button>
-        <Button variant="secondary" disabled={pending || !!disabledReason} onClick={() => run("keyword")} title="Finds resume lines containing criterion keywords. Not AI.">
-          {pending && mode === "keyword" && <Spinner />}Keyword check (no AI)
+        <Button variant="secondary" disabled={pending || !!disabledReason} onClick={() => run("keyword")} title="Finds CV lines containing criterion keywords. Not AI.">
+          Keyword check (no AI)
         </Button>
       </div>
-      {disabledReason && <p className="mt-2 text-[13px] text-warn">{disabledReason}</p>}
-      {!aiConfigured && !disabledReason && (
-        <p className="mt-2 text-[12.5px] text-muted">AI assessment is off. Set <code className="font-mono">OPENAI_API_KEY</code> or <code className="font-mono">ANTHROPIC_API_KEY</code> to enable it.</p>
+      {pending && (
+        <div className="w-full min-w-72 rounded-xl border border-line bg-surface px-4 py-3">
+          <StagedProgress
+            stages={[
+              {
+                key: "assess",
+                label: mode === "ai" ? "Mapping the CV to the approved criteria" : "Matching criterion keywords in the CV",
+                detail: mode === "ai" ? "Then Talyn computes the score and the AI drafts a recommendation for your review" : null,
+                state: "active",
+                slow: mode === "ai",
+              },
+            ]}
+          />
+        </div>
       )}
-      {state?.error && <p className="mt-2 text-[13px] text-danger">{state.error}</p>}
+      {disabledReason && <p className="text-[13px] text-warn">{disabledReason}</p>}
+      {!aiConfigured && !disabledReason && <p className="text-[12.5px] text-muted">AI assessment is off — add an AI API key in Settings to enable it.</p>}
+      {state?.error && <p className="text-[13px] text-danger">{state.error}</p>}
     </div>
+  );
+}
+
+function CitationButton({ evidence: e }: { evidence: Evidence }) {
+  const openSource = useSourceViewer();
+  const label = `${e.source === "resume" ? "CV" : "Candidate-provided info"}${e.page ? ` · p.${e.page}` : ""}${e.section && e.source === "resume" ? ` · ${e.section}` : ""}`;
+  if (!openSource || !e.verified) return <span>{label}</span>;
+  return (
+    <button
+      type="button"
+      onClick={() => openSource({ source: e.source, page: e.page, quote: e.quote, label })}
+      className="inline-flex items-center gap-1 rounded underline-offset-2 hover:text-ink hover:underline"
+      title="Open the source with this passage highlighted"
+    >
+      {label}
+      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+        <path d="M3.5 2h4.5v4.5M8 2L3 7" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+      </svg>
+    </button>
   );
 }
 
@@ -159,11 +193,7 @@ export function ItemCard({ item }: { item: ItemView }) {
                 <li key={i} className={clsx("rounded-lg border-l-2 bg-[#fbfaf7] px-3 py-2", e.verified ? "border-ok" : "border-warn")}>
                   <p className="quote text-ink">“{e.quote}”</p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[11.5px] text-muted">
-                    <a href={e.source === "resume" ? (e.page ? `#resume-p${e.page}` : "#resume") : "#candidate-info"} className="underline-offset-2 hover:text-ink hover:underline">
-                      {e.source === "resume" ? "Resume" : "Candidate-provided info"}
-                      {e.page ? ` · p.${e.page}` : ""}
-                      {e.section && e.source === "resume" ? ` · ${e.section}` : ""}
-                    </a>
+                    <CitationButton evidence={e} />
                     {e.verified ? (
                       <span className="text-ok">✓ found in source</span>
                     ) : (
@@ -206,9 +236,14 @@ export function ItemCard({ item }: { item: ItemView }) {
 
 function CorrectionForm({ item, onDone }: { item: ItemView; onDone: () => void }) {
   const [state, action, actionPending] = useServerForm(overrideItem.bind(null, item.id));
+  const toast = useToast();
   useEffect(() => {
-    if (state?.ok) onDone();
-  }, [state, onDone]);
+    if (state?.ok) {
+      toast({ message: "Correction saved" });
+      onDone();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
   return (
     <ActionForm action={action} pending={actionPending} className="grid gap-3 rounded-lg border border-line bg-[#fbfaf7] p-3 sm:grid-cols-[180px_1fr]">
       <Field label="Your assessment">
@@ -261,8 +296,13 @@ export type RecommendationView = {
 export function RecommendationPanel({ r }: { r: RecommendationView }) {
   const [mode, setMode] = useState<"accept" | "edit" | "override" | null>(null);
   const [state, action, actionPending] = useServerForm(reviewRecommendation.bind(null, r.assessmentId));
+  const toast = useToast();
   useEffect(() => {
-    if (state?.ok) setMode(null);
+    if (state?.ok) {
+      setMode(null);
+      toast({ message: "Recommendation review saved" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
   if (!r.recommendation) return <p className="text-[13px] text-muted">{r.unavailable ?? "No recommendation for this assessment."}</p>;
   const reviewed = r.status && r.status !== "pending";

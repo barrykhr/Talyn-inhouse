@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
+import { useToast } from "./toast";
 import { buttonClass } from "./ui";
 
 const FormPending = createContext(false);
@@ -128,8 +129,11 @@ export function ActionButton({
   className,
   pendingLabel,
   title,
+  successMessage,
 }: {
   action: () => Promise<unknown>;
+  /** Shown as a quiet confirmation toast when the action succeeds. */
+  successMessage?: string;
   children: ReactNode;
   confirm?: string;
   variant?: "primary" | "secondary" | "ghost" | "danger" | "signal";
@@ -141,6 +145,7 @@ export function ActionButton({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const toast = useToast();
   const run = async () => {
     if (confirm && !window.confirm(confirm)) return;
     setError(null);
@@ -154,7 +159,10 @@ export function ActionButton({
     if (res && typeof res === "object" && res.redirectTo) return window.location.assign(res.redirectTo);
     setPending(false);
     if (res && typeof res === "object" && res.error) setError(res.error);
-    else router.refresh();
+    else {
+      router.refresh();
+      if (successMessage) toast({ message: successMessage });
+    }
   };
   return (
     <span className="inline-flex flex-col items-start">

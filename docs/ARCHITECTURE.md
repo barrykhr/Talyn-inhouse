@@ -91,6 +91,33 @@ around the action call, and a full page load for post-save navigation. Navigatin
 from inside a transition that awaits a server action intermittently stalled Next's router queue
 in testing, dropping navigations.
 
+## Interaction design
+
+Principle: the simplest possible interface over the recruiting intelligence. Recruiter intent →
+Talyn uses the current context (role, approved criteria, candidate, documents, assessment,
+stage) → proposes → recruiter reviews → recruiter decides → product updates. No chatbot.
+
+- **Truthful staged progress** (`components/staged-progress.tsx`, `components/upload-flows.tsx`):
+  JD and CV processing are split into real server steps (`uploadJd` → `extractJdStep` →
+  `mapJdCriteriaStep`; `uploadCv` → `extractCvStep` → optional `runAssessment`). A stage
+  completes only when its call returns. Active stages show an indeterminate bar, never a
+  percentage; slow AI stages show elapsed time after 3s. Failures name the stage, keep finished
+  work, and offer retry or manual review.
+- **Assessment workspace** (`components/workspace.tsx`): evidence on the left; a persistent,
+  sticky right panel with role/stage, score + coverage, AI recommendation (fades when its content
+  changes) and the decision. Under `lg` it becomes a bottom bar + native `<dialog>` drawer (focus
+  trap, Esc). Advance / Hold / Decline are identical in size and motion, never pre-selected.
+- **Source inspection** (`components/source-viewer.tsx`): every verified citation opens the CV
+  in a side sheet with the passage highlighted and scrolled into view.
+- **Status line** (`components/status-line.tsx`): one calm line per role/candidate stating what
+  needs review and the next action.
+- **Feedback**: quiet toasts (`components/toast.tsx`, `aria-live`) for meaningful actions; stage
+  moves include Undo. Time in stage on pipeline cards is informational, never styled as urgent.
+- **Navigation**: ⌘K / Ctrl+K command palette (org-scoped search + jumps), `G R` / `G C`, skip
+  link, consistent view-change entrance (`app/(app)/template.tsx`).
+- **Motion**: tokens and keyframes in `globals.css`; brief (140–220ms), state-explaining only;
+  `prefers-reduced-motion` disables animation and every state remains readable as text.
+
 ## Logging
 
 `src/lib/log.ts` logs event names, ids and error classes only. Prisma query logging is disabled.

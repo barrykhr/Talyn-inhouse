@@ -4,6 +4,7 @@ import { ActionButton } from "@/components/client";
 import { StageSelect } from "@/components/stage-select";
 import { RoleStatusBadge } from "@/components/status";
 import { SourceRef } from "@/components/source-ref";
+import { StatusLine, type StatusItem } from "@/components/status-line";
 import { SummaryLine } from "@/components/summary";
 import { AiMark, Badge, Card, EmptyState, LinkButton, Notice, PageHeader, SectionTitle, buttonClass, formatDate } from "@/components/ui";
 import { aiStatus } from "@/lib/ai";
@@ -39,6 +40,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
       applications: {
         include: {
           candidate: { select: { id: true, fullName: true, currentTitle: true, currentCompany: true } },
+          stageEvents: { orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true } },
           assessments: {
             orderBy: { createdAt: "desc" },
             take: 1,
@@ -77,6 +79,20 @@ export default async function RolePage({ params, searchParams }: { params: Promi
     status: f.status,
   }));
   const pendingFacts = facts.filter((f) => f.status === "pending");
+
+  // Where things stand for this role: what needs review and the next available action.
+  const active = role.applications.filter((a) => a.stage !== "rejected" && a.stage !== "hired");
+  const unassessed = active.filter((a) => a.assessments.length === 0).length;
+  const outdated = active.filter((a) => a.assessments[0] && isStale(a.assessments[0].criteriaSnapshot, approved)).length;
+  const awaitingDecision = active.filter((a) => a.assessments[0] && !a.decision).length;
+  const status: StatusItem[] = [];
+  if (needsReview) status.push({ tone: "attention", text: "Details extracted from the JD need your review", href: `/roles/${role.id}?tab=description`, action: "Review" });
+  if (proposed.length) status.push({ tone: "ai", text: `${proposed.length} proposed criteria awaiting approval`, href: `/roles/${role.id}?tab=criteria`, action: "Review" });
+  if (!approved.length && !proposed.length) status.push({ tone: "neutral", text: "No criteria yet", href: `/roles/${role.id}?tab=criteria`, action: "Set up criteria" });
+  if (approved.length && unassessed) status.push({ tone: "neutral", text: `${unassessed} candidate${unassessed > 1 ? "s" : ""} not yet assessed` });
+  if (outdated) status.push({ tone: "attention", text: `${outdated} assessment${outdated > 1 ? "s" : ""} out of date after criteria changes` });
+  if (awaitingDecision) status.push({ tone: "attention", text: `${awaitingDecision} assessed candidate${awaitingDecision > 1 ? "s" : ""} awaiting your decision` });
+  if (!status.length && role.applications.length) status.push({ tone: "ok", text: `Up to date · ${active.length} active in pipeline` });
   const reviewedFacts = facts.filter((f) => f.status !== "pending" && f.field in LIST_LABEL);
 
   const inRole = new Set(role.applications.map((a) => a.candidateId));
@@ -121,18 +137,12 @@ export default async function RolePage({ params, searchParams }: { params: Promi
       />
 
       {notice && <Notice tone="warn" className="mb-4">{notice}</Notice>}
+      <StatusLine items={status} />
       {saved === "details" && (
         <Notice tone="ok" className="mb-4">
           Role details saved from your review.{proposed.length > 0 ? " Next, review the criteria proposed from the JD below." : ""}
         </Notice>
       )}
-      {needsReview && tab !== "description" && (
-        <Notice tone="signal" className="mb-4">
-          Details extracted from the uploaded job description are waiting for your review.{" "}
-          <Link href={`/roles/${role.id}?tab=description`} className="font-medium underline">Review now</Link>
-        </Notice>
-      )}
-
       <div className="mb-5 flex gap-1 border-b border-line">
         <TabLink href={`/roles/${role.id}?tab=pipeline`} active={tab === "pipeline"} label="Pipeline" count={role.applications.length} />
         <TabLink href={`/roles/${role.id}?tab=criteria`} active={tab === "criteria"} label="Criteria" count={approved.length} attention={proposed.length} />
@@ -326,7 +336,12 @@ export default async function RolePage({ params, searchParams }: { params: Promi
                                   </div>
                                 )}
                               </div>
-                              <StageSelect applicationId={a.id} stage={a.stage} className="mt-2.5 w-full" />
+                              <div className="mt-2.5 flex items-center gap-2">
+                                <StageSelect applicationId={a.id} stage={a.stage} className="min-w-0 flex-1" />
+                                <span className="shrink-0 text-[11.5px] tabular-nums text-faint" title="Time in this stage">
+                                  {timeInStage(a.stageEvents[0]?.createdAt ?? a.createdAt)}
+                                </span>
+                              </div>
                             </Card>
                           );
                         })}
@@ -341,6 +356,16 @@ export default async function RolePage({ params, searchParams }: { params: Promi
       )}
     </>
   );
+}
+
+/** Calm, factual time in stage ("3d"). Informational only — never styled as urgent. */
+function timeInStage(since: Date) {
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(since).getTime()) / 60000));
+  if (mins < 60) return "<1h";
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return days < 60 ? `${days}d` : `${Math.floor(days / 30)}mo`;
 }
 
 function ScoreChip({ items }: { items: { criterionName: string; importance: string; result: string; overrideResult: string | null }[] }) {
