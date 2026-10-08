@@ -16,6 +16,7 @@ import { db } from "@/lib/db";
 import { CORRECTION_REASON_LABEL, DECISION_LABEL, ORIGIN_LABEL, RECOMMENDATION_LABEL, STAGE_LABEL, type Decision, type Recommendation, type Stage } from "@/lib/domain";
 import { pct } from "@/lib/score";
 import { computeScore } from "@/lib/score";
+import { roleFit, stageReadiness } from "@/lib/ranking";
 import { parseEvidence } from "@/lib/evidence";
 import { highlight } from "@/lib/highlight";
 import { isStale, summarize } from "@/lib/summary";
@@ -125,6 +126,18 @@ export default async function CandidatePage({
 
   const stale = !!latest && (isStale(latest.criteriaSnapshot, app!.role.criteria) || (latest.criteriaVersion != null && latest.criteriaVersion !== app!.role.criteriaVersion));
   const stageSince = app?.stageEvents[0]?.createdAt ?? app?.createdAt;
+  const fit = app ? roleFit(app.assessments, { criteria: app.role.criteria, criteriaVersion: app.role.criteriaVersion }) : null;
+  const readiness = app
+    ? stageReadiness({
+        stage: app.stage,
+        hasCv: !!resume,
+        profileReviewed: !needsReview,
+        assessment: latest ?? null,
+        assessmentCurrent: !!latest && !stale,
+        openRequests: app.tasks.length,
+        decision: app.decision,
+      })
+    : null;
   const profileText = [candidate.currentTitle ? `Current title: ${candidate.currentTitle}` : "", candidate.currentCompany ? `Current company: ${candidate.currentCompany}` : "", candidate.candidateSummary ?? ""].filter(Boolean).join("\n");
 
   // What Talyn has done, what needs review, and the next available action — most important first.
@@ -427,6 +440,39 @@ export default async function CandidatePage({
             {stageSince && <div className="text-[12px] text-muted">In {STAGE_LABEL[app.stage as Stage].toLowerCase()} since {formatDate(stageSince)}</div>}
           </div>
           <StageSelect applicationId={app.id} stage={app.stage} />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 border-t border-line pt-3 text-[12.5px]">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">Role fit</div>
+            {fit && fit.state !== "unranked" ? (
+              <div>
+                <span className="font-semibold tabular-nums">{fit.score}</span>
+                <span className="text-faint">/100</span>
+                {fit.state === "low_confidence" && <span className="text-warn"> · low confidence</span>}
+              </div>
+            ) : (
+              <div className="text-muted">Unranked</div>
+            )}
+            <div className="text-[11.5px] text-muted">{fit?.reason}</div>
+            {fit?.change && <div className="text-[11.5px] text-ink-2">Changed {fit.change}</div>}
+          </div>
+          {readiness && (
+            <details>
+              <summary className="cursor-pointer list-none">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">Readiness</div>
+                <span className="font-semibold tabular-nums">{readiness.met}</span>
+                <span className="text-faint">/{readiness.total}</span>
+                <div className="text-[11.5px] text-muted">for {readiness.nextDecision}</div>
+              </summary>
+              <ul className="mt-1 space-y-0.5 text-[11.5px]">
+                {readiness.checks.map((c) => (
+                  <li key={c.label} className={c.met ? "text-ok" : "text-muted"}>
+                    {c.met ? "✓" : "○"} {c.label}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       </Card>
 

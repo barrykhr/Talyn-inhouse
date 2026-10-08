@@ -12,10 +12,12 @@ import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { DECISION_LABEL, EMPLOYMENT_TYPE_LABEL, GENERATOR_LABEL, RECOMMENDATION_LABEL, STAGES, STAGE_LABEL, type Decision, type EmploymentType, type Recommendation } from "@/lib/domain";
 import { computeScore, pct } from "@/lib/score";
+import { compareFit, roleFit, stageReadiness } from "@/lib/ranking";
 import { isStale, summarize } from "@/lib/summary";
 import { deleteRole } from "@/server/role-actions";
 import { ownRole } from "@/server/scope";
 import { AddExisting } from "./add-existing";
+import { PrioritySelect } from "./priority";
 import { LIST_LABEL } from "@/lib/extraction-fields";
 import { RoleReviewForm, UploadJd, type FactView } from "./jd";
 import { AddCriterion, CriterionRow, ProposePanel, ReviewBanner, type CriterionView } from "./criteria";
@@ -27,10 +29,11 @@ export const metadata = { title: "Role" };
 
 type Tab = "pipeline" | "criteria" | "description";
 
-export default async function RolePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; notice?: string; saved?: string }> }) {
+export default async function RolePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; notice?: string; saved?: string; view?: string; sort?: string; stage?: string }> }) {
   const auth = await requireAuth();
   const { id } = await params;
-  const { tab: tabParam, notice, saved } = await searchParams;
+  const { tab: tabParam, notice, saved, view: viewParam, sort = "fit", stage: stageFilter = "" } = await searchParams;
+  const view = viewParam === "list" ? "list" : "board";
   await ownRole(auth, id);
 
   const role = await db.role.findFirstOrThrow({
@@ -39,13 +42,14 @@ export default async function RolePage({ params, searchParams }: { params: Promi
       criteria: { orderBy: [{ priority: "asc" }, { position: "asc" }] },
       applications: {
         include: {
-          candidate: { select: { id: true, fullName: true, currentTitle: true, currentCompany: true } },
+          candidate: { select: { id: true, fullName: true, currentTitle: true, currentCompany: true, extractionStatus: true, _count: { select: { resumes: true } } } },
           stageEvents: { orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true } },
           assessments: {
             orderBy: { createdAt: "desc" },
-            take: 1,
+            take: 2,
             include: { items: { select: { criterionName: true, importance: true, result: true, overrideResult: true } } },
           },
+          _count: { select: { tasks: { where: { status: "open" } } } },
         },
         orderBy: { updatedAt: "desc" },
       },
@@ -79,6 +83,42 @@ export default async function RolePage({ params, searchParams }: { params: Promi
     status: f.status,
   }));
   const pendingFacts = facts.filter((f) => f.status === "pending");
+
+  // Ranking (see src/lib/ranking.ts): role fit across the role; readiness only within a stage.
+  const ranked = role.applications.map((a) => {
+    const fit = roleFit(a.assessments, { criteria: approved, criteriaVersion: role.criteriaVersion });
+    const latestA = a.assessments[0] ?? null;
+    const readiness = stageReadiness({
+      stage: a.stage,
+      hasCv: a.candidate._count.resumes > 0,
+      profileReviewed: a.candidate.extractionStatus !== "needs_review",
+      assessment: latestA,
+      assessmentCurrent: fit.state !== "unranked" || (!!latestA && !fit.reason.startsWith("Criteria changed")),
+      openRequests: a._count.tasks,
+      decision: a.decision,
+    });
+    return { a, fit, readiness, since: a.stageEvents[0]?.createdAt ?? a.createdAt };
+  });
+  const fitOrder = ranked.filter((r) => r.fit.state === "ranked" && r.a.stage !== "rejected").sort((x, y) => compareFit(x.fit, y.fit));
+  const fitRank = new Map(fitOrder.map((r, i) => [r.a.id, i + 1]));
+  const readinessRank = new Map<string, string>();
+  for (const st of STAGES) {
+    const inStage = ranked.filter((r) => r.a.stage === st && r.readiness).sort((x, y) => y.readiness!.met / y.readiness!.total - x.readiness!.met / x.readiness!.total);
+    inStage.forEach((r, i) => readinessRank.set(r.a.id, `${i + 1} of ${inStage.length} in ${STAGE_LABEL[st]}`));
+  }
+  const listRows = ranked
+    .filter((r) => !stageFilter || r.a.stage === stageFilter)
+    .sort((x, y) =>
+      sort === "readiness"
+        ? (y.readiness ? y.readiness.met / y.readiness.total : -1) - (x.readiness ? x.readiness.met / x.readiness.total : -1)
+        : sort === "time"
+          ? x.since.getTime() - y.since.getTime()
+          : sort === "name"
+            ? x.a.candidate.fullName.localeCompare(y.a.candidate.fullName)
+            : sort === "priority"
+              ? y.a.priority - x.a.priority || compareFit(x.fit, y.fit)
+              : compareFit(x.fit, y.fit),
+    );
 
   // Where things stand for this role: what needs review and the next available action.
   const active = role.applications.filter((a) => a.stage !== "rejected" && a.stage !== "hired");
@@ -282,7 +322,115 @@ export default async function RolePage({ params, searchParams }: { params: Promi
             </div>
           </div>
 
-          {role.applications.length === 0 ? (
+          {role.applications.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 text-[13px]">
+              <div className="inline-flex rounded-lg border border-line-strong bg-surface p-0.5" role="group" aria-label="Pipeline view">
+                {(["board", "list"] as const).map((v) => (
+                  <Link
+                    key={v}
+                    href={`/roles/${role.id}?tab=pipeline${v === "list" ? "&view=list" : ""}`}
+                    aria-current={view === v ? "page" : undefined}
+                    className={clsx("rounded-md px-3 py-1 font-medium", view === v ? "bg-ink text-white" : "text-muted hover:text-ink")}
+                  >
+                    {v === "board" ? "Board" : "Ranked list"}
+                  </Link>
+                ))}
+              </div>
+              {view === "list" && (
+                <form className="flex flex-wrap items-center gap-2">
+                  <input type="hidden" name="tab" value="pipeline" />
+                  <input type="hidden" name="view" value="list" />
+                  <label className="flex items-center gap-1.5 text-muted">
+                    Sort
+                    <select name="sort" defaultValue={sort} className="h-8 rounded-md border border-line-strong bg-surface px-1.5 text-[13px] text-ink">
+                      <option value="fit">Role fit</option>
+                      <option value="readiness">Stage readiness</option>
+                      <option value="priority">Recruiter priority</option>
+                      <option value="time">Longest in stage</option>
+                      <option value="name">Name</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-muted">
+                    Stage
+                    <select name="stage" defaultValue={stageFilter} className="h-8 rounded-md border border-line-strong bg-surface px-1.5 text-[13px] text-ink">
+                      <option value="">All</option>
+                      {STAGES.map((st) => (
+                        <option key={st} value={st}>
+                          {STAGE_LABEL[st]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button className={buttonClass("secondary", "sm")}>Apply</button>
+                </form>
+              )}
+            </div>
+          )}
+
+          {role.applications.length > 0 && view === "list" ? (
+            <Card className="overflow-hidden">
+              <div className="border-b border-line bg-[#fbfaf8] px-4 py-2 text-[12px] text-muted">
+                <strong className="font-medium text-ink-2">Role fit</strong> = criteria-alignment score of the latest assessment (unranked when evidence is insufficient or criteria changed).{" "}
+                <strong className="font-medium text-ink-2">Readiness</strong> = checklist for the next decision, compared only within the same stage. Neither moves anyone.
+              </div>
+              <div className="divide-y divide-line">
+                {listRows.map(({ a, fit, readiness, since }) => (
+                  <div key={a.id} className="grid gap-x-4 gap-y-1.5 px-4 py-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+                    <div className="min-w-0">
+                      <Link href={`/candidates/${a.candidate.id}?role=${role.id}`} className="font-medium hover:underline">
+                        {a.candidate.fullName}
+                      </Link>
+                      <div className="truncate text-[12.5px] text-muted">
+                        {STAGE_LABEL[a.stage as (typeof STAGES)[number]]} · {timeInStage(since)} in stage{a.decision ? ` · decision: ${DECISION_LABEL[a.decision as Decision]}` : ""}
+                      </div>
+                      {a.priority !== 0 && <div className="text-[11.5px] text-ink-2">Priority {a.priority > 0 ? "high" : "low"}{a.priorityByName ? ` · set by ${a.priorityByName}` : ""}</div>}
+                    </div>
+                    <div className="text-[12.5px]">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">Role fit</div>
+                      {fit.state === "unranked" ? (
+                        <div className="text-muted">Unranked · {fit.reason}</div>
+                      ) : (
+                        <div>
+                          <span className="font-semibold tabular-nums">{fit.score}</span>
+                          <span className="text-faint">/100</span>
+                          {fit.state === "ranked" ? <span className="text-muted"> · #{fitRank.get(a.id)} of {fitOrder.length} ranked</span> : <span className="text-warn"> · low confidence</span>}
+                          <div className="text-[11.5px] text-muted">
+                            {fit.reason} · updated {fit.updatedAt?.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            {fit.criteriaVersion ? ` · criteria v${fit.criteriaVersion}` : ""}
+                          </div>
+                        </div>
+                      )}
+                      {fit.change && <div className="text-[11.5px] text-ink-2">Changed: {fit.change}</div>}
+                    </div>
+                    <div className="text-[12.5px]">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">Readiness</div>
+                      {readiness ? (
+                        <details>
+                          <summary className="cursor-pointer">
+                            <span className="font-semibold tabular-nums">{readiness.met}</span>
+                            <span className="text-faint">/{readiness.total}</span> <span className="text-muted">for {readiness.nextDecision} · {readinessRank.get(a.id)}</span>
+                          </summary>
+                          <ul className="mt-1 space-y-0.5 text-[11.5px]">
+                            {readiness.checks.map((c) => (
+                              <li key={c.label} className={c.met ? "text-ok" : "text-muted"}>
+                                {c.met ? "✓" : "○"} {c.label}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      ) : (
+                        <div className="text-muted">Closed stage</div>
+                      )}
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <PrioritySelect applicationId={a.id} priority={a.priority} />
+                      <StageSelect applicationId={a.id} stage={a.stage} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : role.applications.length === 0 ? (
             <EmptyState
               title="No candidates in this pipeline"
               body="Add a candidate manually, pick an existing one, or import a CSV and attach it to this role."

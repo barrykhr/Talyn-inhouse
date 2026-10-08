@@ -246,23 +246,27 @@ model Note {
 
 // A candidate's association with a role, and their place in that role's pipeline.
 model Application {
-  id            String       @id @default(cuid())
-  orgId         String
-  candidateId   String
-  roleId        String
-  stage         String       @default("new")
-  decision      String? // advance | hold | decline — always recorded by a recruiter
-  decisionNote  String?
-  decidedById   String?
-  decidedByName String?
-  decidedAt     DateTime?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  candidate     Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  role          Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  stageEvents   StageEvent[]
-  assessments   Assessment[]
-  tasks         Task[]
+  id             String       @id @default(cuid())
+  orgId          String
+  candidateId    String
+  roleId         String
+  stage          String       @default("new")
+  decision       String? // advance | hold | decline — always recorded by a recruiter
+  decisionNote   String?
+  decidedById    String?
+  decidedByName  String?
+  decidedAt      DateTime?
+  priority       Int          @default(0) // recruiter override: 1 high, 0 normal, -1 low. Never changes the stage.
+  priorityNote   String?
+  priorityByName String?
+  priorityAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  candidate      Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  role           Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  stageEvents    StageEvent[]
+  assessments    Assessment[]
+  tasks          Task[]
 
   @@unique([candidateId, roleId])
   @@index([orgId, roleId])

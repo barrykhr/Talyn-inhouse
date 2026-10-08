@@ -96,4 +96,5 @@ export const AUDIT_LABEL: Record<string, string> = {
   "outreach.reply_recorded": "Recorded candidate reply",
   "outreach.opt_out_recorded": "Recorded opt-out",
   "questions.generated": "Generated questions",
+  "priority.changed": "Changed recruiter priority",
 };
