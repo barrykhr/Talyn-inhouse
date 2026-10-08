@@ -27,6 +27,27 @@ Notes for Vercel:
 - Anyone with the URL can create their own (isolated) workspace. To restrict access to your
   team, enable **Deployment Protection** in Vercel project settings.
 
+## Sign in with Google
+
+1. In [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services**:
+   - **OAuth consent screen** (Google Auth Platform → Branding/Audience): app name "Talyn",
+     support email, and choose **External** (any Google account) or **Internal** (your Google
+     Workspace only). Scopes needed: `openid`, `email`, `profile` (non-sensitive, no review).
+   - **Credentials → Create credentials → OAuth client ID → Web application.**
+     Authorized redirect URI: `https://<your-domain>/api/auth/google/callback`
+     (add `http://localhost:3000/api/auth/google/callback` for local development).
+2. In Vercel → **Settings → Environment Variables**, add `GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET`, `APP_URL` (e.g. `https://talyn-inhouse.vercel.app`) and optionally
+   `GOOGLE_ALLOWED_DOMAINS`. Redeploy.
+
+How it behaves:
+- The button appears on sign-in and sign-up only when the client ID and secret are set.
+- New Google users name their company to create a workspace (they become its admin).
+- If a password account already exists with the same email, Google sign-in links to it and the
+  password is removed (password sign-up doesn't verify email ownership; Google does), so that
+  account signs in with Google from then on.
+- Only verified Google emails are accepted; `GOOGLE_ALLOWED_DOMAINS` restricts which domains.
+
 ## Run locally
 
 Requirements: Node.js 20.9+, npm, and Postgres (Docker is easiest).
@@ -51,6 +72,9 @@ All configuration is via environment variables (`.env`):
 | `DATABASE_URL_UNPOOLED` | no | Direct connection for migrations when `DATABASE_URL` is pooled (set automatically by Neon). |
 | `ANTHROPIC_API_KEY` | no | Enables AI-proposed criteria and AI assessments (Claude). |
 | `TALYN_AI_MODEL` | no | Override the model (default `claude-opus-5-5`). |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no | Enables **Continue with Google**. See "Sign in with Google" below. |
+| `GOOGLE_ALLOWED_DOMAINS` | no | Comma-separated email domains allowed to use Google sign-in (e.g. `acme.com`). |
+| `APP_URL` | recommended | Public URL (e.g. `https://talyn-inhouse.vercel.app`); keeps the Google redirect URI exact. |
 
 ### Without an AI key
 

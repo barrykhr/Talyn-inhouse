@@ -26,7 +26,8 @@ model User {
   id           String       @id @default(cuid())
   email        String       @unique
   name         String
-  passwordHash String
+  passwordHash String? // null for accounts that sign in with Google only
+  googleSub    String?      @unique // Google account id ("sub" claim)
   createdAt    DateTime     @default(now())
   memberships  Membership[]
   sessions     Session[]
@@ -42,6 +43,16 @@ model Membership {
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([userId, orgId])
+}
+
+// A verified Google identity waiting for its workspace to be created (new users only).
+model PendingSignup {
+  id        String   @id // sha256 of the cookie token
+  googleSub String
+  email     String
+  name      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }
 
 model Session {

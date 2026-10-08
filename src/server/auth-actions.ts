@@ -1,9 +1,12 @@
 "use server";
 
+import { createHash } from "node:crypto";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createSession, destroySession, requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { PENDING_COOKIE } from "@/lib/google";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { str, type ActionState } from "./form";
 
@@ -47,10 +50,40 @@ export async function login(_prev: ActionState, fd: FormData): Promise<ActionSta
     await hashPassword(password); // equalize timing
     return generic;
   }
+  if (!user.passwordHash) {
+    await hashPassword(password); // equalize timing
+    return user.googleSub ? { error: "This account uses Google sign-in. Use “Continue with Google”." } : generic;
+  }
   if (!(await verifyPassword(password, user.passwordHash))) return generic;
   const membership = user.memberships[0];
   if (!membership) return { error: "Your account is not part of an organization." };
   await createSession(user.id, membership.orgId);
+  redirect("/roles");
+}
+
+/** Second step of Google sign-up: the identity is already verified; create the workspace. */
+export async function completeGoogleSignup(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const orgName = str(fd, "orgName", 120);
+  if (!orgName) return { error: "Enter your company name" };
+  const jar = await cookies();
+  const token = jar.get(PENDING_COOKIE)?.value;
+  const pending = token
+    ? await db.pendingSignup.findUnique({ where: { id: createHash("sha256").update(token).digest("hex") } })
+    : null;
+  if (!pending || pending.expiresAt < new Date()) return { error: "This sign-up link expired. Sign in with Google again." };
+
+  const existing = await db.user.findFirst({ where: { OR: [{ googleSub: pending.googleSub }, { email: pending.email }] } });
+  if (existing) return { error: "An account for this Google user already exists. Sign in instead." };
+
+  const { user, org } = await db.$transaction(async (tx) => {
+    const org = await tx.organization.create({ data: { name: orgName } });
+    const user = await tx.user.create({ data: { name: pending.name, email: pending.email, googleSub: pending.googleSub, passwordHash: null } });
+    await tx.membership.create({ data: { userId: user.id, orgId: org.id, role: "admin" } });
+    await tx.pendingSignup.delete({ where: { id: pending.id } });
+    return { user, org };
+  });
+  jar.delete(PENDING_COOKIE);
+  await createSession(user.id, org.id);
   redirect("/roles");
 }
 

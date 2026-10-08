@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // Fast path only: bounces requests without a session cookie. Real session and
 // organization checks happen on the server for every page, action and route.
-const PUBLIC = ["/login", "/signup"];
+const PUBLIC = ["/login", "/signup", "/signup/google"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
