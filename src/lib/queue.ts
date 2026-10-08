@@ -18,7 +18,7 @@ const ACTIVE = { notIn: ["hired", "rejected"] };
 
 /** Actionable recruiter work, oldest first. Every item links to where the action happens. */
 export async function buildQueue(orgId: string): Promise<QueueSection[]> {
-  const [profiles, tasks, apps] = await Promise.all([
+  const [profiles, tasks, apps, sourced] = await Promise.all([
     db.candidate.findMany({
       where: { orgId, extractionStatus: "needs_review" },
       select: { id: true, fullName: true, updatedAt: true, applications: { select: { roleId: true }, take: 1 } },
@@ -40,7 +40,11 @@ export async function buildQueue(orgId: string): Promise<QueueSection[]> {
       },
       take: 500,
     }),
+    db.sourcedProfile.groupBy({ by: ["roleId"], where: { orgId, status: "new" }, _count: true, _min: { createdAt: true } }),
   ]);
+  const sourcedRoles = sourced.length
+    ? await db.role.findMany({ where: { orgId, id: { in: sourced.map((s) => s.roleId) } }, select: { id: true, title: true } })
+    : [];
 
   const href = (cid: string, rid?: string) => `/candidates/${cid}${rid ? `?role=${rid}` : ""}`;
   const assessed = apps.filter((a) => a.assessments[0]);
@@ -112,6 +116,25 @@ export async function buildQueue(orgId: string): Promise<QueueSection[]> {
           since: a.assessments[0].reviewedAt ?? a.assessments[0].createdAt,
           href: href(a.candidate.id, a.role.id),
         }))
+        .sort(byAge),
+    },
+    {
+      key: "sourcing",
+      title: "Sourcing results to review",
+      hint: "Profiles from authorized sources waiting for save, dismiss or feedback.",
+      items: sourced
+        .map((g) => {
+          const role = sourcedRoles.find((r) => r.id === g.roleId);
+          return {
+            key: g.roleId,
+            candidateId: "",
+            candidateName: `${g._count} profile${g._count === 1 ? "" : "s"} to review`,
+            roleId: g.roleId,
+            roleTitle: role?.title ?? "Role",
+            since: g._min.createdAt ?? new Date(),
+            href: `/roles/${g.roleId}/sourcing#results`,
+          };
+        })
         .sort(byAge),
     },
   ];

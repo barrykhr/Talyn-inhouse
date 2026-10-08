@@ -372,3 +372,55 @@ ${input.jdText || "(no JD text)"}
 </job_description>`;
   return runStructured({ system, user, schema: IcpOutput, name: "ideal_candidate_profile" });
 }
+
+// ---------- Search planning (Phase 2) ----------
+
+export const SEARCH_ENGINE_VERSION = "search-plan-v1";
+
+const SearchPlanOutput = z.object({
+  filters: z.object({
+    titles: z.array(z.string()),
+    skills_required: z.array(z.string()),
+    skills_preferred: z.array(z.string()),
+    locations: z.array(z.string()),
+    seniority: z.array(z.string()),
+    industries: z.array(z.string()),
+    exclusions: z.array(z.string()).describe("Only exclusions present in the approved profile or explicitly requested by the recruiter"),
+  }),
+  mapping: z.array(
+    z.object({
+      phrase: z.string().describe("The phrase from the recruiter's request or the approved profile"),
+      field: z.enum(["titles", "skills_required", "skills_preferred", "locations", "seniority", "industries", "exclusions", "not_used"]),
+      value: z.string(),
+      note: z.string().describe("Why it became this filter, or why it was not used"),
+    }),
+  ),
+  explanations: z.array(z.object({ term: z.string(), why: z.string().describe("Why this synonym/inclusion/exclusion matters") })),
+  plan: z.object({
+    target_titles: z.array(z.string()),
+    adjacent_profiles: z.array(z.string()),
+    company_contexts: z.array(z.string()),
+    notes: z.string().describe("Short sourcing plan. Any market observations must be labeled as estimates, not facts."),
+  }),
+});
+export type SearchPlan = z.infer<typeof SearchPlanOutput>;
+
+export async function planSearchWithAi(input: { roleTitle: string; request: string; icp: { category: string; value: string }[] }) {
+  const system = `You turn an approved Ideal Candidate Profile and a recruiter's plain-language request into structured search filters and a short sourcing plan. The recruiter edits everything before running a search.
+Rules:
+- Use the approved profile as the base. Add from the request only what the recruiter asked for; if the request conflicts with the profile, keep the profile and note the conflict in mapping (field "not_used").
+- Every phrase you use (from the request or the profile) must appear in mapping with the field it became and why.
+- Exclusions only if they are in the approved profile or explicitly requested, and job-related. Never filter by protected characteristics, age signals, school prestige, or career gaps.
+- Keep skills_required short (2–5 must-haves); put the rest in skills_preferred.
+- Do not claim labor-market facts. If you comment on market size or availability, call it an estimate.`;
+  const user = `Role: ${input.roleTitle}
+
+<approved_profile>
+${input.icp.map((i) => `- ${i.category}: ${i.value}`).join("\n")}
+</approved_profile>
+
+<recruiter_request>
+${input.request || "(none — use the approved profile)"}
+</recruiter_request>`;
+  return runStructured({ system, user, schema: SearchPlanOutput, name: "search_plan" });
+}

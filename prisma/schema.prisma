@@ -417,3 +417,84 @@ model IcpItem {
 
   @@index([icpId])
 }
+
+// A saved, versioned search plan for a role, derived from an approved ICP (+ optional
+// plain-language request). Filters and Boolean are recruiter-editable.
+model SearchStrategy {
+  id               String      @id @default(cuid())
+  orgId            String
+  roleId           String
+  icpId            String
+  icpVersion       Int
+  version          Int
+  request          String      @default("") // recruiter's plain-language request
+  filtersJson      String // { titles, skills_required, skills_preferred, locations, seniority, industries, exclusions }
+  booleanQuery     String      @default("")
+  mappingJson      String      @default("[]") // [{ phrase, field, value, note }]
+  explanationsJson String      @default("[]") // [{ term, why }]
+  planJson         String      @default("{}") // { target_titles, adjacent_profiles, company_contexts, notes }
+  generator        String
+  createdByName    String      @default("")
+  createdAt        DateTime    @default(now())
+  runs             SearchRun[]
+
+  @@unique([roleId, version])
+  @@index([orgId, roleId])
+}
+
+model SearchRun {
+  id             String           @id @default(cuid())
+  orgId          String
+  roleId         String
+  strategyId     String
+  source         String // connector key, e.g. "talyn"
+  status         String // completed | failed | setup_required
+  query          String           @default("") // the source-specific query actually used
+  resultCount    Int              @default(0)
+  excludedCount  Int              @default(0)
+  estimatedTotal Int? // only when the source provides one
+  error          String?
+  createdByName  String           @default("")
+  createdAt      DateTime         @default(now())
+  strategy       SearchStrategy   @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  results        SourcedProfile[]
+
+  @@index([orgId, roleId])
+}
+
+// A candidate profile returned by an authorized source for a specific run. Facts keep
+// field-level provenance; match signals are evidence-backed and never an assessment.
+model SourcedProfile {
+  id                   String    @id @default(cuid())
+  orgId                String
+  roleId               String
+  runId                String
+  source               String
+  sourceRecordId       String // id in the source system (for Talyn rediscovery: the candidate id)
+  sourceUrl            String?
+  retrievedAt          DateTime  @default(now())
+  displayName          String
+  currentTitle         String?
+  currentCompany       String?
+  location             String?
+  fieldsJson           String    @default("{}") // { field: { value, source, asOf } }
+  signalsJson          String    @default("[]") // [{ category, term, matched, quote, page }]
+  matchedSignals       Int       @default(0)
+  totalSignals         Int       @default(0)
+  evidenceStatus       String    @default("ok") // ok | insufficient | stale
+  staleReason          String?
+  duplicateCandidateId String?
+  duplicateReason      String?
+  status               String    @default("new") // new | saved | dismissed | excluded
+  excludedBy           String? // approved exclusion term that matched
+  feedback             String? // useful | irrelevant
+  feedbackReason       String?
+  savedApplicationId   String?
+  reviewedByName       String?
+  reviewedAt           DateTime?
+  createdAt            DateTime  @default(now())
+  run                  SearchRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, roleId, status])
+  @@index([runId])
+}

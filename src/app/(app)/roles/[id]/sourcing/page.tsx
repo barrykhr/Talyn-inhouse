@@ -4,7 +4,11 @@ import { aiStatus } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ownRole } from "@/server/scope";
+import { CONNECTORS } from "@/lib/sourcing/connectors";
+import { FILTER_LABEL, type SearchFilters } from "@/lib/sourcing/filters";
 import { GenerateIcpButton, IcpApprovedView, IcpDraftEditor, type IcpView } from "./icp-editor";
+import { ResultRow, type ProfileView } from "./results";
+import { RunSearchButton, StrategyPlanner } from "./strategy";
 
 export const metadata = { title: "Sourcing" };
 // ICP generation and searches run as server actions on this page.
@@ -28,7 +32,7 @@ function toView(i: IcpWithItems): IcpView {
   };
 }
 
-export default async function SourcingPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function SourcingPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ run?: string; view?: string }> }) {
   const auth = await requireAuth();
   const { id } = await params;
   const role = await ownRole(auth, id);
@@ -36,6 +40,33 @@ export default async function SourcingPage({ params }: { params: Promise<{ id: s
   const draft = icps.find((i) => i.status === "draft");
   const approved = icps.find((i) => i.status === "approved");
   const ai = aiStatus();
+  const { run: runParam, view = "review" } = await searchParams;
+  const strategies = approved
+    ? await db.searchStrategy.findMany({ where: { orgId: auth.orgId, roleId: id }, orderBy: { version: "desc" }, take: 6, include: { runs: { orderBy: { createdAt: "desc" }, take: 5 } } })
+    : [];
+  const lastVersion = await db.searchStrategy.findFirst({ where: { roleId: id }, orderBy: { version: "desc" }, select: { version: true } });
+  const allRuns = strategies.flatMap((st) => st.runs.map((r) => ({ ...r, strategyVersion: st.version }))).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  const currentRun = allRuns.find((r) => r.id === runParam) ?? allRuns.find((r) => r.status === "completed");
+  const profiles = currentRun ? await db.sourcedProfile.findMany({ where: { orgId: auth.orgId, runId: currentRun.id } }) : [];
+  const feedbackCounts = currentRun
+    ? { useful: profiles.filter((p) => p.feedback === "useful").length, irrelevant: profiles.filter((p) => p.feedback === "irrelevant").length }
+    : null;
+  const profileView = (p: (typeof profiles)[number]): ProfileView => ({
+    ...p,
+    sourceLabel: CONNECTORS.find((c) => c.key === p.source)?.label ?? p.source,
+    retrievedAt: p.retrievedAt.toISOString(),
+    fields: JSON.parse(p.fieldsJson),
+    signals: JSON.parse(p.signalsJson),
+  });
+  // Ordering by matched signals is a review aid, not an assessment. Limited/stale evidence is listed separately, unranked.
+  const bySignals = (a: (typeof profiles)[number], b: (typeof profiles)[number]) => b.matchedSignals - a.matchedSignals || a.displayName.localeCompare(b.displayName);
+  const groups = {
+    review: profiles.filter((p) => p.status === "new" && p.evidenceStatus === "ok").sort(bySignals),
+    limited: profiles.filter((p) => p.status === "new" && p.evidenceStatus !== "ok").sort(bySignals),
+    saved: profiles.filter((p) => p.status === "saved"),
+    dismissed: profiles.filter((p) => p.status === "dismissed"),
+    excluded: profiles.filter((p) => p.status === "excluded"),
+  };
 
   return (
     <>
@@ -80,6 +111,147 @@ export default async function SourcingPage({ params }: { params: Promise<{ id: s
           <EmptyState title="No profile yet" body="Generate a draft from the approved criteria. You'll review and approve it before any search." />
         )}
       </section>
+
+      {approved && (
+        <section className="mb-8" aria-labelledby="search-h">
+          <SectionTitle hint="Turn the approved profile (and your own words) into filters and a Boolean query. Saved searches are versioned and can be re-run.">
+            <span id="search-h">Search</span>
+          </SectionTitle>
+          <StrategyPlanner roleId={role.id} nextVersion={(lastVersion?.version ?? 0) + 1} aiConfigured={ai.configured} />
+
+          {strategies.length > 0 && (
+            <div className="mt-4 space-y-3">
+              {strategies.map((st, i) => {
+                const f = JSON.parse(st.filtersJson) as SearchFilters;
+                return (
+                  <Card key={st.id} className="p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium">
+                          Search v{st.version}
+                          {i === 0 && <span className="ml-2 text-[12px] font-normal text-muted">latest</span>}
+                        </div>
+                        <div className="text-[12px] text-muted">
+                          {st.createdByName} · {st.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })} · from profile v{st.icpVersion} ·{" "}
+                          {st.generator.startsWith("ai:") ? "AI-planned, recruiter-saved" : st.generator.startsWith("parser:") ? "built from profile (not AI)" : "recruiter"}
+                        </div>
+                        {st.request && <div className="mt-1 text-[12.5px] text-ink-2">“{st.request}”</div>}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {CONNECTORS.map((c) => (
+                          <RunSearchButton key={c.key} strategyId={st.id} sourceKey={c.key} label={`Run on ${c.label}`} disabled={!c.configured()} />
+                        ))}
+                      </div>
+                    </div>
+                    <dl className="mt-3 grid gap-x-6 gap-y-1 text-[12.5px] sm:grid-cols-2">
+                      {(Object.keys(FILTER_LABEL) as (keyof SearchFilters)[])
+                        .filter((k) => f[k]?.length)
+                        .map((k) => (
+                          <div key={k} className="flex gap-2">
+                            <dt className="shrink-0 text-muted">{FILTER_LABEL[k]}:</dt>
+                            <dd className="text-ink-2">{f[k].join(", ")}</dd>
+                          </div>
+                        ))}
+                    </dl>
+                    <details className="mt-2 text-[12.5px]">
+                      <summary className="cursor-pointer text-muted">Query per source</summary>
+                      <div className="mt-2 space-y-2">
+                        <div>
+                          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-faint">Generic Boolean</div>
+                          <code className="block break-words rounded bg-sunken p-2 font-mono text-[12px]">{st.booleanQuery}</code>
+                        </div>
+                        {CONNECTORS.map((c) => (
+                          <div key={c.key}>
+                            <div className="text-[11.5px] font-semibold uppercase tracking-wide text-faint">
+                              {c.label}
+                              {!c.configured() && " · not connected"}
+                            </div>
+                            {c.configured() && <code className="block break-words rounded bg-sunken p-2 font-mono text-[12px]">{c.renderQuery(f, st.booleanQuery)}</code>}
+                            <p className="text-[11.5px] text-muted">{c.configured() ? c.syntaxNote : c.setupHint}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                    {st.runs.length > 0 && (
+                      <ul className="mt-2 space-y-0.5 border-t border-line pt-2 text-[12px]">
+                        {st.runs.map((r) => (
+                          <li key={r.id} className="flex flex-wrap gap-x-2">
+                            <Link href={`/roles/${role.id}/sourcing?run=${r.id}#results`} className={r.id === currentRun?.id ? "font-medium text-ink" : "text-muted hover:text-ink"}>
+                              {r.createdAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {CONNECTORS.find((c) => c.key === r.source)?.label ?? r.source}
+                            </Link>
+                            <span className="text-faint">
+                              {r.status === "completed"
+                                ? `${r.resultCount} results${r.excludedCount ? ` · ${r.excludedCount} set aside by exclusions` : ""}${r.estimatedTotal != null ? ` · source estimate ${r.estimatedTotal}` : ""}`
+                                : r.status === "setup_required"
+                                  ? "source not connected"
+                                  : "failed"}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="mt-4 rounded-xl border border-dashed border-line-strong p-4 text-[13px]">
+            <div className="font-medium">Sources</div>
+            <ul className="mt-1 space-y-1">
+              {CONNECTORS.map((c) => (
+                <li key={c.key}>
+                  <span className={c.configured() ? "text-ok" : "text-faint"}>{c.configured() ? "● Connected" : "○ Not connected"}</span> <span className="font-medium">{c.label}</span>{" "}
+                  <span className="text-muted">— {c.configured() ? c.description : c.setupHint}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
+
+      {currentRun && (
+        <section id="results" className="scroll-mt-6" aria-labelledby="results-h">
+          <SectionTitle
+            hint={`Search v${currentRun.strategyVersion} on ${CONNECTORS.find((c) => c.key === currentRun.source)?.label ?? currentRun.source} · ${currentRun.createdAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}${feedbackCounts ? ` · ${feedbackCounts.useful} marked useful, ${feedbackCounts.irrelevant} not relevant` : ""}`}
+          >
+            <span id="results-h">Results to review</span>
+          </SectionTitle>
+          <nav className="mb-3 flex flex-wrap gap-1 text-[13px]" aria-label="Result filters">
+            {(
+              [
+                ["review", `To review ${groups.review.length}`],
+                ["limited", `Limited evidence ${groups.limited.length}`],
+                ["saved", `Saved ${groups.saved.length}`],
+                ["dismissed", `Dismissed ${groups.dismissed.length}`],
+                ["excluded", `Set aside by exclusions ${groups.excluded.length}`],
+              ] as const
+            ).map(([k, label]) => (
+              <Link
+                key={k}
+                href={`/roles/${role.id}/sourcing?run=${currentRun.id}&view=${k}#results`}
+                className={view === k ? "rounded-lg bg-ink px-2.5 py-1 font-medium text-white" : "rounded-lg px-2.5 py-1 text-muted hover:bg-sunken hover:text-ink"}
+              >
+                {label}
+              </Link>
+            ))}
+          </nav>
+          <p className="mb-2 text-[12px] text-faint">
+            {view === "limited"
+              ? "No current CV or an old one: shown unranked rather than forcing a precise order."
+              : "Ordered by matched profile signals with quoted evidence — a review aid, not an assessment. Save a profile to assess it against the approved criteria."}
+          </p>
+          {groups[view as keyof typeof groups]?.length ? (
+            <Card className="divide-y divide-line overflow-hidden">
+              {groups[view as keyof typeof groups].map((p) => (
+                <ResultRow key={p.id} p={profileView(p)} />
+              ))}
+            </Card>
+          ) : (
+            <EmptyState title="Nothing here" body={view === "review" ? "No profiles from this run are waiting for review." : undefined} />
+          )}
+        </section>
+      )}
     </>
   );
 }
