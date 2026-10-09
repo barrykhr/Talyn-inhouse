@@ -2,6 +2,7 @@ import { auditAccess } from "@/lib/audit";
 import clsx from "clsx";
 import Link from "next/link";
 import { ActionButton } from "@/components/client";
+import { AgentRun, Provenance, type AgentStep } from "@/components/agent-run";
 import { StageSelect } from "@/components/stage-select";
 import { ScorePanel } from "@/components/score-panel";
 import { SourceRef } from "@/components/source-ref";
@@ -9,7 +10,7 @@ import { SourceViewerProvider } from "@/components/source-viewer";
 import { StatusLine, type StatusItem } from "@/components/status-line";
 import { SummaryLine } from "@/components/summary";
 import { ReviewPanelShell, Tabs } from "@/components/workspace";
-import { Badge, Card, EmptyState, Notice, PageHeader, SectionTitle, formatDate, formatDateTime } from "@/components/ui";
+import { Badge, Breadcrumbs, Card, EmptyState, Notice, PageHeader, SectionTitle, formatDate, formatDateTime } from "@/components/ui";
 import { aiStatus } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -417,8 +418,59 @@ export default async function CandidatePage({
   );
 
   // ---------------------------------------------------------------- tab: assessment (evidence)
+  // The applicant sequence, derived from stored records: parse → compare → explain → decide.
+  const ec = latest ? evidenceCounts(latest.items) : null;
+  const applicantSteps: AgentStep[] = app
+    ? [
+        {
+          key: "parse",
+          label: app.origin === "discovered" ? "Read profile" : "Parse application",
+          state: needsReview ? "active" : resume || candidate.candidateSummary ? "done" : "blocked",
+          detail: needsReview
+            ? "Details read from the CV are waiting for a recruiter to confirm or correct."
+            : resume
+              ? `CV read${reviewedFacts.length ? `; ${reviewedFacts.length} extracted detail${reviewedFacts.length === 1 ? "" : "s"} confirmed by a recruiter` : ""}.`
+              : candidate.candidateSummary
+                ? "No CV — using candidate-provided information."
+                : "No CV or candidate-provided information to read.",
+          sources: resume ? [{ label: resume.fileName, href: `/api/resumes/${resume.id}`, note: `added ${formatDate(resume.createdAt)}` }] : undefined,
+          fix: needsReview ? { label: "Confirm CV details", href: "#cv-review" } : !resume && !candidate.candidateSummary ? { label: "Add a CV", href: `?role=${app.roleId}&view=cv` } : undefined,
+        },
+        {
+          key: "compare",
+          label: "Compare evidence with role criteria",
+          state: disabledReason && !latest ? "blocked" : !latest ? "pending" : stale ? "active" : "done",
+          detail: disabledReason && !latest ? disabledReason : !latest ? "Runs when you press Assess." : stale ? "The role's criteria changed since this ran — re-run to compare against the current set." : `Checked against ${latest.items.length} criteri${latest.items.length === 1 ? "on" : "a"} on ${formatDateTime(latest.createdAt)}.`,
+          fix: disabledReason && !latest && app.role.criteria.length === 0 ? { label: "Set up criteria", href: `/roles/${app.roleId}?tab=criteria` } : undefined,
+        },
+        {
+          key: "explain",
+          label: "Explain matches and gaps",
+          state: !latest ? "pending" : latest.status === "reviewed" ? "done" : "active",
+          detail: ec
+            ? `${ec.found} supported, ${ec.uncertain} uncertain, ${ec.missing} missing — each with the quote it rests on. ${latest!.status === "reviewed" ? `Reviewed by ${latest!.reviewedByName ?? "a recruiter"}.` : "Waiting for a recruiter to review the evidence."}`
+            : undefined,
+        },
+        {
+          key: "decide",
+          label: "Present for recruiter decision",
+          state: app.decision ? "done" : latest ? "active" : "pending",
+          detail: app.decision
+            ? `${DECISION_LABEL[app.decision as Decision]} — decided by ${app.decidedByName ?? "a recruiter"}${app.decidedAt ? ` on ${formatDate(app.decidedAt)}` : ""}.`
+            : latest
+              ? "Shortlist, Hold or Reject is always a person's choice. Talyn doesn't choose or reject on its own."
+              : undefined,
+        },
+      ]
+    : [];
   const assessmentMain = app && (
     <div className="space-y-4">
+      <AgentRun
+        title={app.origin === "discovered" ? "Review for this role" : "Application review"}
+        summary="The assistant reads and compares; a recruiter confirms the evidence and makes the decision."
+        steps={applicantSteps}
+        controls={latest ? <Provenance kind={app.decision ? "human" : "ai"} who={app.decidedByName} at={app.decidedAt} /> : undefined}
+      />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-[15px] font-semibold tracking-tight">Evidence against {app.role.criteria.length} approved criteria</h2>
@@ -754,7 +806,7 @@ export default async function CandidatePage({
 
   const panelSummary = app ? (
     <>
-      {liveScore ? (liveScore.score === null ? "Score withheld" : `Alignment ${liveScore.score}/100`) : "Not assessed"}
+      {ec ? `${ec.found} supported · ${ec.uncertain} uncertain · ${ec.missing} missing` : "Not assessed"}
       {liveScore && ` · coverage ${pct(liveScore.coverage)}`}
       {latest?.recommendation && ` · ${RECOMMENDATION_LABEL[(latest.finalRecommendation ?? latest.recommendation) as Recommendation]}`}
     </>
@@ -763,7 +815,11 @@ export default async function CandidatePage({
   return (
     <SourceViewerProvider pages={pages} profileText={profileText} fileName={resume?.fileName ?? null}>
       <PageHeader
-        eyebrow={<Link href="/candidates" className="hover:text-ink">Candidates</Link>}
+        eyebrow={
+          <Breadcrumbs
+            items={app && roleParam ? [{ label: "Roles", href: "/roles" }, { label: app.role.title, href: `/roles/${app.roleId}` }, { label: candidate.fullName }] : [{ label: "Candidates", href: "/candidates" }, { label: candidate.fullName }]}
+          />
+        }
         title={candidate.fullName}
         meta={contactMeta}
         actions={
@@ -845,7 +901,7 @@ export default async function CandidatePage({
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="min-w-0">
             <Tabs
-              initial={view === "outreach" ? 1 : view === "interviews" ? 4 : 0}
+              initial={view === "outreach" ? 1 : view === "cv" ? 2 : view === "interviews" ? 4 : 0}
               tabs={[
                 { label: "Assessment", content: assessmentMain },
                 { label: "Outreach", content: outreach ? <OutreachPanel v={outreach} /> : null },

@@ -176,6 +176,23 @@ outreach edit/approval/reply/bounce/opt-out rates, task completion).
 Below 5 data points a measure reads "Not enough data". These describe usage, not fairness or
 predictive validity.
 
+## Workspace shell, Home and assistant runs
+
+- `(app)/layout.tsx` loads the user's memberships and an attention count (failures are logged and
+  shown as 0, never block the shell) and renders `AppShell`. Switching workspace re-issues the
+  session for another membership (`switchWorkspace`); creating one adds an admin membership.
+- `src/lib/attention.ts` is the single source for "needs a person" items (Home, sidebar badge). It
+  is React-`cache`d per request and scoped by `orgId`.
+- `AgentRun` is a server-rendered view over stored records — it never fakes progress. Step states
+  come from `DiscoveryBrief`, `SearchRun.sourcesJson`, `SourcedProfile` statuses, `Assessment`
+  status/reviewer and `Application.decision`/`decidedByName`.
+- Loading: `LoadingState` (client) escalates after 8 s and 25 s; `error.tsx`/`global-error.tsx` catch
+  render failures; `db.ts` appends `connect_timeout`, `pool_timeout` and `socket_timeout` to
+  Postgres URLs that don't set them.
+- Motion is CSS only (`globals.css`): step entrance, result arrival after a fresh search (< 2 min,
+  not when browsing history), a one-time highlight for a new shortlist entry, panel/dialog
+  transitions. All disabled under `prefers-reduced-motion`.
+
 ## Role workspace (Applicants · Discover · Shortlist)
 
 - `Application.origin` is `applied` or `discovered` (+ `originDetail`, `sourcedProfileId`). It is set

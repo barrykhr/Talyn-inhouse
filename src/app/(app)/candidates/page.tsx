@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { StageBadge } from "@/components/status";
+import { OriginBadge, SampleBadge } from "@/components/role-workspace";
 import { Card, EmptyState, Input, LinkButton, PageHeader, Select, buttonClass, formatDate } from "@/components/ui";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -54,11 +55,12 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
       {total === 0 ? (
         <EmptyState
           title="No candidates yet"
-          body="Add a candidate with their resume, or import a list from a CSV file."
+          body="Candidates appear here when someone applies, when you save a person from Discover, or when you add or import them. Each keeps where they came from."
           action={
             <>
               <LinkButton href="/candidates/new" variant="primary">Add candidate</LinkButton>
               <LinkButton href="/import">Import CSV</LinkButton>
+              <LinkButton href="/discover">Start a search</LinkButton>
             </>
           }
         />
@@ -85,6 +87,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
                   <div className="min-w-0 flex-1 basis-56">
                     <div className="flex items-center gap-1.5 font-medium">
                       {c.fullName}
+                      {c.isSample && <SampleBadge />}
                       {c.extractionStatus === "needs_review" && <span className="rounded-md bg-signal-soft px-1.5 text-[11px] font-semibold text-signal">CV review pending</span>}
                     </div>
                     <div className="truncate text-[12.5px] text-muted">
@@ -97,6 +100,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
                     ) : (
                       c.applications.map((a) => (
                         <span key={a.id} className="inline-flex items-center gap-1 text-[12.5px]">
+                          <OriginBadge origin={a.origin} detail={a.originDetail} />
                           <span className="max-w-40 truncate text-ink-2">{a.role.title}</span>
                           <StageBadge stage={a.stage} />
                         </span>

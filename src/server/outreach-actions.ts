@@ -332,7 +332,7 @@ export async function sendDueNow(): Promise<ActionState> {
   const r = await sendDueMessages({ orgId: auth.orgId, triggeredBy: auth.userName });
   if (!r) return { error: "No email provider is connected." };
   revalidatePath("/queue");
-  revalidatePath("/settings/integrations");
+  revalidatePath("/integrations");
   return { ok: true, message: r.due ? `${r.sent} sent${r.skipped ? ` · ${r.skipped} skipped (opt-out, no email or no longer active)` : ""}${r.failed ? ` · ${r.failed} failed, will retry` : ""}.` : "Nothing is due." };
 }
 

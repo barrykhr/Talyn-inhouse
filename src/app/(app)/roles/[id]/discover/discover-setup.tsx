@@ -86,7 +86,7 @@ export function DiscoverSetupForm({
                     </span>
                     <span className="block text-muted">{s.note}</span>
                     {!s.configured && (
-                      <Link href="/settings/integrations" className="font-medium underline">
+                      <Link href="/integrations" className="font-medium underline">
                         Set up in Integrations
                       </Link>
                     )}

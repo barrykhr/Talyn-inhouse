@@ -28,7 +28,7 @@ export default async function RoleAtsPage({ params }: { params: Promise<{ id: st
           title={!conn ? "No ATS connected" : "This workspace isn't linked to the ATS"}
           body={!conn ? "When an ATS is connected, you can link this role to an ATS job and map its stages here." : "A workspace admin can link it in Settings → Integrations."}
           action={
-            <Link href="/settings/integrations" className={buttonClass("secondary")}>
+            <Link href="/integrations" className={buttonClass("secondary")}>
               Open integrations
             </Link>
           }

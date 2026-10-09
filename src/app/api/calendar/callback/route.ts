@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     saved = null;
   }
   const back = (code: string) => {
-    const r = saved?.returnTo ?? "/settings/integrations";
+    const r = saved?.returnTo ?? "/integrations";
     return NextResponse.redirect(`${origin}${r}${r.includes("?") ? "&" : "?"}calendar=${code}`);
   };
   const auth = await getAuth();

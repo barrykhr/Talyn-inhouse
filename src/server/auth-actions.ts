@@ -38,7 +38,7 @@ export async function signup(_prev: ActionState, fd: FormData): Promise<ActionSt
     return { user, org };
   });
   await createSession(user.id, org.id);
-  redirect("/roles");
+  redirect("/home");
 }
 
 export async function login(_prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -64,7 +64,7 @@ export async function login(_prev: ActionState, fd: FormData): Promise<ActionSta
     return { error: "Your account is not part of an organization." };
   }
   await createSession(user.id, membership.orgId);
-  redirect(safeNext ?? "/roles");
+  redirect(safeNext ?? "/home");
 }
 
 /** Second step of Google sign-up: the identity is already verified; create the workspace. */
@@ -90,7 +90,7 @@ export async function completeGoogleSignup(_prev: ActionState, fd: FormData): Pr
   });
   jar.delete(PENDING_COOKIE);
   await createSession(user.id, org.id);
-  redirect("/roles");
+  redirect("/home");
 }
 
 export async function logout() {

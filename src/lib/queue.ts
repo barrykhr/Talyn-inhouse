@@ -206,7 +206,7 @@ export async function buildQueue(orgId: string): Promise<QueueSection[]> {
       items: failedPushes.flatMap((f) => {
         const a = pushApps.find((x) => x.id === f.applicationId);
         return a
-          ? [{ key: f.id, candidateId: a.candidate.id, candidateName: a.candidate.fullName, roleId: a.role.id, roleTitle: a.role.title, since: f.createdAt, detail: `${f.talynStage} → ${f.atsStage} · ${f.lastError ?? "failed"}`, href: "/settings/integrations" }]
+          ? [{ key: f.id, candidateId: a.candidate.id, candidateName: a.candidate.fullName, roleId: a.role.id, roleTitle: a.role.title, since: f.createdAt, detail: `${f.talynStage} → ${f.atsStage} · ${f.lastError ?? "failed"}`, href: "/integrations" }]
           : [];
       }),
     },

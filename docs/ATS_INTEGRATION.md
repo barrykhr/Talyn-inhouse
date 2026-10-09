@@ -59,7 +59,7 @@ recruiter entered or corrected in Talyn, the sync records a conflict instead of 
 ## Sync status and failures
 
 - Each sync records start/end time, created/updated/unchanged counts, conflicts and errors
-  (`AtsSyncRun`), shown in Settings → Integrations → Sync history. Pulls are incremental from the
+  (`AtsSyncRun`), shown in Integrations (`/integrations`) → Sync history. Pulls are incremental from the
   last successful sync.
 - Pull failures stop the run, keep everything already in Talyn, and the next run starts again
   from the last successful sync. Records that fail individually are counted and skipped.

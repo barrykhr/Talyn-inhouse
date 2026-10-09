@@ -100,3 +100,23 @@ async function join(inv: { id: string; orgId: string; role: string; name: string
   ]);
   await audit({ orgId: inv.orgId, userId, userName: inv.name }, "team.joined", { subjectType: "org", subjectId: inv.orgId, meta: { role: inv.role } });
 }
+
+/** Switches the active workspace. Membership is checked; all data shown is scoped to it. */
+export async function switchWorkspace(orgId: string): Promise<ActionState> {
+  const auth = await requireAuth();
+  if (orgId === auth.orgId) return { ok: true };
+  const m = await db.membership.findUnique({ where: { userId_orgId: { userId: auth.userId, orgId } } });
+  if (!m) return { error: "You're not a member of that workspace." };
+  await createSession(auth.userId, orgId);
+  redirect("/home");
+}
+
+/** Creates another workspace with the current user as its admin, then switches to it. */
+export async function createWorkspace(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const auth = await requireAuth();
+  const name = str(fd, "name", 120);
+  if (!name) return { error: "Name the workspace." };
+  const org = await db.organization.create({ data: { name, memberships: { create: { userId: auth.userId, role: "admin" } } } });
+  await createSession(auth.userId, org.id);
+  redirect("/home");
+}

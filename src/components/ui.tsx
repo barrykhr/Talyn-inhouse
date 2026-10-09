@@ -6,7 +6,7 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "signal";
 const buttonBase =
   "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap";
 const buttonVariants: Record<ButtonVariant, string> = {
-  primary: "bg-ink text-white hover:bg-ink-2",
+  primary: "bg-brand text-white shadow-[0_1px_0_rgb(0_0_0/0.08)] hover:bg-brand-2",
   secondary: "bg-surface text-ink border border-line-strong hover:bg-sunken",
   ghost: "text-ink-2 hover:bg-sunken",
   danger: "bg-surface text-danger border border-line-strong hover:bg-danger-soft",
@@ -52,6 +52,28 @@ export function SectionTitle({ children, action, hint }: { children: ReactNode; 
   );
 }
 
+/** Where you are: Workspace › Area › Record. The last item is the current page. */
+export function Breadcrumbs({ items }: { items: { label: ReactNode; href?: string }[] }) {
+  return (
+    <nav aria-label="Breadcrumb">
+      <ol className="flex flex-wrap items-center gap-1 text-[13px] text-muted">
+        {items.map((it, i) => (
+          <li key={i} className="flex items-center gap-1">
+            {i > 0 && <span aria-hidden className="text-faint">/</span>}
+            {it.href && i < items.length - 1 ? (
+              <Link href={it.href} className="hover:text-ink hover:underline">
+                {it.label}
+              </Link>
+            ) : (
+              <span aria-current={i === items.length - 1 ? "page" : undefined}>{it.label}</span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
 export function PageHeader({ title, eyebrow, meta, actions }: { title: ReactNode; eyebrow?: ReactNode; meta?: ReactNode; actions?: ReactNode }) {
   return (
     <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -65,7 +87,7 @@ export function PageHeader({ title, eyebrow, meta, actions }: { title: ReactNode
   );
 }
 
-type Tone = "neutral" | "ok" | "warn" | "gap" | "signal" | "danger" | "ink";
+type Tone = "neutral" | "ok" | "warn" | "gap" | "signal" | "danger" | "ink" | "brand";
 const tones: Record<Tone, string> = {
   neutral: "bg-sunken text-ink-2",
   ok: "bg-ok-soft text-ok",
@@ -74,6 +96,7 @@ const tones: Record<Tone, string> = {
   signal: "bg-signal-soft text-signal",
   danger: "bg-danger-soft text-danger",
   ink: "bg-ink text-white",
+  brand: "bg-brand-soft text-brand",
 };
 export function Badge({ tone = "neutral", children, className, title }: { tone?: Tone; children: ReactNode; className?: string; title?: string }) {
   return (

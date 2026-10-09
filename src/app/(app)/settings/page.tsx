@@ -12,7 +12,7 @@ import { db } from "@/lib/db";
 import { DeleteOrg } from "./delete-org";
 import { TeamCard } from "./team";
 
-export const metadata = { title: "Settings" };
+export const metadata = { title: "Workspace settings" };
 
 export default async function SettingsPage() {
   const auth = await requireAuth();
@@ -27,7 +27,12 @@ export default async function SettingsPage() {
   ]);
   return (
     <div className="max-w-3xl space-y-5">
-      <PageHeader title="Settings" />
+      <PageHeader title="Workspace settings" meta={<span>{auth.orgName} · you are {auth.membershipRole === "admin" ? "an admin" : auth.membershipRole === "recruiter" ? "a recruiter" : "a hiring manager"}</span>} />
+      {auth.membershipRole !== "admin" && (
+        <p className="-mt-3 rounded-lg border border-line bg-sunken px-3 py-2 text-[13px] text-ink-2">
+          Some settings can only be changed by a workspace admin — inviting members, retention, the audit log and deleting the workspace. They&apos;re shown read-only or hidden here.
+        </p>
+      )}
 
       <Card className="p-5">
         <SectionTitle>Workspace</SectionTitle>
@@ -39,8 +44,23 @@ export default async function SettingsPage() {
         </dl>
       </Card>
 
-      <Card className="p-5">
-        <SectionTitle hint="Invite recruiters and hiring managers so they can interview and submit scorecards.">Team</SectionTitle>
+      <Card id="team" className="scroll-mt-6 p-5">
+        <SectionTitle hint="Invite recruiters and hiring managers so they can interview and submit scorecards.">Team &amp; permissions</SectionTitle>
+        <dl className="mb-4 grid gap-2 rounded-lg bg-sunken/60 p-3 text-[12.5px] sm:grid-cols-3">
+          <div>
+            <dt className="font-semibold">Admin</dt>
+            <dd className="text-muted">Everything a recruiter can do, plus members and invites, retention, the audit log, ATS linking and deleting the workspace.</dd>
+          </div>
+          <div>
+            <dt className="font-semibold">Recruiter</dt>
+            <dd className="text-muted">Roles, candidates, Discover and outreach approval in this workspace; runs interview plans they own.</dd>
+          </div>
+          <div>
+            <dt className="font-semibold">Hiring manager</dt>
+            <dd className="text-muted">The same workspace access as recruiters today, and can schedule interviews and record the team decision.</dd>
+          </div>
+        </dl>
+        <p className="mb-3 text-[12px] text-muted">Every interviewer sees other scorecards only after submitting their own.</p>
         <TeamCard
           isAdmin={auth.membershipRole === "admin"}
           members={members.map((m) => ({ id: m.id, name: m.user.name, email: m.user.email, role: m.role, you: m.userId === auth.userId }))}
@@ -48,7 +68,7 @@ export default async function SettingsPage() {
         />
       </Card>
 
-      <Card className="p-5">
+      <Card id="ai" className="scroll-mt-6 p-5">
         <SectionTitle>AI assist</SectionTitle>
         <div className="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
           {ai.configured ? <Badge tone="ok">On</Badge> : <Badge>Off</Badge>}
@@ -78,7 +98,7 @@ export default async function SettingsPage() {
         </div>
       </Card>
 
-      <Card className="p-5">
+      <Card id="integrations" className="scroll-mt-6 p-5">
         <SectionTitle hint="What Talyn is connected to. Nothing here sends data anywhere unless it says Connected.">Integrations &amp; data providers</SectionTitle>
         <dl className="space-y-2.5 text-[13px]">
           <div>
@@ -113,7 +133,7 @@ export default async function SettingsPage() {
           </div>
         </dl>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link href="/settings/integrations" className={buttonClass("primary")}>
+          <Link href="/integrations" className={buttonClass("primary")}>
             Manage integrations
           </Link>
           <Link href="/settings/measures" className={buttonClass("secondary")}>

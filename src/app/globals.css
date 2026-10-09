@@ -13,8 +13,13 @@
   --color-line-strong: #d3cfc4;
   --color-ink: #17171a;
   --color-ink-2: #3d3c39;
-  --color-muted: #6f6d67;
-  --color-faint: #9b988f;
+  --color-muted: #5f5d57;
+  --color-faint: #8a877e;
+
+  /* Brand accent: primary actions, current location and meaningful state. Used sparingly. */
+  --color-brand: #2f45b8;
+  --color-brand-2: #26399a;
+  --color-brand-soft: #e9ecfb;
 
   --color-signal: #d9541e;
   --color-signal-soft: #fbe9e0;
@@ -50,7 +55,7 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-signal);
+  outline: 2px solid var(--color-brand);
   outline-offset: 2px;
 }
 
@@ -140,6 +145,33 @@ dialog[open]:not(.motion-sheet):not(.motion-drawer) { animation: talyn-fade var(
   .indeterminate-bar::after { display: none; }
   .indeterminate-bar { background: var(--color-signal-soft) !important; }
 }
+
+/* Agent run steps: a completed or newly active step settles in; nothing loops. */
+@keyframes talyn-step {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.motion-step { animation: talyn-step var(--dur-base) var(--ease-out) both; }
+
+/* Results that arrived from a search that just finished: a short stagger, capped at 8 items. */
+.motion-arrive > * { animation: talyn-enter 260ms var(--ease-out) both; }
+.motion-arrive > *:nth-child(2) { animation-delay: 30ms; }
+.motion-arrive > *:nth-child(3) { animation-delay: 60ms; }
+.motion-arrive > *:nth-child(4) { animation-delay: 90ms; }
+.motion-arrive > *:nth-child(5) { animation-delay: 120ms; }
+.motion-arrive > *:nth-child(6) { animation-delay: 150ms; }
+.motion-arrive > *:nth-child(7) { animation-delay: 180ms; }
+.motion-arrive > *:nth-child(n + 8) { animation-delay: 210ms; }
+
+/* A row that just changed (e.g. moved to the shortlist) briefly highlights, then settles. */
+@keyframes talyn-flash {
+  from { background-color: var(--color-brand-soft); }
+  to { background-color: transparent; }
+}
+.motion-flash { animation: talyn-flash 900ms var(--ease-out) both; }
+
+/* Panels opened with <details>: content eases in. */
+details[open] > :not(summary) { animation: talyn-fade var(--dur-base) var(--ease-out) both; }
 
 kbd {
   font-family: var(--font-sans);

@@ -3,11 +3,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { APP_ORIGIN_LABEL } from "@/lib/domain";
 
-export type WorkspaceTab = "applicants" | "discover" | "shortlist" | "interviews" | "criteria" | "description" | "ats";
+export type WorkspaceTab = "overview" | "applicants" | "discover" | "shortlist" | "interviews" | "criteria" | "description" | "ats";
 
 /**
- * The role workspace: three people tabs (Applicants · Discover · Shortlist) and the role's setup
- * tabs. Applicants and Discover are separate workflows; Shortlist combines both and always shows
+ * The role workspace: Overview, then the people areas (Applicants · Discover · Shortlist ·
+ * Interviews), then the role's setup (criteria, job description, ATS) as quieter links.
+ * Applicants and Discover are separate workflows; Shortlist combines both and always shows
  * where each person came from.
  */
 export function RoleTabs({
@@ -25,11 +26,13 @@ export function RoleTabs({
 }) {
   return (
     <nav aria-label="Role workspace" className="mb-5 flex flex-wrap items-end gap-x-1 border-b border-line">
+      <Tab href={`/roles/${roleId}?tab=overview`} active={active === "overview"} label="Overview" hint="Criteria and the next work" />
       <Tab href={`/roles/${roleId}?tab=applicants`} active={active === "applicants"} label="Applicants" count={counts.applicants} hint="People who applied" icon={<InboundIcon />} />
       <Tab href={`/roles/${roleId}/discover`} active={active === "discover"} label="Discover" count={counts.discover} countLabel="to review" hint="People you find" icon={<OutboundIcon />} attention={attention.discover} />
       <Tab href={`/roles/${roleId}?tab=shortlist`} active={active === "shortlist"} label="Shortlist" count={counts.shortlist} hint="From both" />
       <Tab href={`/roles/${roleId}/interviews`} active={active === "interviews"} label="Interviews" count={counts.interviews} hint="Plans, scorecards, debriefs" />
       <span aria-hidden className="mx-2 mb-2 hidden h-5 w-px bg-line-strong sm:block" />
+      <span className="mb-2 hidden px-1 text-[11px] font-semibold uppercase tracking-wide text-faint sm:block">Setup</span>
       <Tab href={`/roles/${roleId}?tab=criteria`} active={active === "criteria"} label="Criteria" count={counts.criteria} attention={attention.criteria} quiet />
       <Tab href={`/roles/${roleId}?tab=description`} active={active === "description"} label="Job description" attention={attention.description} quiet />
       {showAts && <Tab href={`/roles/${roleId}/ats`} active={active === "ats"} label="ATS" quiet />}
@@ -65,7 +68,7 @@ function Tab({
       className={clsx(
         "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 font-medium",
         quiet ? "text-[13px]" : "text-[14px]",
-        active ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink",
+        active ? "border-brand text-ink" : "border-transparent text-muted hover:text-ink",
       )}
     >
       {icon}

@@ -11,7 +11,7 @@ rejected or sent by AI.
 
 **Integrations are built but off.** Email sending (any SMTP service), a sourcing-provider API
 and an ATS sync are implemented vendor-neutrally and switch on when their environment variables
-are set. Until then Talyn shows a setup state for each (Settings → Integrations). See
+are set. Until then Talyn shows a setup state for each (Integrations (`/integrations`)). See
 [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) and [docs/ATS_INTEGRATION.md](docs/ATS_INTEGRATION.md).
 
 ## Deploy to Vercel
@@ -232,6 +232,34 @@ use, and **New search**.
    you activate. WhatsApp needs a recorded opt-in and a connected WhatsApp provider; follow-ups
    stop on a reply, decline, opt-out or pause. Expressed interest is only what the candidate told
    you — never inferred.
+
+## Product workspace (navigation and the assistant)
+
+- **Shell** (`src/components/app-shell.tsx`): workspace switcher (switch or create a workspace) at
+  the top of the sidebar; primary navigation **Home · Roles · Discover · Candidates · Interviews ·
+  Integrations**; a quieter *Workspace* area (settings, team & permissions, import & export); AI
+  status; and an account menu (your calendar connection, sign out). Breadcrumbs on nested pages.
+- **Home** (`/home`, the landing page after sign-in): what needs a person — applicants without a
+  decision, criteria to approve, CV details to confirm, Discover results, outreach drafts awaiting
+  approval, outreach due, replies, and interviews to schedule or follow up — each linked to the
+  exact screen (`src/lib/attention.ts`). A *Get started* checklist shows Done / To do / Optional /
+  Blocked. Only real counts; no invented metrics.
+- **Role workspace**: **Overview** (next work, approved criteria, owner / collaborators /
+  interviewers, recent activity) · **Applicants** · **Discover** · **Shortlist** · **Interviews**,
+  with *Setup* links for Criteria, Job description and ATS.
+- **The assistant's steps are visible in the workflow** (`src/components/agent-run.tsx`). Discover
+  shows *Review role criteria → Prepare search plan → Search connected sources → Gather evidence →
+  Present results for recruiter review*; a candidate's Assessment tab shows *Parse application →
+  Compare evidence with role criteria → Explain matches and gaps → Present for recruiter decision*.
+  Each step is derived from stored records (done / waiting on you / blocked / not started), names
+  its sources, and links to where a person edits or unblocks it. AI suggestions are labeled
+  separately from human decisions. There is no chatbot, no Signals and no intent inference.
+- **Loading and failure states**: route loading shows elapsed time and, after 25 s, says the
+  server hasn't responded with Retry; error boundaries (`(app)/error.tsx`, `global-error.tsx`)
+  replace endless spinners; database calls carry connect / pool / socket timeouts
+  (`src/lib/db.ts`), so a stalled connection becomes a visible error instead of a hang.
+- Integrations moved to `/integrations` (old `/settings/integrations` links redirect, keeping the
+  `calendar` result parameter).
 
 ## Role workspace: Applicants · Discover · Shortlist
 

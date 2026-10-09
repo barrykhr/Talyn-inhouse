@@ -4,7 +4,7 @@ import { ActionButton } from "@/components/client";
 import { RoleStatusBadge } from "@/components/status";
 import { SourceRef } from "@/components/source-ref";
 import { StatusLine, type StatusItem } from "@/components/status-line";
-import { Badge, Card, EmptyState, LinkButton, Notice, PageHeader, SectionTitle, buttonClass, formatDate } from "@/components/ui";
+import { Badge, Breadcrumbs, Card, EmptyState, LinkButton, Notice, PageHeader, SectionTitle, buttonClass, formatDate } from "@/components/ui";
 import { aiStatus } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -16,6 +16,7 @@ import { QuestionList } from "@/components/questions";
 import { generateCoreQuestions } from "@/server/question-actions";
 import { ApplicantsTab } from "./applicants";
 import { ShortlistTab } from "./shortlist";
+import { RoleOverview } from "./overview";
 import { RoleTabs } from "@/components/role-workspace";
 import { LIST_LABEL } from "@/lib/extraction-fields";
 import { RoleReviewForm, UploadJd, type FactView } from "./jd";
@@ -26,7 +27,7 @@ export const maxDuration = 300;
 
 export const metadata = { title: "Role" };
 
-type Tab = "applicants" | "shortlist" | "criteria" | "description";
+type Tab = "overview" | "applicants" | "shortlist" | "criteria" | "description";
 
 export default async function RolePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; notice?: string; saved?: string; view?: string; sort?: string; stage?: string; q?: string; review?: string; origin?: string }> }) {
   const auth = await requireAuth();
@@ -63,15 +64,13 @@ export default async function RolePage({ params, searchParams }: { params: Promi
   const rejected = role.criteria.filter((c) => c.status === "rejected");
   const needsReview = role.extractionStatus === "needs_review";
   const tab: Tab =
-    tabParam === "criteria" || tabParam === "description" || tabParam === "applicants" || tabParam === "shortlist"
+    tabParam === "overview" || tabParam === "criteria" || tabParam === "description" || tabParam === "applicants" || tabParam === "shortlist"
       ? tabParam
       : tabParam === "pipeline"
         ? "applicants"
         : needsReview
           ? "description"
-          : approved.length === 0
-            ? "criteria"
-            : "applicants";
+          : "overview";
   const facts: FactView[] = role.extracted.map((f) => ({
     id: f.id,
     field: f.field,
@@ -139,7 +138,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
   return (
     <>
       <PageHeader
-        eyebrow={<Link href="/roles" className="hover:text-ink">Roles</Link>}
+        eyebrow={<Breadcrumbs items={[{ label: "Roles", href: "/roles" }, { label: role.title }]} />}
         title={
           <span className="flex flex-wrap items-center gap-2">
             {role.title} <RoleStatusBadge status={role.status} />
@@ -170,7 +169,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
       />
 
       {notice && <Notice tone="warn" className="mb-4">{notice}</Notice>}
-      <StatusLine items={status} />
+      {tab !== "overview" && <StatusLine items={status} />}
       {saved === "details" && (
         <Notice tone="ok" className="mb-4">
           Role details saved from your review.{proposed.length > 0 ? " Next, review the criteria proposed from the JD below." : ""}
@@ -183,6 +182,15 @@ export default async function RolePage({ params, searchParams }: { params: Promi
         attention={{ criteria: proposed.length, description: needsReview ? pendingFacts.length || 1 : 0 }}
         showAts={!!getAtsConnector()}
       />
+
+      {tab === "overview" && (
+        <RoleOverview
+          orgId={auth.orgId}
+          role={{ id: role.id, createdById: role.createdById, createdAt: role.createdAt }}
+          criteria={role.criteria.map((c) => ({ id: c.id, name: c.name, importance: c.importance, status: c.status }))}
+          next={status}
+        />
+      )}
 
       {tab === "criteria" && (
         <div className="space-y-5">

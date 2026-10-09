@@ -40,7 +40,7 @@ export async function GET(req: Request) {
       const membership = user.memberships[0];
       if (!membership) return fail("failed");
       await createSession(user.id, membership.orgId);
-      return NextResponse.redirect(`${origin}/roles`);
+      return NextResponse.redirect(`${origin}/home`);
     }
 
     // 3. New user: hold the verified identity briefly and ask for the company name.

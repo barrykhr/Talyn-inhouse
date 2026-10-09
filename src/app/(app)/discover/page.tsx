@@ -42,10 +42,28 @@ export default async function DiscoverHome() {
         meta={<span>Find people for a role from sources your workspace is connected to. Separate from applicants; nothing is sent or decided automatically.</span>}
         actions={
           <LinkButton href="/discover/new" variant="primary">
-            New search
+            Start a search
           </LinkButton>
         }
       />
+
+      <ol className="grid gap-2 text-[12.5px] sm:grid-cols-5" aria-label="How a search runs">
+        {[
+          ["Review role criteria", "You confirm the fields, from a JD or typed in."],
+          ["Prepare search plan", "A Boolean you can edit before anything runs."],
+          ["Search connected sources", "Only sources this workspace is authorized to use."],
+          ["Gather evidence", "Quotes with source links and retrieval dates."],
+          ["Your review", "You save or dismiss. Nothing is sent or rejected automatically."],
+        ].map(([t, d], i) => (
+          <li key={t} className="rounded-lg border border-line bg-surface p-2.5">
+            <div className="flex items-center gap-1.5 font-medium">
+              <span aria-hidden className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-soft text-[11px] font-bold text-brand">{i + 1}</span>
+              {t}
+            </div>
+            <p className="mt-0.5 text-muted">{d}</p>
+          </li>
+        ))}
+      </ol>
 
       <Card className="p-4">
         <SectionTitle hint="Only connected sources can be searched. Demo mode uses fictional sample people and is never shown as a live search.">Sources</SectionTitle>
@@ -62,7 +80,7 @@ export default async function DiscoverHome() {
               </div>
               <p className="mt-0.5 text-[12px] text-muted">{c.configured() ? c.description : c.setupHint.split(". ").slice(0, 2).join(". ") + "."}</p>
               {!c.configured() && c.kind === "external" && (
-                <Link href="/settings/integrations" className="mt-1 inline-block text-[12px] font-medium underline">
+                <Link href="/integrations" className="mt-1 inline-block text-[12px] font-medium underline">
                   Set up
                 </Link>
               )}

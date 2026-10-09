@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { ActionButton } from "@/components/client";
+import { AgentRun, type AgentStep } from "@/components/agent-run";
 import { ModeBanner, OriginBadge, RoleTabs, SampleBadge } from "@/components/role-workspace";
 import { RoleStatusBadge } from "@/components/status";
 import { DiscoverJdFlow } from "@/components/upload-flows";
-import { Badge, Card, EmptyState, Notice, PageHeader, SectionTitle, formatDate } from "@/components/ui";
+import { Badge, Breadcrumbs, Card, EmptyState, LinkButton, Notice, PageHeader, SectionTitle, formatDate } from "@/components/ui";
 import { aiStatus } from "@/lib/ai";
 import { getAtsConnector } from "@/lib/ats/connector";
 import { requireAuth } from "@/lib/auth";
@@ -147,19 +148,83 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
   const outreachHref = (appId: string | null) => (appId ? `/roles/${role.id}/discover?${runQs}view=${view}&outreach=${appId}#outreach` : null);
   const extractorLabel = brief?.extractor ? (brief.extractor.startsWith("ai:") ? `AI (${brief.extractor.split(":")[2]?.split("/")[0]})` : "basic parser (no AI)") : null;
 
+  // The discovery sequence, derived from stored records: setup → plan → sources → evidence → review.
+  const okSources = runSources.filter((s) => s.status === "ok");
+  const failedSources = runSources.filter((s) => s.status !== "ok");
+  const evidenceOk = profiles.filter((p) => p.evidenceStatus === "ok").length;
+  const fresh = !!currentRun && !runParam && Date.now() - currentRun.createdAt.getTime() < 120_000;
+  const steps: AgentStep[] = [
+    {
+      key: "criteria",
+      label: "Review role criteria",
+      state: brief?.confirmedAt ? "done" : brief ? "active" : "pending",
+      detail: brief?.confirmedAt
+        ? `Search fields confirmed${brief.confirmedByName ? ` by ${brief.confirmedByName}` : ""}. ${approvedCriteria} approved role criteri${approvedCriteria === 1 ? "on" : "a"}.`
+        : brief
+          ? "Fields were suggested from the JD. A recruiter confirms them before any search."
+          : "Upload a JD or fill in the search fields.",
+      fix: brief?.confirmedAt ? undefined : { label: "Open search setup", href: "#setup" },
+    },
+    {
+      key: "plan",
+      label: "Prepare search plan",
+      state: brief?.booleanQuery ? (brief.confirmedAt ? "done" : "active") : "pending",
+      detail: brief?.booleanQuery ? (
+        <>
+          {brief.booleanEdited ? "Boolean edited by a recruiter" : "Boolean built from the fields"}: <code className="break-all font-mono text-[11.5px] text-muted">{brief.booleanQuery.slice(0, 220)}</code>
+        </>
+      ) : (
+        "Built from the confirmed fields; editable before it runs."
+      ),
+      fix: brief?.booleanQuery ? { label: "Edit plan", href: "#setup" } : undefined,
+    },
+    {
+      key: "search",
+      label: "Search connected sources",
+      state: !currentRun ? "pending" : currentRun.status === "failed" || (runSources.length > 0 && okSources.length === 0) ? "blocked" : "done",
+      detail: !currentRun
+        ? live
+          ? "Runs only when you press Search."
+          : "No external provider is connected — live searches cover your existing Talyn candidates; Demo mode uses fictional people."
+        : failedSources.length
+          ? `${failedSources.map((s) => `${s.label} ${s.status === "error" ? "failed" : "not connected"}`).join(", ")}. Nothing was substituted.`
+          : currentRun.isDemo
+            ? "Demo run against fictional sample people — not a live search."
+            : `Searched ${currentRun.createdAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}${currentRun.createdByName ? ` by ${currentRun.createdByName}` : ""}.`,
+      sources: runSources.map((s) => ({ label: s.label, note: s.status === "ok" ? `${s.count} found` : s.status === "error" ? "error" : "not connected" })),
+      fix: failedSources.length ? { label: "Check integrations", href: "/integrations" } : undefined,
+    },
+    {
+      key: "evidence",
+      label: "Gather evidence",
+      state: !currentRun ? "pending" : currentRun.status === "completed" ? "done" : "blocked",
+      detail: currentRun?.status === "completed" ? `${evidenceOk} with quoted evidence, ${profiles.length - evidenceOk} with limited evidence${currentRun.excludedCount ? `, ${currentRun.excludedCount} set aside by your exclusions` : ""}. Each card links to its source and retrieval date.` : undefined,
+    },
+    {
+      key: "review",
+      label: "Present results for recruiter review",
+      state: !currentRun || currentRun.status !== "completed" ? "pending" : groups.review.length + groups.limited.length ? "active" : "done",
+      detail:
+        currentRun?.status === "completed"
+          ? groups.review.length + groups.limited.length
+            ? `${groups.review.length + groups.limited.length} waiting for you to save or dismiss. Nothing is saved, contacted or rejected automatically.`
+            : `Reviewed: ${groups.saved.length} saved, ${groups.dismissed.length} dismissed.`
+          : undefined,
+      fix: groups.review.length + groups.limited.length ? { label: "Review results", href: "#results" } : undefined,
+    },
+  ];
+
   return (
     <>
       <PageHeader
         eyebrow={
-          <>
-            <Link href="/discover" className="hover:text-ink">
-              Discover
-            </Link>{" "}
-            /{" "}
-            <Link href="/roles" className="hover:text-ink">
-              Roles
-            </Link>
-          </>
+          <Breadcrumbs
+            items={[
+              { label: "Roles", href: "/roles" },
+              { label: role.title, href: `/roles/${role.id}` },
+              { label: "Discover" },
+            ]}
+          />
         }
         title={
           <span className="flex flex-wrap items-center gap-2">
@@ -189,11 +254,24 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
         <Notice tone="signal" className="mb-4">
           <strong>No external talent provider is connected.</strong> Live searches cover your existing Talyn candidates. Use <em>Demo mode</em> to try the workflow with fictional people — demo results
           are never shown as live.{" "}
-          <Link href="/settings/integrations" className="font-medium underline">
+          <Link href="/integrations" className="font-medium underline">
             Connect a provider
           </Link>
         </Notice>
       )}
+
+      <AgentRun
+        className="mb-6"
+        title="Discovery for this role"
+        summary="Each step runs only when you ask. You review every result before anyone is saved or contacted."
+        steps={steps}
+        controls={
+          <>
+            <LinkButton href="#setup">{currentRun ? "Edit plan & run again" : "Edit plan"}</LinkButton>
+            {groups.review.length + groups.limited.length > 0 && <LinkButton href="#results" variant="primary">Review results</LinkButton>}
+          </>
+        }
+      />
 
       <section id="setup" className="mb-8 scroll-mt-6" aria-labelledby="setup-h">
         <SectionTitle
@@ -291,7 +369,7 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
             {runSources.some((s) => s.status === "error") && (
               <Notice tone="danger" className="mb-3">
                 {runSources.filter((s) => s.status === "error").map((s) => s.label).join(", ")} returned an error, so no results from {runSources.filter((s) => s.status === "error").length > 1 ? "them" : "it"} are shown.
-                Nothing was substituted. Try again later, or check the connection in Settings → Integrations.
+                Nothing was substituted. Try again later, or check the connection in Integrations.
               </Notice>
             )}
             {currentRun.isDemo && (
@@ -317,7 +395,7 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
                 : "Ordered by how many search terms were found with a quote — a review aid, not a score. People found in several sources are merged into one card."}
             </p>
             {groups[view].length ? (
-              <Card className="divide-y divide-line overflow-hidden">
+              <Card className={fresh ? "motion-arrive divide-y divide-line overflow-hidden" : "divide-y divide-line overflow-hidden"}>
                 {groups[view].map((p) => (
                   <ResultCard key={p.id} p={profileView(p)} outreachHref={outreachHref(p.savedApplicationId)} />
                 ))}

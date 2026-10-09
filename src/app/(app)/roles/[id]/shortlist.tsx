@@ -55,7 +55,7 @@ export function ShortlistTab({ roleId, shortlisted, origin }: { roleId: string; 
             {rows.map((a) => {
               const latest = a.assessments[0];
               return (
-                <li key={a.id} className="grid gap-x-4 gap-y-2 px-4 py-3 lg:grid-cols-[minmax(0,1.5fr)_150px_minmax(0,1fr)_auto] lg:items-center">
+                <li key={a.id} className={`${a.decidedAt && Date.now() - a.decidedAt.getTime() < 60_000 ? "motion-flash " : ""}grid gap-x-4 gap-y-2 px-4 py-3 lg:grid-cols-[minmax(0,1.5fr)_150px_minmax(0,1fr)_auto] lg:items-center`}>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Link href={`/candidates/${a.candidate.id}?role=${roleId}`} className="font-medium hover:underline">

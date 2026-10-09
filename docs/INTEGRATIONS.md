@@ -2,7 +2,7 @@
 
 Talyn has five built-in integrations. **Each is off until its environment
 variables are set** (Vercel → Project → Settings → Environment Variables, then redeploy).
-Settings → Integrations shows which variables are set or missing — never their values — and the
+Integrations (`/integrations`) shows which variables are set or missing — never their values — and the
 controls for each integration once it's on.
 
 | Integration | Turns on with | Until then |
@@ -100,7 +100,7 @@ missing permissions, rate limits and timeouts are reported with a reconnect/retr
 5. In Vercel → Settings → Environment Variables set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
    (if not already), `APP_URL`, `TOKEN_ENCRYPTION_KEY` (e.g. `openssl rand -base64 48`) and
    `GOOGLE_CALENDAR_ENABLED=true`, then redeploy.
-6. Each recruiter and interviewer opens **Settings → Integrations → Google Calendar → Connect**
+6. Each recruiter and interviewer opens **Integrations (`/integrations`) → Google Calendar → Connect**
    (or **Connect** on the scheduling screen). Google Meet links require a Google Workspace or
    personal Google account where Meet is available for that calendar; otherwise the event is created
    without one and Talyn says so.

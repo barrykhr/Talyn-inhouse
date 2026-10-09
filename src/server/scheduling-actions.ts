@@ -411,6 +411,6 @@ export async function disconnectCalendar(): Promise<ActionState> {
     return { error: "Couldn't disconnect. Try again." };
   }
   await audit(auth, "calendar.disconnected", { subjectType: "org", subjectId: auth.orgId });
-  revalidatePath("/settings/integrations");
+  revalidatePath("/integrations");
   return { ok: true, message: "Disconnected. Talyn deleted your Google tokens and asked Google to revoke access." };
 }

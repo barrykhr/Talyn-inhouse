@@ -4,7 +4,7 @@ import { getAuth } from "@/lib/auth";
 import { CAL_STATE_COOKIE, calendarConfigured, startCalendarAuth } from "@/lib/calendar/google";
 import { appOrigin } from "@/lib/google";
 
-const safeReturn = (v: string | null) => (v && /^\/[\w\-/?=&%.]*$/.test(v) && !v.startsWith("//") ? v : "/settings/integrations");
+const safeReturn = (v: string | null) => (v && /^\/[\w\-/?=&%.]*$/.test(v) && !v.startsWith("//") ? v : "/integrations");
 
 /** Starts Google Calendar authorization for the signed-in user (only when they click Connect). */
 export async function GET(req: Request) {

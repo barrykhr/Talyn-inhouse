@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ActionButton } from "@/components/client";
 import { OriginBadge, RoleTabs, SampleBadge } from "@/components/role-workspace";
 import { RoleStatusBadge } from "@/components/status";
-import { Badge, Card, EmptyState, PageHeader, SectionTitle } from "@/components/ui";
+import { Breadcrumbs, Badge, Card, EmptyState, PageHeader, SectionTitle } from "@/components/ui";
 import { getAtsConnector } from "@/lib/ats/connector";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -47,11 +47,7 @@ export default async function RoleInterviewsPage({ params, searchParams }: { par
   return (
     <>
       <PageHeader
-        eyebrow={
-          <Link href="/roles" className="hover:text-ink">
-            Roles
-          </Link>
-        }
+        eyebrow={<Breadcrumbs items={[{ label: "Roles", href: "/roles" }, { label: role.title, href: `/roles/${role.id}` }, { label: "Interviews" }]} />}
         title={
           <span className="flex flex-wrap items-center gap-2">
             {role.title} <RoleStatusBadge status={role.status} />

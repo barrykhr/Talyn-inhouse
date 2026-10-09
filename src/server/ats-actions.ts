@@ -17,7 +17,7 @@ async function admin(): Promise<AuthContext | null> {
   return auth.membershipRole === "admin" ? auth : null;
 }
 const refresh = () => {
-  revalidatePath("/settings/integrations");
+  revalidatePath("/integrations");
   revalidatePath("/queue");
 };
 
