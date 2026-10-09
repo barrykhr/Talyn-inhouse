@@ -108,7 +108,12 @@ export function RunAssessment({ applicationId, aiConfigured, hasAssessment, disa
       result = { error: "The assessment request failed. Please try again." };
     }
     // Reload to show the stored assessment (see useServerForm for why not a client refresh).
-    if (result?.ok) return window.location.reload();
+    if (result?.ok) {
+      // Reload with ?assessed=1 so the score-and-decision pop-up opens on the fresh result.
+      const u = new URL(window.location.href);
+      u.searchParams.set("assessed", "1");
+      return window.location.assign(u.toString());
+    }
     setState(result);
     setPending(false);
   };

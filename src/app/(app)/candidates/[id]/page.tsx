@@ -26,6 +26,8 @@ import { SkillCount } from "@/components/skill-match";
 import { ProfileScoreChip, ProfileScoreDetail, type ScoreSnapshot } from "@/components/profile-score";
 import { parseBands, type ProfileRow } from "@/lib/profile-score";
 import { AltRouteControl } from "./alt-route";
+import { OpenScoreDecisionButton, ScoreDecisionDialog } from "./score-dialog";
+import { ReviewActions } from "@/components/review-actions";
 import { roleFit, stageReadiness } from "@/lib/ranking";
 import { parseEvidence } from "@/lib/evidence";
 import { highlight } from "@/lib/highlight";
@@ -65,11 +67,11 @@ export default async function CandidatePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ role?: string; resumeError?: string; notice?: string; saved?: string; view?: string }>;
+  searchParams: Promise<{ role?: string; resumeError?: string; notice?: string; saved?: string; view?: string; assessed?: string }>;
 }) {
   const auth = await requireAuth();
   const { id } = await params;
-  const { role: roleParam, resumeError, notice, saved, view } = await searchParams;
+  const { role: roleParam, resumeError, notice, saved, view, assessed } = await searchParams;
   await ownCandidate(auth, id);
   await auditAccess(auth, "candidate.viewed", { subjectType: "candidate", subjectId: id, candidateId: id });
 
@@ -962,22 +964,18 @@ export default async function CandidatePage({
       )}
 
       <Card className="p-4" data-profile-score>
-        {latestScore && scoreBreakdown ? (
+        <div className="mb-2 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Profile score</div>
+        {latestScore ? (
           <>
-            <ProfileScoreDetail
-              s={snap(latestScore)}
-              rows={scoreBreakdown.rows}
-              reason={scoreBreakdown.reason}
-              bands={parseBands(latestScore.scoringVersion.bandsJson)}
-              weights={{ required: latestScore.scoringVersion.weightRequired, preferred: latestScore.scoringVersion.weightPreferred }}
-              minCoverage={latestScore.scoringVersion.minCoverage}
-              requiredKnown={scoreBreakdown.requiredKnown}
-              requiredTotal={scoreBreakdown.requiredTotal}
-            />
-            <div className="mt-2 flex flex-wrap gap-x-3 text-[12.5px]">
-              <a href="#skills" className="text-brand hover:underline">Review evidence</a>
-              <a href="#skills" className="text-brand hover:underline">Correct an assessment</a>
-              <span className="text-muted">· Need more information? Use “Suggest follow-ups from gaps” or create an information request below.</span>
+            <div className="flex flex-wrap items-center gap-2">
+              {latestScore.status === "ok" && latestScore.score !== null && <span className="text-2xl font-semibold tabular-nums tracking-tight">{latestScore.score}</span>}
+              <ProfileScoreChip s={snap(latestScore)} />
+            </div>
+            <p className="mt-1 text-[12.5px] text-muted">
+              Evidence coverage {Math.round(latestScore.coverage * 100)}% · advisory only · scoring v{latestScore.scoringVersion.version}
+            </p>
+            <div className="mt-2.5">
+              <OpenScoreDecisionButton label={app?.decision ? "Review score & decision" : "Review score & decide"} />
             </div>
             {scoreRows.length > 1 && (
               <details className="mt-2 text-[12.5px]">
@@ -998,7 +996,6 @@ export default async function CandidatePage({
           </>
         ) : (
           <p className="text-[13px] text-muted">
-            <span className="mb-1 block text-[11.5px] font-semibold uppercase tracking-wide">Profile score</span>
             {latest ? "This assessment was made before profile scoring existed. Recalculate scores on the role's Criteria tab to add one." : "Appears after an assessment, with its calculation, weights and evidence coverage."}
           </p>
         )}
@@ -1132,6 +1129,48 @@ export default async function CandidatePage({
       )}
 
       <StatusLine items={status} />
+
+      {app && latestScore && scoreBreakdown && (
+        <ScoreDecisionDialog autoOpen={assessed === "1"} title={`${candidate.fullName} · ${app.role.title} — assessment ${assessed === "1" ? "complete" : "summary"}`}>
+          <ProfileScoreDetail
+            s={snap(latestScore)}
+            rows={scoreBreakdown.rows}
+            reason={scoreBreakdown.reason}
+            bands={parseBands(latestScore.scoringVersion.bandsJson)}
+            weights={{ required: latestScore.scoringVersion.weightRequired, preferred: latestScore.scoringVersion.weightPreferred }}
+            minCoverage={latestScore.scoringVersion.minCoverage}
+            requiredKnown={scoreBreakdown.requiredKnown}
+            requiredTotal={scoreBreakdown.requiredTotal}
+          />
+          {skills && skills.state !== "no_skills" && (
+            <div className="rounded-lg border border-line px-3 py-2.5">
+              <div className="mb-1 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Required skills</div>
+              <SkillCount m={skills} />
+              <p className="mt-1 text-[12.5px] text-ink-2">{skills.reason}</p>
+            </div>
+          )}
+          <div className="rounded-xl border border-brand/30 bg-brand-soft/40 p-4">
+            <div className="text-[14px] font-semibold">Your decision</div>
+            <p className="mb-3 text-[12.5px] text-muted">
+              The score and its label are advisory. Choose based on the evidence — nothing is decided, hidden or sent automatically. Reject asks for a job-related reason.
+            </p>
+            <ReviewActions applicationId={app.id} decision={app.decision} name={candidate.fullName} allowClear />
+            {app.decision && app.decidedByName && <p className="mt-2 text-[12px] text-muted">Current decision recorded by {app.decidedByName}{app.decidedAt ? ` on ${formatDate(app.decidedAt)}` : ""}.</p>}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
+            <a href="#skills" data-close-dialog className="font-medium text-brand hover:underline">
+              Review the evidence first
+            </a>
+            <a href="#skills" data-close-dialog className="font-medium text-brand hover:underline">
+              Correct an assessment
+            </a>
+            <span className="text-muted">Need more information? Close this and use “Suggest follow-ups from gaps” or an information request.</span>
+          </div>
+          <p className="text-[12px] text-faint">
+            If the candidate asked for another way to be assessed, set Alternative assessment in the side panel — the screening score is then not used.
+          </p>
+        </ScoreDecisionDialog>
+      )}
 
       {atsConflicts.length > 0 && (
         <AtsConflictsCard
