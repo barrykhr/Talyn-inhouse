@@ -16,6 +16,7 @@ const ROLE_LABEL: Record<string, string> = { admin: "Admin", recruiter: "Recruit
 
 const PRIMARY = [
   { href: "/home", label: "Home", icon: "home" },
+  { href: "/queue", label: "Queue", icon: "queue" },
   { href: "/roles", label: "Roles", icon: "roles" },
   { href: "/discover", label: "Discover", icon: "discover" },
   { href: "/candidates", label: "Candidates", icon: "people" },
@@ -41,6 +42,7 @@ export function AppShell({
   user,
   ai,
   attention,
+  queueCount,
   children,
 }: {
   workspaces: Workspace[];
@@ -49,6 +51,7 @@ export function AppShell({
   user: { name: string; email: string; role: string };
   ai: { configured: boolean; model: string | null };
   attention: number;
+  queueCount: number;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -79,8 +82,11 @@ export function AppShell({
               <NavIcon name={i.icon} />
               {i.label}
               {i.href === "/home" && attention > 0 && (
-                <span className="ml-auto rounded-full bg-brand px-1.5 text-[11px] font-semibold tabular-nums text-white" aria-label={`${attention} items need attention`}>
-                  {attention > 99 ? "99+" : attention}
+                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brand" title={`${attention} items need attention`} aria-label={`${attention} items need attention`} />
+              )}
+              {i.href === "/queue" && queueCount > 0 && (
+                <span className="ml-auto rounded-full bg-brand px-1.5 text-[11px] font-semibold tabular-nums text-white" aria-label={`${queueCount} items waiting in your queue`}>
+                  {queueCount > 99 ? "99+" : queueCount}
                 </span>
               )}
             </Link>
@@ -277,6 +283,13 @@ function NavIcon({ name }: { name: (typeof PRIMARY)[number]["icon"] }) {
         <svg {...p}>
           <circle cx="6" cy="5.5" r="2.5" />
           <path d="M1.5 13.5c.5-2.5 2.3-3.8 4.5-3.8s4 1.3 4.5 3.8M11 3.2a2.4 2.4 0 0 1 0 4.6M12.2 9.9c1.3.5 2 1.7 2.3 3.6" />
+        </svg>
+      );
+    case "queue":
+      return (
+        <svg {...p}>
+          <path d="M3 4h10M3 8h10M3 12h6" />
+          <path d="m11 11.5 1.2 1.2L14.5 10" />
         </svg>
       );
     case "interviews":

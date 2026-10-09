@@ -12,7 +12,7 @@ Where each Talyn feature lives, what it needs, and how to use it. The badge next
 
 **Needs:** Works now — no integration needed
 
-1. Use the main areas: Home, Roles, Discover, Candidates, Interviews, Integrations.
+1. Use the main areas: Home, Queue, Roles, Discover, Candidates, Interviews, Integrations.
 2. Workspace settings, Team & permissions, Calibration, Import & export and this Guide are under Workspace.
 3. Press ⌘K (Ctrl+K) or click “Search or jump to…” to open any role, candidate or screen.
 4. Click the workspace name at the top to switch workspaces or create a new one.
@@ -31,6 +31,17 @@ _The thin blue bar at the very top shows a page is loading. Motion stops if your
 3. Follow “Get started” until each step shows Done (it disappears when the required steps are complete).
 
 _Counts are real records only._
+
+### Queue
+
+**Where:** Queue (sidebar; the badge shows how many items are waiting) (`/queue`)
+
+**Needs:** Works now — no integration needed
+
+1. Work through what's waiting: CV details to confirm, information requests and their follow-ups, assessments to review, decisions, outreach due, replies, Discover results, ATS differences and interview scorecards.
+2. Click an item to open the exact place to act. Empty sections are listed in one line at the bottom.
+
+_Home shows a dot when something needs attention; the Queue badge is the count._
 
 ## Roles, skills and criteria
 

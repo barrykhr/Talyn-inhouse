@@ -23,8 +23,8 @@ export default async function QueuePage() {
       {total === 0 ? (
         <EmptyState title="You're all caught up" body="New CV reviews, assessments to check, decisions and information requests will appear here." />
       ) : (
-        <div className="space-y-6">
-          {sections.map((s) => (
+        <div className="motion-arrive space-y-6">
+          {sections.filter((s) => s.items.length > 0 || s.setup).map((s) => (
             <section key={s.key} aria-labelledby={`q-${s.key}`}>
               <div className="mb-2 flex items-baseline justify-between gap-3">
                 <h2 id={`q-${s.key}`} className="text-[15px] font-semibold tracking-tight">
@@ -34,8 +34,6 @@ export default async function QueuePage() {
               </div>
               {s.setup ? (
                 <p className="rounded-xl border border-dashed border-line-strong px-4 py-3 text-[13px] text-muted">{s.setup}</p>
-              ) : s.items.length === 0 ? (
-                <p className="px-1 text-[13px] text-faint">Nothing here.</p>
               ) : (
                 <Card className="divide-y divide-line overflow-hidden">
                   {s.items.map((it) => (
@@ -53,6 +51,11 @@ export default async function QueuePage() {
               )}
             </section>
           ))}
+          {sections.some((s) => !s.items.length && !s.setup) && (
+            <p className="text-[12.5px] text-faint">
+              Nothing waiting in: {sections.filter((s) => !s.items.length && !s.setup).map((s) => s.title).join(" · ")}.
+            </p>
+          )}
         </div>
       )}
     </>

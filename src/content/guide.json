@@ -11,7 +11,7 @@
           "href": "/home",
           "needs": [],
           "steps": [
-            "Use the main areas: Home, Roles, Discover, Candidates, Interviews, Integrations.",
+            "Use the main areas: Home, Queue, Roles, Discover, Candidates, Interviews, Integrations.",
             "Workspace settings, Team & permissions, Calibration, Import & export and this Guide are under Workspace.",
             "Press ⌘K (Ctrl+K) or click “Search or jump to…” to open any role, candidate or screen.",
             "Click the workspace name at the top to switch workspaces or create a new one.",
@@ -30,6 +30,17 @@
             "Follow “Get started” until each step shows Done (it disappears when the required steps are complete)."
           ],
           "notes": "Counts are real records only."
+        },
+        {
+          "name": "Queue",
+          "where": "Queue (sidebar; the badge shows how many items are waiting)",
+          "href": "/queue",
+          "needs": [],
+          "steps": [
+            "Work through what's waiting: CV details to confirm, information requests and their follow-ups, assessments to review, decisions, outreach due, replies, Discover results, ATS differences and interview scorecards.",
+            "Click an item to open the exact place to act. Empty sections are listed in one line at the bottom."
+          ],
+          "notes": "Home shows a dot when something needs attention; the Queue badge is the count."
         }
       ]
     },
