@@ -4,6 +4,7 @@ import { locateQuote } from "../evidence";
 import { z } from "zod";
 import { checkEnv } from "../integrations/env";
 import type { SearchFilters } from "./filters";
+import { SAMPLE_PROFILES } from "./sample-profiles";
 
 /**
  * Sourcing connectors. Talyn only searches data it is authorized to use: the customer's own
@@ -33,7 +34,7 @@ export type SearchOutcome = { profiles: RawProfile[]; estimatedTotal: number | n
 export interface SourcingConnector {
   key: string;
   label: string;
-  kind: "internal" | "external";
+  kind: "internal" | "external" | "sample";
   description: string;
   configured(): boolean;
   setupHint: string;
@@ -44,6 +45,27 @@ export interface SourcingConnector {
 }
 
 const STALE_MONTHS = 18;
+
+/** One signal per search term. Unmatched = not established by this source — never evidence of absence. */
+export function buildSignals(filters: SearchFilters, find: (term: string) => { quote: string; page: number | null } | null): Signal[] {
+  const sig = (category: string, term: string): Signal => {
+    const hit = find(term);
+    return { category, term, matched: !!hit, quote: hit?.quote ?? null, page: hit?.page ?? null };
+  };
+  return [
+    ...filters.keywords.map((t) => sig("keyword", t)),
+    ...filters.titles.map((t) => sig("title", t)),
+    ...filters.adjacent_titles.map((t) => sig("adjacent_title", t)),
+    ...filters.skills_required.map((t) => sig("skill_required", t)),
+    ...filters.skills_preferred.map((t) => sig("skill_preferred", t)),
+    ...filters.locations.map((t) => sig("location", t)),
+    ...filters.seniority.map((t) => sig("seniority", t)),
+  ];
+}
+
+const CORE = new Set(["keyword", "title", "adjacent_title", "skill_required"]);
+/** Relevance gate: at least one core term matched with a quote. */
+export const isRelevant = (signals: Signal[]) => signals.some((s) => s.matched && CORE.has(s.category));
 
 function findTerm(pages: string[], term: string): { quote: string; page: number | null } | null {
   const t = term.trim();
@@ -71,7 +93,8 @@ const talynRediscovery: SourcingConnector = {
   syntaxNote: "Uses the structured filters (titles, skills, locations, exclusions) as case-insensitive matches against each candidate's current CV and profile. Boolean operators are not interpreted.",
   renderQuery(f) {
     return [
-      f.titles.length ? `title ∈ {${f.titles.join(", ")}}` : null,
+      f.keywords.length ? `mentions {${f.keywords.join(", ")}}` : null,
+      f.titles.length || f.adjacent_titles.length ? `title ∈ {${[...f.titles, ...f.adjacent_titles].join(", ")}}` : null,
       f.skills_required.length ? `all of {${f.skills_required.join(", ")}}` : null,
       f.skills_preferred.length ? `any of {${f.skills_preferred.join(", ")}}` : null,
       f.locations.length ? `location ∈ {${f.locations.join(", ")}}` : null,
@@ -82,7 +105,7 @@ const talynRediscovery: SourcingConnector = {
   },
   async search({ orgId, roleId, filters }) {
     const candidates = await db.candidate.findMany({
-      where: { orgId, applications: { none: { roleId } } },
+      where: { orgId, isSample: false, applications: { none: { roleId } } },
       select: {
         id: true,
         fullName: true,
@@ -104,18 +127,12 @@ const talynRediscovery: SourcingConnector = {
       const pages = resume ? (JSON.parse(resume.pagesJson) as string[]) : [];
       const profileText = [c.currentTitle, c.currentCompany, c.location, c.candidateSummary].filter(Boolean).join("\n");
       const searchable = [...pages, profileText];
-      const sig = (category: string, term: string): Signal => {
+      const signals = buildSignals(filters, (term) => {
         const hit = findTerm(searchable, term);
-        return { category, term, matched: !!hit, quote: hit?.quote ?? null, page: hit && hit.page && hit.page <= pages.length ? hit.page : null };
-      };
-      const signals = [
-        ...filters.titles.map((t) => sig("title", t)),
-        ...filters.skills_required.map((t) => sig("skill_required", t)),
-        ...filters.skills_preferred.map((t) => sig("skill_preferred", t)),
-        ...filters.locations.map((t) => sig("location", t)),
-      ];
-      // Only return people with at least one matched title or required skill: a relevance gate, not a judgement.
-      if (!signals.some((s) => s.matched && (s.category === "title" || s.category === "skill_required"))) continue;
+        return hit ? { quote: hit.quote, page: hit.page && hit.page <= pages.length ? hit.page : null } : null;
+      });
+      // Only return people with at least one matched core term: a relevance gate, not a judgement.
+      if (!isRelevant(signals)) continue;
       const excl = filters.exclusions.find((e) => findTerm(searchable, e));
       const ageMonths = resume ? (now - resume.createdAt.getTime()) / (30 * 86400000) : null;
       profiles.push({
@@ -172,7 +189,7 @@ export type ExternalRecord = z.infer<typeof ExternalRecord>;
  * Turns a source record into a reviewable profile. Signals are quoted only from text the source
  * returned; contact details are kept only if the source provided them (never inferred).
  */
-export async function profileFromRecord(orgId: string, r: ExternalRecord, filters: SearchFilters, sourceLabel: string, opts: { relevanceGate: boolean }): Promise<RawProfile | null> {
+export async function profileFromRecord(orgId: string, r: ExternalRecord, filters: SearchFilters, sourceLabel: string, opts: { relevanceGate: boolean; noDuplicateCheck?: boolean }): Promise<RawProfile | null> {
   const asOf = r.updatedAt && !Number.isNaN(Date.parse(r.updatedAt)) ? new Date(r.updatedAt).toISOString() : new Date().toISOString();
   const lines = [
     [r.title, r.company].filter(Boolean).join(" at "),
@@ -182,20 +199,14 @@ export async function profileFromRecord(orgId: string, r: ExternalRecord, filter
     r.summary ?? "",
   ].filter((l) => l.trim());
   const text = [lines.join("\n")];
-  const sig = (category: string, term: string): Signal => {
+  const signals = buildSignals(filters, (term) => {
     const hit = findTerm(text, term);
-    return { category, term, matched: !!hit, quote: hit?.quote ?? null, page: null };
-  };
-  const signals = [
-    ...filters.titles.map((t) => sig("title", t)),
-    ...filters.skills_required.map((t) => sig("skill_required", t)),
-    ...filters.skills_preferred.map((t) => sig("skill_preferred", t)),
-    ...filters.locations.map((t) => sig("location", t)),
-  ];
-  if (opts.relevanceGate && !signals.some((s) => s.matched && (s.category === "title" || s.category === "skill_required"))) return null;
+    return hit ? { quote: hit.quote, page: null } : null;
+  });
+  if (opts.relevanceGate && !isRelevant(signals)) return null;
   const excl = filters.exclusions.find((e) => findTerm(text, e));
   const ageMonths = r.updatedAt && !Number.isNaN(Date.parse(r.updatedAt)) ? (Date.now() - Date.parse(r.updatedAt)) / (30 * 86400000) : null;
-  const dup = await findDuplicate(orgId, { email: r.email, linkedinUrl: r.linkedinUrl, name: r.name, company: r.company });
+  const dup = opts.noDuplicateCheck ? null : await findDuplicate(orgId, { email: r.email, linkedinUrl: r.linkedinUrl, name: r.name, company: r.company });
   const fact = (v: string | null | undefined) => (v ? { value: v, source: sourceLabel, asOf } : null);
   const fields = Object.fromEntries(
     (
@@ -271,23 +282,57 @@ const externalProvider: SourcingConnector = {
   },
 };
 
-export const CONNECTORS: SourcingConnector[] = [talynRediscovery, externalProvider];
+/**
+ * Sample data. Available only while no live provider is connected, so recruiters can explore
+ * Discover. Results are fictional people from a fixed list — never presented as a live search.
+ */
+export const SAMPLE_SOURCE_LABEL = "Talyn sample data (fictional)";
+const sampleData: SourcingConnector = {
+  key: "sample",
+  label: "Sample data (fictional)",
+  kind: "sample",
+  description: "Fictional example profiles for exploring Discover. Not real people and not a live search.",
+  configured: () => !externalProvider.configured(),
+  setupHint: "Sample data is turned off because a live sourcing provider is connected.",
+  syntaxNote: "Matches your terms against a fixed list of fictional profiles. Nothing is searched online.",
+  renderQuery(f, b) {
+    return talynRediscovery.renderQuery(f, b);
+  },
+  async search({ orgId, filters }) {
+    const profiles: RawProfile[] = [];
+    for (const sp of SAMPLE_PROFILES) {
+      const updatedAt = sp.monthsSinceUpdate == null ? null : new Date(Date.now() - sp.monthsSinceUpdate * 30 * 86400000).toISOString();
+      const p = await profileFromRecord(
+        orgId,
+        { id: sp.id, name: sp.name, title: sp.title, company: sp.company, location: sp.location, skills: sp.skills, summary: sp.summary, experience: sp.experience, updatedAt, url: null, email: null, linkedinUrl: null },
+        filters,
+        SAMPLE_SOURCE_LABEL,
+        { relevanceGate: true, noDuplicateCheck: true },
+      );
+      if (p) profiles.push(p);
+    }
+    return { profiles, estimatedTotal: null, query: `${this.renderQuery(filters, "")} · sample data` };
+  },
+};
+
+export const CONNECTORS: SourcingConnector[] = [talynRediscovery, externalProvider, sampleData];
 export const connector = (key: string) => CONNECTORS.find((c) => c.key === key);
 /** Display label for a stored source key (connectors plus imported files). */
+export const isLiveSourceConnected = () => externalProvider.configured();
 export const sourceLabel = (key: string) => (key === "file" ? "Imported file" : (connector(key)?.label ?? key));
 
 /** Duplicate check against existing Talyn candidates (used for external profiles). */
 export async function findDuplicate(orgId: string, p: { email?: string | null; linkedinUrl?: string | null; name: string; company?: string | null }) {
   if (p.email) {
-    const c = await db.candidate.findFirst({ where: { orgId, email: p.email.toLowerCase() }, select: { id: true } });
+    const c = await db.candidate.findFirst({ where: { orgId, isSample: false, email: p.email.toLowerCase() }, select: { id: true } });
     if (c) return { id: c.id, reason: "Same email as an existing candidate" };
   }
   if (p.linkedinUrl) {
-    const c = await db.candidate.findFirst({ where: { orgId, linkedinUrl: p.linkedinUrl }, select: { id: true } });
+    const c = await db.candidate.findFirst({ where: { orgId, isSample: false, linkedinUrl: p.linkedinUrl }, select: { id: true } });
     if (c) return { id: c.id, reason: "Same LinkedIn URL as an existing candidate" };
   }
   if (p.company) {
-    const c = await db.candidate.findFirst({ where: { orgId, fullName: { equals: p.name, mode: "insensitive" }, currentCompany: { equals: p.company, mode: "insensitive" } }, select: { id: true } });
+    const c = await db.candidate.findFirst({ where: { orgId, isSample: false, fullName: { equals: p.name, mode: "insensitive" }, currentCompany: { equals: p.company, mode: "insensitive" } }, select: { id: true } });
     if (c) return { id: c.id, reason: "Same name and current company — possible duplicate" };
   }
   return null;

@@ -6,7 +6,7 @@ import { audit } from "@/lib/audit";
 import { queueStageChange } from "@/lib/ats/sync";
 import { requireAuth, type AuthContext } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { DECISIONS, STAGES } from "@/lib/domain";
+import { DECISIONS, STAGES, REJECT_REASONS } from "@/lib/domain";
 import { logError } from "@/lib/log";
 import { DocumentParseError } from "@/lib/documents";
 import { goTo, optStr, str, type ActionState } from "./form";
@@ -225,13 +225,18 @@ export async function recordDecision(applicationId: string, _prev: ActionState, 
   const decision = z.enum(DECISIONS).safeParse(str(fd, "decision"));
   if (!decision.success) return { error: "Choose a decision." };
   const note = str(fd, "decisionNote", 4000);
-  if (decision.data === "decline" && !note) return { error: "Add a short, job-related reason when declining." };
+  const reason = str(fd, "decisionReason", 60);
+  if (decision.data === "decline") {
+    if (!REJECT_REASONS.some((r) => r.value === reason)) return { error: "Choose a reason for rejecting." };
+    if (reason === "other" && !note) return { error: "Add a short note explaining the reason." };
+  }
   await db.application.update({
     where: { id: applicationId },
-    data: { decision: decision.data, decisionNote: note || null, decidedById: auth.userId, decidedByName: auth.userName, decidedAt: new Date() },
+    data: { decision: decision.data, decisionReason: decision.data === "decline" ? reason : null, decisionNote: note || null, decidedById: auth.userId, decidedByName: auth.userName, decidedAt: new Date() },
   });
   await audit(auth, "decision.recorded", { subjectType: "application", subjectId: applicationId, candidateId: app.candidateId, roleId: app.roleId, applicationId, meta: { decision: decision.data } });
   revalidatePath(`/candidates/${app.candidateId}`);
   revalidatePath(`/roles/${app.roleId}`);
+  revalidatePath(`/roles/${app.roleId}/discover`);
   return { ok: true, message: "Decision recorded. Move the pipeline stage when you're ready." };
 }

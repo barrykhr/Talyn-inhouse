@@ -164,11 +164,37 @@ No output is ever presented as coming from a model unless it did.
 9. **Role → Export CSV** includes stage, decision, criteria version, score, coverage, AI
    recommendation, its review status and the final recommendation.
 
+## Role workspace: Applicants · Discover · Shortlist
+
+Each role has three people tabs, kept deliberately separate:
+
+- **Applicants** (inbound) — people who applied: added manually, from a CV, by CSV import or from
+  the ATS. List with search (name, title, company, or any skill in the CV), stage and review-status
+  filters; Board and Ranked views. Each row shows evidence *found / uncertain / missing* from the
+  latest assessment (not a score) and **Shortlist · Hold · Reject**. Reject asks for a job-related
+  reason. None of these moves the pipeline stage, and none is ever chosen by AI.
+- **Discover** (outbound) — people a recruiter finds. Enter a query plus skills, location,
+  seniority, titles and adjacent titles; pick a source; results are cards with matched quotes,
+  source name and link, date found, and what is *not established by the source*. **View
+  evidence**, **Save to role** (marks the person *Discovered* and adds them to the Shortlist —
+  never to Applicants), **Dismiss**, and **Draft message** (email or WhatsApp text from matched
+  evidence; draft only, nothing is sent from Discover).
+- **Shortlist** — everyone the recruiter wants to progress, from both workflows, each labeled
+  *Applied* or *Discovered*.
+
+The candidate page is shared, with separate cards for role-fit evidence, **How they came to this
+role**, **Contact & permission** (applied vs. not established vs. opted out), and **Your decision**.
+
+**Sample data.** While no live sourcing provider is connected, Discover offers *Sample data
+(fictional)*: a fixed list of fictional profiles, labeled as samples everywhere (results, cards,
+candidate page, CSV export) and never presented as a live search. Remove them with **Remove sample
+data** on the Discover tab. *Talyn rediscovery* (your own existing candidates) is a real source.
+
 ## Phase 2 walkthrough
 
 1. **Queue** (`G` then `Q`) — everything waiting on a person: proposed criteria, CV reviews,
    assessments to review, info requests, sourcing results, outreach to approve/send, replies.
-2. **Role → Sourcing → Ideal Candidate Profile** — generate from the JD and approved criteria
+2. **Role → Discover → Ideal Candidate Profile** — generate from the JD and approved criteria
    (or start blank). Every item shows its source; clarification questions are listed. Edit, then
    **Approve**. Changes create a new version.
 3. **Search strategy** — plan from the approved ICP: titles, skills, locations, exclusions, a

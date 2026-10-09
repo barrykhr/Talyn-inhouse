@@ -93,7 +93,7 @@ export function stageReadiness(input: {
   const later = ["recruiter_screen", "hiring_team_review", "interview", "offer"];
   if (later.includes(input.stage))
     checks.push({ label: "AI recommendation reviewed", met: !!a && (!a.recommendation || (a.recommendationStatus !== null && a.recommendationStatus !== "pending")) });
-  if (["hiring_team_review", "interview", "offer"].includes(input.stage)) checks.push({ label: "Recruiter decision: Advance", met: input.decision === "advance" });
+  if (["hiring_team_review", "interview", "offer"].includes(input.stage)) checks.push({ label: "Recruiter decision: Shortlist", met: input.decision === "advance" });
   const met = checks.filter((c) => c.met).length;
   return { stage: STAGE_LABEL[input.stage as Stage] ?? input.stage, nextDecision: NEXT[input.stage] ?? "next step", checks, met, total: checks.length };
 }

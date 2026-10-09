@@ -2,29 +2,34 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { AiRequestError, AiUnavailableError, SEARCH_ENGINE_VERSION, aiStatus, planSearchWithAi, type SearchPlan } from "@/lib/ai";
+import { AiRequestError, AiUnavailableError, OUTREACH_ENGINE_VERSION, SEARCH_ENGINE_VERSION, aiStatus, draftOutreachWithAi, planSearchWithAi, type SearchPlan } from "@/lib/ai";
+import { EMPLOYMENT_TYPE_LABEL, type EmploymentType } from "@/lib/domain";
+import { OPT_OUT_FOOTER } from "@/lib/outreach/facts";
 import { audit } from "@/lib/audit";
 import { requireAuth, type AuthContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logError } from "@/lib/log";
 import Papa from "papaparse";
-import { ExternalRecord, connector, profileFromRecord, type SearchOutcome } from "@/lib/sourcing/connectors";
-import { EMPTY_FILTERS, parseList, toBoolean, type SearchFilters } from "@/lib/sourcing/filters";
+import { ExternalRecord, connector, profileFromRecord, sourceLabel, type SearchOutcome } from "@/lib/sourcing/connectors";
+import { EMPTY_FILTERS, parseFilters, parseList, toBoolean, type SearchFilters } from "@/lib/sourcing/filters";
 import { str, type ActionState } from "./form";
 import { attach } from "./pipeline";
 import { ownRole } from "./scope";
 
-export type PlanResult = { ok?: boolean; error?: string; notice?: string; plan?: SearchPlan & { boolean: string; generator: string } };
+type Plan = Omit<SearchPlan, "filters" | "mapping"> & { filters: SearchFilters; mapping: { phrase: string; field: string; value: string; note: string }[] };
+export type PlanResult = { ok?: boolean; error?: string; notice?: string; plan?: Plan & { boolean: string; generator: string } };
 
 async function approvedIcp(orgId: string, roleId: string) {
   return db.icp.findFirst({ where: { orgId, roleId, status: "approved" }, include: { items: { where: { status: "approved" }, orderBy: { position: "asc" } } } });
 }
 
 /** Deterministic plan from the approved ICP (used when AI is off or fails). */
-function planFromIcp(items: { category: string; value: string }[]): SearchPlan {
+function planFromIcp(items: { category: string; value: string }[]): Plan {
   const pick = (...cats: string[]) => items.filter((i) => cats.includes(i.category)).map((i) => i.value);
   const filters: SearchFilters = {
-    titles: pick("target_title", "adjacent_title"),
+    ...EMPTY_FILTERS,
+    titles: pick("target_title"),
+    adjacent_titles: pick("adjacent_title"),
     skills_required: pick("skill_essential"),
     skills_preferred: pick("skill_preferred"),
     locations: pick("location"),
@@ -34,7 +39,7 @@ function planFromIcp(items: { category: string; value: string }[]): SearchPlan {
   };
   const map: Record<string, keyof SearchFilters> = {
     target_title: "titles",
-    adjacent_title: "titles",
+    adjacent_title: "adjacent_titles",
     skill_essential: "skills_required",
     skill_preferred: "skills_preferred",
     location: "locations",
@@ -69,7 +74,8 @@ export async function planSearch(roleId: string, request: string): Promise<PlanR
     // Exclusions may only come from the approved profile or the recruiter's own words.
     const allowed = new Set(items.filter((i) => i.category === "exclusion").map((i) => i.value.toLowerCase()));
     p.filters.exclusions = p.filters.exclusions.filter((e) => allowed.has(e.toLowerCase()) || request.toLowerCase().includes(e.toLowerCase()));
-    return { ok: true, plan: { ...p, boolean: toBoolean(p.filters), generator: `ai:${ai.provider}:${ai.model}/${SEARCH_ENGINE_VERSION}` } };
+    const filters: SearchFilters = { ...EMPTY_FILTERS, ...p.filters };
+    return { ok: true, plan: { ...p, filters, boolean: toBoolean(filters), generator: `ai:${ai.provider}:${ai.model}/${SEARCH_ENGINE_VERSION}` } };
   } catch (err) {
     if (!(err instanceof AiUnavailableError || err instanceof AiRequestError)) logError("search.plan_failed", err, { roleId });
     const p = planFromIcp(items);
@@ -84,7 +90,9 @@ export async function planSearch(roleId: string, request: string): Promise<PlanR
 }
 
 const FilterSchema = z.object({
+  keywords: z.array(z.string().max(120)),
   titles: z.array(z.string().max(120)),
+  adjacent_titles: z.array(z.string().max(120)),
   skills_required: z.array(z.string().max(120)),
   skills_preferred: z.array(z.string().max(120)),
   locations: z.array(z.string().max(120)),
@@ -92,39 +100,6 @@ const FilterSchema = z.object({
   industries: z.array(z.string().max(120)),
   exclusions: z.array(z.string().max(120)),
 });
-
-/** Saves the recruiter-edited strategy as a new version. */
-export async function saveStrategy(roleId: string, _prev: ActionState, fd: FormData): Promise<ActionState & { strategyId?: string }> {
-  const auth = await requireAuth();
-  await ownRole(auth, roleId);
-  const icp = await approvedIcp(auth.orgId, roleId);
-  if (!icp) return { error: "Approve the Ideal Candidate Profile first." };
-  const filters = FilterSchema.parse(Object.fromEntries(Object.keys(EMPTY_FILTERS).map((k) => [k, parseList(str(fd, `f_${k}`, 3000))])));
-  if (!filters.titles.length && !filters.skills_required.length) return { error: "Add at least one title or required skill." };
-  // Exclusions must be job-related and recruiter-approved: only allow ones present in the approved ICP or typed here deliberately.
-  const booleanQuery = str(fd, "booleanQuery", 4000) || toBoolean(filters);
-  const last = await db.searchStrategy.findFirst({ where: { roleId }, orderBy: { version: "desc" } });
-  const s = await db.searchStrategy.create({
-    data: {
-      orgId: auth.orgId,
-      roleId,
-      icpId: icp.id,
-      icpVersion: icp.version,
-      version: (last?.version ?? 0) + 1,
-      request: str(fd, "request", 2000),
-      filtersJson: JSON.stringify(filters),
-      booleanQuery,
-      mappingJson: str(fd, "mappingJson", 20000) || "[]",
-      explanationsJson: str(fd, "explanationsJson", 20000) || "[]",
-      planJson: str(fd, "planJson", 20000) || "{}",
-      generator: str(fd, "generator", 200) || "recruiter",
-      createdByName: auth.userName,
-    },
-  });
-  await audit(auth, "search.saved", { subjectType: "sourcing", subjectId: s.id, roleId, meta: { version: s.version, icpVersion: icp.version } });
-  revalidatePath(`/roles/${roleId}/sourcing`);
-  return { ok: true, message: `Saved as search v${s.version}.`, strategyId: s.id };
-}
 
 /** Runs a saved strategy against one authorized source. Results are for review only. */
 type StrategyRow = { id: string; roleId: string; version: number };
@@ -216,7 +191,7 @@ export async function importSourcingFile(strategyId: string, _prev: ActionState,
   const headers = parsed.meta.fields ?? [];
   const col = (k: string) => COL[k].find((h) => headers.includes(h));
   if (!col("name")) return { error: "The file needs a name (or full_name) column." };
-  const filters = JSON.parse(strategy.filtersJson) as SearchFilters;
+  const filters = parseFilters(strategy.filtersJson);
   const label = `${sourceName} (imported file)`;
   const profiles = [];
   let skipped = 0;
@@ -250,34 +225,8 @@ export async function importSourcingFile(strategyId: string, _prev: ActionState,
   if (!profiles.length) return { error: `No usable rows. ${skipped} row${skipped === 1 ? "" : "s"} had a missing name or an invalid email/URL.` };
   const { run, excluded } = await storeRun(auth, strategy, "file", { profiles, estimatedTotal: null, query: `Imported from ${sourceName} · ${file.name} · ${rows.length} rows` });
   await audit(auth, "sourcing.file_imported", { subjectType: "sourcing", subjectId: run.id, roleId: strategy.roleId, meta: { rows: rows.length, imported: profiles.length, skipped, excluded } });
-  revalidatePath(`/roles/${strategy.roleId}/sourcing`);
-  return { ok: true, message: `${run.resultCount} profiles to review${skipped ? ` · ${skipped} rows skipped (missing name or invalid email/URL)` : ""}${excluded ? ` · ${excluded} matched your approved exclusions` : ""}.`, redirectTo: `/roles/${strategy.roleId}/sourcing?run=${run.id}#results` };
-}
-
-export async function runSearch(strategyId: string, sourceKey: string): Promise<ActionState> {
-  const auth = await requireAuth();
-  const strategy = await db.searchStrategy.findFirst({ where: { id: strategyId, orgId: auth.orgId } });
-  if (!strategy) return { error: "Search not found." };
-  const src = connector(sourceKey);
-  if (!src) return { error: "Unknown source." };
-  const filters = JSON.parse(strategy.filtersJson) as SearchFilters;
-  if (!src.configured()) {
-    await db.searchRun.create({ data: { orgId: auth.orgId, roleId: strategy.roleId, strategyId, source: src.key, status: "setup_required", error: src.setupHint, createdByName: auth.userName } });
-    revalidatePath(`/roles/${strategy.roleId}/sourcing`);
-    return { error: `${src.label} isn't connected.` };
-  }
-  try {
-    const out = await src.search({ orgId: auth.orgId, roleId: strategy.roleId, filters, booleanQuery: strategy.booleanQuery });
-    const { run, excluded } = await storeRun(auth, strategy, src.key, out);
-    await audit(auth, "search.run", { subjectType: "sourcing", subjectId: run.id, roleId: strategy.roleId, meta: { source: src.key, version: strategy.version, results: run.resultCount, excluded } });
-    revalidatePath(`/roles/${strategy.roleId}/sourcing`);
-    return { ok: true, message: `${run.resultCount} profile${run.resultCount === 1 ? "" : "s"} to review${excluded ? ` · ${excluded} matched your approved exclusions` : ""}.` };
-  } catch (err) {
-    logError("search.run_failed", err, { source: src.key });
-    await db.searchRun.create({ data: { orgId: auth.orgId, roleId: strategy.roleId, strategyId, source: src.key, status: "failed", error: "The search failed.", createdByName: auth.userName } });
-    revalidatePath(`/roles/${strategy.roleId}/sourcing`);
-    return { error: "The search failed. Try again." };
-  }
+  revalidatePath(`/roles/${strategy.roleId}/discover`);
+  return { ok: true, message: `${run.resultCount} profiles to review${skipped ? ` · ${skipped} rows skipped (missing name or invalid email/URL)` : ""}${excluded ? ` · ${excluded} matched your approved exclusions` : ""}.`, redirectTo: `/roles/${strategy.roleId}/discover?run=${run.id}#results` };
 }
 
 async function ownProfile(orgId: string, id: string) {
@@ -285,19 +234,25 @@ async function ownProfile(orgId: string, id: string) {
 }
 
 /** Saves a sourced profile to the role's pipeline (at "New"). Never assesses or moves anyone automatically. */
+/**
+ * Saves a Discover result to the role: the person is marked "Discovered" and added to the
+ * shared Shortlist (the recruiter's explicit choice). A person who already applied keeps their
+ * "Applied" record — the two are never merged.
+ */
 export async function saveProfileToRole(profileId: string): Promise<ActionState> {
   const auth = await requireAuth();
   const p = await ownProfile(auth.orgId, profileId);
   if (!p) return { error: "Profile not found." };
+  if (p.status === "saved" && p.savedApplicationId) return { ok: true, message: "Already saved to this role." };
   let candidateId: string;
   if (p.source === "talyn") {
     const c = await db.candidate.findFirst({ where: { id: p.sourceRecordId, orgId: auth.orgId }, select: { id: true } });
     if (!c) return { error: "That candidate no longer exists in Talyn." };
     candidateId = c.id;
-  } else if (p.duplicateCandidateId) {
+  } else if (p.duplicateCandidateId && (await db.candidate.count({ where: { id: p.duplicateCandidateId, orgId: auth.orgId } }))) {
     candidateId = p.duplicateCandidateId; // reuse the existing record rather than creating a duplicate
   } else {
-    // External profile: create a minimal candidate with source-attributed fields only.
+    // New person: only source-attributed fields. Contact details only if the source provided them.
     const fields = JSON.parse(p.fieldsJson) as Record<string, { value: string }>;
     const c = await db.candidate.create({
       data: {
@@ -306,21 +261,148 @@ export async function saveProfileToRole(profileId: string): Promise<ActionState>
         currentTitle: p.currentTitle,
         currentCompany: p.currentCompany,
         location: p.location,
-        // Contact details only when the source itself provided them — never guessed.
         email: fields.email?.value ?? null,
         linkedinUrl: fields.linkedin_url?.value ?? null,
-        source: `sourced:${p.source}`,
+        source: p.source === "sample" ? "sample" : `sourced:${p.source}`,
+        isSample: p.source === "sample",
+        candidateSummary: null,
         fieldOriginsJson: JSON.stringify({ fullName: "sourced", ...Object.fromEntries(Object.keys(fields).flatMap((k) => (PROFILE_KEY[k] ? [[PROFILE_KEY[k], "sourced"]] : []))) }),
       },
     });
     candidateId = c.id;
   }
-  const app = await attach(auth, candidateId, p.roleId);
+  const existing = await db.application.findUnique({ where: { candidateId_roleId: { candidateId, roleId: p.roleId } } });
+  const label = sourceLabel(p.source);
+  const app = await attach(auth, candidateId, p.roleId, { origin: "discovered", detail: `Saved from Discover · ${label}`, sourcedProfileId: p.id });
+  const alreadyApplicant = !!existing && existing.origin === "applied";
+  if (!existing || (existing.origin === "discovered" && !existing.decision)) {
+    await db.application.update({ where: { id: app.id }, data: { decision: "advance", decidedById: auth.userId, decidedByName: auth.userName, decidedAt: new Date(), decisionNote: "Saved from Discover" } });
+  }
   await db.sourcedProfile.update({ where: { id: profileId }, data: { status: "saved", savedApplicationId: app.id, reviewedByName: auth.userName, reviewedAt: new Date() } });
-  await audit(auth, "sourcing.saved_to_role", { subjectType: "sourcing", subjectId: profileId, candidateId, roleId: p.roleId, applicationId: app.id, meta: { source: p.source } });
-  revalidatePath(`/roles/${p.roleId}/sourcing`);
+  await audit(auth, "sourcing.saved_to_role", { subjectType: "sourcing", subjectId: profileId, candidateId, roleId: p.roleId, applicationId: app.id, meta: { source: p.source, alreadyApplicant } });
+  revalidatePath(`/roles/${p.roleId}/discover`);
   revalidatePath(`/roles/${p.roleId}`);
-  return { ok: true };
+  return {
+    ok: true,
+    message: alreadyApplicant ? "This person already applied to this role — they stay in Applicants with their application." : "Saved as Discovered and added to the Shortlist. Nothing was assessed or sent.",
+  };
+}
+
+/**
+ * Discover search: the recruiter's query and filters are saved as a new search version and run
+ * on the chosen source. Sample data is labeled as such; nothing runs on a source that isn't connected.
+ */
+export async function discoverSearch(roleId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const auth = await requireAuth();
+  const role = await ownRole(auth, roleId);
+  const filters = FilterSchema.parse({
+    ...EMPTY_FILTERS,
+    keywords: parseList(str(fd, "q", 1000)),
+    titles: parseList(str(fd, "f_titles", 3000)),
+    adjacent_titles: parseList(str(fd, "f_adjacent_titles", 3000)),
+    skills_required: parseList(str(fd, "f_skills_required", 3000)),
+    skills_preferred: parseList(str(fd, "f_skills_preferred", 3000)),
+    locations: parseList(str(fd, "f_locations", 1000)),
+    seniority: parseList(str(fd, "f_seniority", 500)),
+    exclusions: parseList(str(fd, "f_exclusions", 1000)),
+  });
+  if (!filters.keywords.length && !filters.titles.length && !filters.adjacent_titles.length && !filters.skills_required.length)
+    return { error: "Add a search query, a job title or a required skill." };
+  const src = connector(str(fd, "source", 40));
+  if (!src) return { error: "Choose a source." };
+  if (!src.configured()) return { error: `${src.label} isn't connected. ${src.setupHint}` };
+  const icp = await approvedIcp(auth.orgId, roleId);
+  const last = await db.searchStrategy.findFirst({ where: { roleId }, orderBy: { version: "desc" } });
+  const strategy = await db.searchStrategy.create({
+    data: {
+      orgId: auth.orgId,
+      roleId,
+      icpId: icp?.id ?? null,
+      icpVersion: icp?.version ?? null,
+      version: (last?.version ?? 0) + 1,
+      request: str(fd, "q", 1000),
+      filtersJson: JSON.stringify(filters),
+      booleanQuery: toBoolean(filters),
+      generator: str(fd, "generator", 200) || "recruiter",
+      createdByName: auth.userName,
+    },
+  });
+  try {
+    const out = await src.search({ orgId: auth.orgId, roleId, filters, booleanQuery: strategy.booleanQuery });
+    const { run, excluded } = await storeRun(auth, strategy, src.key, out);
+    await audit(auth, "discover.searched", { subjectType: "sourcing", subjectId: run.id, roleId, meta: { source: src.key, version: strategy.version, results: run.resultCount, excluded } });
+    return { ok: true, redirectTo: `/roles/${role.id}/discover?run=${run.id}#results` };
+  } catch (err) {
+    logError("discover.search_failed", err, { source: src.key });
+    await db.searchRun.create({ data: { orgId: auth.orgId, roleId, strategyId: strategy.id, source: src.key, status: "failed", error: "The search failed.", createdByName: auth.userName } });
+    revalidatePath(`/roles/${roleId}/discover`);
+    return { error: `${src.label} didn't respond as expected. Your query was saved as search v${strategy.version} — try again.` };
+  }
+}
+
+export type MessageDraft = { channel: "email" | "whatsapp"; subject: string | null; body: string; facts: { label: string; value: string; source: string }[]; generator: string; error?: string };
+
+/**
+ * Drafts a first message for a Discover result, from matched role evidence only. Returns text for
+ * the recruiter to edit and copy — nothing is saved or sent, and no contact details are used or guessed.
+ */
+export async function draftDiscoverMessage(profileId: string, channel: "email" | "whatsapp"): Promise<MessageDraft> {
+  const auth = await requireAuth();
+  const p = await ownProfile(auth.orgId, profileId);
+  const ch = channel === "whatsapp" ? "whatsapp" : "email";
+  if (!p) return { channel: ch, subject: null, body: "", facts: [], generator: "", error: "Profile not found." };
+  const role = await db.role.findFirstOrThrow({ where: { id: p.roleId, orgId: auth.orgId } });
+  const signals = (JSON.parse(p.signalsJson) as { category: string; term: string; matched: boolean; quote: string | null }[]).filter((s) => s.matched && s.quote);
+  const label = sourceLabel(p.source);
+  const facts = [
+    ...(p.currentTitle ? [{ key: "current_title", label: "Current title", value: p.currentTitle, source: label }] : []),
+    ...signals.slice(0, 4).map((s, i) => ({ key: `evidence_${i + 1}`, label: `Mentions ${s.term}`, value: s.quote!, source: label })),
+  ];
+  const firstName = p.displayName.split(/\s+/)[0];
+  const evidenceTerms = signals.slice(0, 2).map((s) => s.term);
+  const org = await db.organization.findUniqueOrThrow({ where: { id: auth.orgId }, select: { name: true } });
+  let subject: string | null = ch === "email" ? `${role.title} at ${org.name}` : null;
+  let body: string;
+  let generator = "template:discover-v1";
+  const ai = aiStatus();
+  if (ai.configured && ch === "email") {
+    try {
+      const d = await draftOutreachWithAi({
+        company: org.name,
+        role: { title: role.title, location: role.location, employmentType: EMPLOYMENT_TYPE_LABEL[role.employmentType as EmploymentType] ?? role.employmentType, highlights: [] },
+        facts: facts.map((f) => ({ key: f.key, label: f.label, value: f.value })),
+        step: 1,
+        previous: null,
+        senderName: auth.userName,
+      });
+      subject = d.subject;
+      body = `${d.body}${OPT_OUT_FOOTER}`;
+      generator = `ai:${ai.provider}:${ai.model}/${OUTREACH_ENGINE_VERSION}`;
+    } catch (err) {
+      if (!(err instanceof AiUnavailableError || err instanceof AiRequestError)) logError("discover.draft_failed", err);
+      body = "";
+    }
+  } else body = "";
+  if (!body) {
+    const why = evidenceTerms.length ? ` Your profile mentions ${evidenceTerms.join(" and ")}, which are relevant to this role.` : "";
+    body =
+      ch === "whatsapp"
+        ? `Hi ${firstName}, I'm ${auth.userName}, a recruiter at ${org.name}. We're hiring a ${role.title}${role.location ? ` (${role.location})` : ""}.${why} Would you be open to a short chat? If not, no problem — just let me know and I won't message again.`
+        : `Hi ${firstName},\n\nI'm ${auth.userName}, a recruiter at ${org.name}. We're hiring a ${role.title}${role.location ? ` in ${role.location}` : ""}.${why}\n\nWould you be open to a short conversation about it?\n\nBest,\n${auth.userName}${OPT_OUT_FOOTER}`;
+  }
+  await audit(auth, "discover.draft", { subjectType: "sourcing", subjectId: profileId, roleId: p.roleId, meta: { channel: ch, generator: generator.split(":")[0] } });
+  return { channel: ch, subject, body, facts: facts.map(({ label, value, source }) => ({ label, value, source })), generator };
+}
+
+/** Removes every fictional sample candidate (and their pipeline records) from this workspace. */
+export async function clearSampleData(roleId: string): Promise<ActionState> {
+  const auth = await requireAuth();
+  const n = await db.candidate.deleteMany({ where: { orgId: auth.orgId, isSample: true } });
+  await db.sourcedProfile.deleteMany({ where: { orgId: auth.orgId, source: "sample" } });
+  await audit(auth, "sample.cleared", { subjectType: "org", subjectId: auth.orgId, meta: { candidates: n.count } });
+  revalidatePath(`/roles/${roleId}/discover`);
+  revalidatePath(`/roles/${roleId}`);
+  return { ok: true, message: `Removed ${n.count} sample candidate${n.count === 1 ? "" : "s"} and all sample results.` };
 }
 
 /** Recruiter feedback on a result. Dismissing hides nothing elsewhere and records no decision. */
@@ -338,6 +420,6 @@ export async function reviewProfile(profileId: string, input: { feedback?: "usef
     },
   });
   await audit(auth, "sourcing.feedback", { subjectType: "sourcing", subjectId: profileId, roleId: p.roleId, meta: { feedback: input.feedback ?? null, dismissed: !!input.dismiss, reason: input.reason ?? null } });
-  revalidatePath(`/roles/${p.roleId}/sourcing`);
+  revalidatePath(`/roles/${p.roleId}/discover`);
   return { ok: true };
 }

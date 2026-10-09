@@ -83,11 +83,40 @@ export type Confidence = (typeof CONFIDENCE)[number];
 
 export const DECISIONS = ["advance", "hold", "decline"] as const;
 export type Decision = (typeof DECISIONS)[number];
+// Recruiter decisions. "advance" = Shortlist (wants to progress), "decline" = Reject. Always recorded by a recruiter.
 export const DECISION_LABEL: Record<Decision, string> = {
-  advance: "Advance",
+  advance: "Shortlist",
   hold: "Hold",
-  decline: "Decline",
+  decline: "Reject",
 };
+
+/** Required, job-related reasons when a recruiter rejects. */
+export const REJECT_REASONS = [
+  { value: "missing_essential", label: "Missing essential criteria" },
+  { value: "insufficient_evidence", label: "Not enough evidence for the criteria" },
+  { value: "location_or_eligibility", label: "Location or work eligibility" },
+  { value: "seniority", label: "Seniority doesn't match the role" },
+  { value: "compensation", label: "Compensation expectations" },
+  { value: "role_filled_or_closed", label: "Role filled or closed" },
+  { value: "candidate_withdrew", label: "Candidate withdrew" },
+  { value: "duplicate", label: "Duplicate record" },
+  { value: "other", label: "Other (explain in note)" },
+] as const;
+export const REJECT_REASON_LABEL: Record<string, string> = Object.fromEntries(REJECT_REASONS.map((r) => [r.value, r.label]));
+
+/** How a person came to this role. Never merged: applicants and discovered people stay distinct. */
+export const APP_ORIGIN_LABEL: Record<string, string> = { applied: "Applied", discovered: "Discovered" };
+
+/** Three-way reading of a criterion result for quick review. The detailed result stays visible. */
+export type EvidenceTier = "found" | "uncertain" | "missing";
+export const EVIDENCE_TIER: Record<AssessmentResult, EvidenceTier> = {
+  supported: "found",
+  partially_supported: "uncertain",
+  inferred: "uncertain",
+  conflicting: "uncertain",
+  not_stated: "missing",
+};
+export const EVIDENCE_TIER_LABEL: Record<EvidenceTier, string> = { found: "Evidence found", uncertain: "Uncertain", missing: "Missing" };
 
 // Provenance of profile fields. "Confirmed" means a recruiter reviewed and accepted the
 // AI/parser extraction — never that the fact itself was independently verified.

@@ -176,6 +176,25 @@ outreach edit/approval/reply/bounce/opt-out rates, task completion).
 Below 5 data points a measure reads "Not enough data". These describe usage, not fairness or
 predictive validity.
 
+## Role workspace (Applicants · Discover · Shortlist)
+
+- `Application.origin` is `applied` or `discovered` (+ `originDetail`, `sourcedProfileId`). It is set
+  once when the application is created (`attach()` in `src/server/pipeline.ts`) and never changes,
+  so applicants and discovered people are never merged; saving a Discover result for someone who
+  already applied keeps their *Applied* record.
+- Shortlist / Hold / Reject reuse the recruiter decision (`advance` / `hold` / `decline`, plus a
+  required `decisionReason` for reject). The Shortlist tab is `decision = advance` across both
+  origins. Review status (`src/lib/review-status.ts`) is derived from recruiter actions only.
+- Evidence tiers (`EVIDENCE_TIER` in `domain.ts`): supported → found; partial / inferred /
+  conflicting → uncertain; not stated → missing. Lists show counts, not a score.
+- Discover search (`discoverSearch`) saves each query as a `SearchStrategy` version (ICP optional)
+  and runs one connector. `sample` is a connector over fixed fictional profiles
+  (`src/lib/sourcing/sample-profiles.ts`), enabled only when no live provider is configured;
+  saved samples are `Candidate.isSample`. Message drafts (`draftDiscoverMessage`) return text
+  only — no persistence, no sending, no contact lookup.
+- Not built (out of scope): Signals, monitoring, availability or "ready to switch" predictions,
+  and new automated outreach.
+
 ## Extensibility (later phases, not implemented)
 
 - Interview recording/intelligence, a hiring-manager portal and advanced analytics are out of

@@ -196,6 +196,7 @@ model Candidate {
   source           String           @default("manual") // manual | csv | cv_upload
   fieldOriginsJson String           @default("{}") // { fieldName: "cv" | "cv_corrected" | "recruiter" }
   extractionStatus String? // null | needs_review | reviewed (when a CV extraction awaits review)
+  isSample         Boolean          @default(false) // fictional person from Talyn sample data (demo only)
   contactOptOut    Boolean          @default(false) // candidate asked not to be contacted: blocks all outreach
   optOutAt         DateTime?
   atsExternalId    String? // id in the connected ATS (set by ATS sync)
@@ -258,31 +259,35 @@ model Note {
 
 // A candidate's association with a role, and their place in that role's pipeline.
 model Application {
-  id             String             @id @default(cuid())
-  orgId          String
-  candidateId    String
-  roleId         String
-  stage          String             @default("new")
-  decision       String? // advance | hold | decline — always recorded by a recruiter
-  decisionNote   String?
-  decidedById    String?
-  decidedByName  String?
-  decidedAt      DateTime?
-  priority       Int                @default(0) // recruiter override: 1 high, 0 normal, -1 low. Never changes the stage.
-  priorityNote   String?
-  priorityByName String?
-  priorityAt     DateTime?
-  atsExternalId  String? // application id in the connected ATS
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-  candidate      Candidate          @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  role           Role               @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  stageEvents    StageEvent[]
-  assessments    Assessment[]
-  tasks          Task[]
-  outreach       OutreachSequence[]
-  questions      Question[]
-  atsOutbox      AtsOutbox[]
+  id               String             @id @default(cuid())
+  orgId            String
+  candidateId      String
+  roleId           String
+  stage            String             @default("new")
+  origin           String             @default("applied") // applied (inbound) | discovered (found by a recruiter in Discover)
+  originDetail     String? // e.g. "Saved from Discover · Talyn rediscovery"
+  sourcedProfileId String? // the Discover result this came from, if discovered
+  decision         String? // advance | hold | decline — always recorded by a recruiter
+  decisionNote     String?
+  decisionReason   String? // structured reason, required for "reject" (decline)
+  decidedById      String?
+  decidedByName    String?
+  decidedAt        DateTime?
+  priority         Int                @default(0) // recruiter override: 1 high, 0 normal, -1 low. Never changes the stage.
+  priorityNote     String?
+  priorityByName   String?
+  priorityAt       DateTime?
+  atsExternalId    String? // application id in the connected ATS
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  candidate        Candidate          @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  role             Role               @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  stageEvents      StageEvent[]
+  assessments      Assessment[]
+  tasks            Task[]
+  outreach         OutreachSequence[]
+  questions        Question[]
+  atsOutbox        AtsOutbox[]
 
   @@unique([candidateId, roleId])
   @@index([orgId, roleId])
@@ -444,8 +449,8 @@ model SearchStrategy {
   id               String      @id @default(cuid())
   orgId            String
   roleId           String
-  icpId            String
-  icpVersion       Int
+  icpId            String? // null when the recruiter searched directly from Discover
+  icpVersion       Int?
   version          Int
   request          String      @default("") // recruiter's plain-language request
   filtersJson      String // { titles, skills_required, skills_preferred, locations, seniority, industries, exclusions }

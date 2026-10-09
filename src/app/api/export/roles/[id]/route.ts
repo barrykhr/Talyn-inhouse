@@ -1,7 +1,7 @@
 import { audit } from "@/lib/audit";
 import { getAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { DECISION_LABEL, RECOMMENDATION_LABEL, RESULT_LABEL, STAGE_LABEL, type AssessmentResult, type Decision, type Recommendation, type Stage } from "@/lib/domain";
+import { APP_ORIGIN_LABEL, REJECT_REASON_LABEL, DECISION_LABEL, RECOMMENDATION_LABEL, RESULT_LABEL, STAGE_LABEL, type AssessmentResult, type Decision, type Recommendation, type Stage } from "@/lib/domain";
 import { computeScore } from "@/lib/score";
 import { csvResponse, today } from "@/lib/export";
 
@@ -28,8 +28,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const headers = [
     "candidate",
     "email",
+    "origin",
+    "sample",
     "stage",
     "decision",
+    "reject_reason",
     "decision_note",
     "assessment_type",
     "assessment_reviewed",
@@ -47,8 +50,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return [
       a.candidate.fullName,
       a.candidate.email,
+      APP_ORIGIN_LABEL[a.origin] ?? a.origin,
+      a.candidate.isSample ? "yes (fictional)" : "",
       STAGE_LABEL[a.stage as Stage] ?? a.stage,
       a.decision ? DECISION_LABEL[a.decision as Decision] : "",
+      a.decisionReason ? (REJECT_REASON_LABEL[a.decisionReason] ?? a.decisionReason) : "",
       a.decisionNote ?? "",
       asmt ? asmt.generator : "",
       asmt ? (asmt.status === "reviewed" ? "yes" : "no") : "",

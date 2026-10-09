@@ -28,6 +28,12 @@
   --color-danger: #b42318;
   --color-danger-soft: #fdecea;
 
+  /* Where a person came from: inbound applicants vs. people a recruiter discovered. */
+  --color-inbound: #1f4f8f;
+  --color-inbound-soft: #e6eef9;
+  --color-outbound: #5b3a8c;
+  --color-outbound-soft: #efe8f7;
+
   --radius-card: 14px;
 }
 

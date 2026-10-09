@@ -13,7 +13,10 @@ import { Badge, Card, EmptyState, Notice, PageHeader, SectionTitle, formatDate, 
 import { aiStatus } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { CORRECTION_REASON_LABEL, DECISION_LABEL, ORIGIN_LABEL, RECOMMENDATION_LABEL, STAGE_LABEL, type Decision, type Recommendation, type Stage } from "@/lib/domain";
+import { APP_ORIGIN_LABEL, REJECT_REASON_LABEL, CORRECTION_REASON_LABEL, DECISION_LABEL, ORIGIN_LABEL, RECOMMENDATION_LABEL, STAGE_LABEL, type Decision, type Recommendation, type Stage } from "@/lib/domain";
+import { EvidenceCounts, OriginBadge, SampleBadge } from "@/components/role-workspace";
+import { evidenceCounts } from "@/lib/review-status";
+import { sourceLabel } from "@/lib/sourcing/connectors";
 import { pct } from "@/lib/score";
 import { computeScore } from "@/lib/score";
 import { roleFit, stageReadiness } from "@/lib/ranking";
@@ -43,6 +46,8 @@ import { DeleteCandidateButton, DeleteResumeButton, EditProfile, NoteForm, NoteI
 export const maxDuration = 300;
 
 export const metadata = { title: "Candidate" };
+
+const CANDIDATE_SOURCE_LABEL: Record<string, string> = { manual: "entered by a recruiter", csv: "CSV import", cv_upload: "CV upload", ats: "from the ATS", sample: "sample data" };
 
 export default async function CandidatePage({
   params,
@@ -191,6 +196,16 @@ export default async function CandidatePage({
         decision: app.decision,
       })
     : null;
+  // How this person came to the selected role (kept separate from evidence, contact and decision).
+  const sourced = app?.sourcedProfileId ? await db.sourcedProfile.findFirst({ where: { id: app.sourcedProfileId, orgId: auth.orgId }, select: { source: true, sourceUrl: true, retrievedAt: true, runId: true, matchedSignals: true, totalSignals: true } }) : null;
+  const permission = candidate.isSample
+    ? { tone: "gap" as const, label: "Fictional sample person", text: "There is no one to contact." }
+    : candidate.contactOptOut
+      ? { tone: "danger" as const, label: "Opted out", text: `Asked not to be contacted${candidate.optOutAt ? ` on ${formatDate(candidate.optOutAt)}` : ""}. All outreach is blocked.` }
+      : candidate.applications.some((a) => a.origin === "applied")
+        ? { tone: "ok" as const, label: "Applied", text: `Applied to ${candidate.applications.filter((a) => a.origin === "applied").map((a) => a.role.title).join(", ")} — contact about that application. Broader marketing consent isn't recorded.` }
+        : { tone: "warn" as const, label: "Not established", text: "Found by a recruiter; hasn't applied or agreed to be contacted. Their interest in a new role is unknown." };
+  const contactOrigin = (field: string) => ORIGIN_LABEL[origins[field] ?? ""] ?? (candidate.source === "csv" ? "CSV import" : candidate.source === "ats" ? "From ATS" : "Entered by recruiter");
   const profileText = [candidate.currentTitle ? `Current title: ${candidate.currentTitle}` : "", candidate.currentCompany ? `Current company: ${candidate.currentCompany}` : "", candidate.candidateSummary ?? ""].filter(Boolean).join("\n");
 
   // What Talyn has done, what needs review, and the next available action — most important first.
@@ -207,7 +222,7 @@ export default async function CandidatePage({
       if (latest.status !== "reviewed") status.push({ tone: "ai", text: "Assessment drafted — review the evidence" });
       if (latest.recommendation && latest.recommendationStatus === "pending") status.push({ tone: "ai", text: "AI recommendation awaiting your review" });
       if (app.tasks.length) status.push({ tone: "attention", text: `${app.tasks.length} open information request${app.tasks.length > 1 ? "s" : ""}` });
-      if (!app.decision) status.push({ tone: "attention", text: "Choose Advance, Hold or Decline" });
+      if (!app.decision) status.push({ tone: "attention", text: "Choose Shortlist, Hold or Reject" });
     }
     if (status.length === 0)
       status.push({ tone: "ok", text: `Up to date · ${app.decision ? `Decision: ${DECISION_LABEL[app.decision as Decision]}` : "No decision yet"} · Stage: ${STAGE_LABEL[app.stage as Stage]}` });
@@ -463,7 +478,8 @@ export default async function CandidatePage({
                 <ReviewControls assessmentId={latest.id} reviewed={latest.status === "reviewed"} reviewedBy={latest.reviewedByName} />
               </span>
             </div>
-            <div className="border-b border-line px-4 py-2.5">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2.5">
+              <EvidenceCounts counts={evidenceCounts(latest.items)} />
               <SummaryLine summary={summarize(latest.items)} />
             </div>
             <div className="divide-y divide-line">
@@ -559,6 +575,70 @@ export default async function CandidatePage({
         </div>
       </Card>
 
+      <Card className="p-4" aria-labelledby="src-h">
+        <div id="src-h" className="mb-2 text-[11.5px] font-semibold uppercase tracking-wide text-muted">
+          How they came to this role
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <OriginBadge origin={app.origin} detail={app.originDetail} />
+          {candidate.isSample && <SampleBadge />}
+        </div>
+        <p className="mt-1.5 text-[12.5px] text-ink-2">
+          {app.origin === "discovered"
+            ? `${app.originDetail ?? "Found by a recruiter in Discover"} on ${formatDate(app.createdAt)}. Has not applied.`
+            : `Applied · added to Talyn ${formatDate(app.createdAt)} (${CANDIDATE_SOURCE_LABEL[candidate.source] ?? "entered by a recruiter"}).`}
+        </p>
+        {sourced && (
+          <p className="mt-1 text-[12px] text-muted">
+            {sourceLabel(sourced.source)} · found {formatDate(sourced.retrievedAt)} · {sourced.matchedSignals} of {sourced.totalSignals} search terms matched ·{" "}
+            <Link href={`/roles/${app.roleId}/discover?run=${sourced.runId}&view=saved#results`} className="underline hover:text-ink">
+              search evidence
+            </Link>
+            {sourced.sourceUrl && sourced.source !== "talyn" && (
+              <>
+                {" · "}
+                <a href={sourced.sourceUrl} target="_blank" rel="noopener noreferrer nofollow" className="underline hover:text-ink">
+                  source ↗
+                </a>
+              </>
+            )}
+          </p>
+        )}
+      </Card>
+
+      <Card className="p-4" aria-labelledby="contact-h">
+        <div id="contact-h" className="mb-2 text-[11.5px] font-semibold uppercase tracking-wide text-muted">
+          Contact &amp; permission
+        </div>
+        <dl className="space-y-1 text-[12.5px]">
+          {(
+            [
+              ["Email", candidate.email, "email"],
+              ["Phone", candidate.phone, "phone"],
+              ["LinkedIn", candidate.linkedinUrl, "linkedinUrl"],
+            ] as const
+          ).map(([label, v, f]) => (
+            <div key={f} className="flex flex-wrap gap-x-2">
+              <dt className="w-16 shrink-0 text-muted">{label}</dt>
+              <dd className="min-w-0">
+                {v ? (
+                  <>
+                    <span className="break-all">{v}</span> <span className="text-[11.5px] text-faint">· {contactOrigin(f)}</span>
+                  </>
+                ) : (
+                  <span className="text-faint">Not on file — Talyn doesn&apos;t guess contact details</span>
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <div className="mt-2 border-t border-line pt-2 text-[12.5px]">
+          <span className="text-muted">Permission to contact: </span>
+          <Badge tone={permission.tone}>{permission.label}</Badge>
+          <p className="mt-1 text-ink-2">{permission.text}</p>
+        </div>
+      </Card>
+
       <Card className="p-4">
         <div className="mb-3 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Score</div>
         {liveScore ? (
@@ -614,13 +694,14 @@ export default async function CandidatePage({
       <Card className="p-4">
         <div className="mb-1 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Your decision</div>
         <p className="mb-3 text-[12.5px] text-muted">
-          {latest && !app.decision ? "The assessment is ready. Choose Advance, Hold or Decline — Talyn won't choose for you." : "Recorded separately from the pipeline stage and from any AI output."}
+          {latest && !app.decision ? "The assessment is ready. Choose Shortlist, Hold or Reject — Talyn won't choose for you." : "Recorded separately from the pipeline stage, from how they were found, and from any AI output."}
         </p>
-        <DecisionForm applicationId={app.id} decision={app.decision} note={app.decisionNote} />
+        <DecisionForm applicationId={app.id} decision={app.decision} note={app.decisionNote} reason={app.decisionReason} />
         {app.decidedAt && (
           <p className="mt-2 text-[12px] text-faint">
-            Last recorded {formatDateTime(app.decidedAt)}
+            {app.decision ? `${DECISION_LABEL[app.decision as Decision]} · ` : ""}recorded {formatDateTime(app.decidedAt)}
             {app.decidedByName ? ` by ${app.decidedByName}` : ""}
+            {app.decisionReason ? ` · reason: ${REJECT_REASON_LABEL[app.decisionReason] ?? app.decisionReason}` : ""}
           </p>
         )}
       </Card>
@@ -661,6 +742,11 @@ export default async function CandidatePage({
         }
       />
 
+      {candidate.isSample && (
+        <Notice tone="warn" className="mb-4">
+          <strong>Sample profile.</strong> A fictional person from Talyn sample data, saved while exploring Discover. Not a real candidate; there is no one to contact.
+        </Notice>
+      )}
       {resumeError && <Notice tone="danger" className="mb-4">Candidate saved, but the resume couldn&apos;t be processed: {resumeError}</Notice>}
       {notice && <Notice tone="warn" className="mb-4">{notice}</Notice>}
       {saved === "profile" && !needsReview && (
@@ -698,7 +784,9 @@ export default async function CandidatePage({
             )}
           >
             {a.role.title}
-            <span className={clsx("text-[11.5px] font-normal", a.id === app?.id ? "text-white/70" : "text-muted")}>{STAGE_LABEL[a.stage as Stage]}</span>
+            <span className={clsx("text-[11.5px] font-normal", a.id === app?.id ? "text-white/70" : "text-muted")}>
+              {APP_ORIGIN_LABEL[a.origin]} · {STAGE_LABEL[a.stage as Stage]}
+            </span>
           </Link>
         ))}
         <AddToRole candidateId={candidate.id} roles={availableRoles} />

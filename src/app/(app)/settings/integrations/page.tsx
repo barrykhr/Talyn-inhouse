@@ -119,7 +119,7 @@ export default async function IntegrationsPage() {
             <div className="font-medium">
               Authorized export import <Status on label="Available" />
             </div>
-            <p className="text-muted">On a role&apos;s Sourcing tab, import a CSV exported from a source your organization is licensed to use. The recruiter names the source and confirms the licence.</p>
+            <p className="text-muted">On a role&apos;s Discover tab, import a CSV exported from a source your organization is licensed to use. The recruiter names the source and confirms the licence.</p>
           </li>
         </ul>
       </Card>

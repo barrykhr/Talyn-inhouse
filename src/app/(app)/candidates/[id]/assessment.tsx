@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { useEffect, useState } from "react";
 import { ActionForm, ActionButton, FormMessage, Spinner, SubmitButton, useServerForm } from "@/components/client";
 import { AiMark, Badge, Button, Field, Notice, Select, Textarea } from "@/components/ui";
-import { RECOMMENDATIONS, RECOMMENDATION_LABEL, RESULT_HELP, RESULT_LABEL, RESULTS, type AssessmentResult, type Evidence, type Recommendation } from "@/lib/domain";
+import { EVIDENCE_TIER, EVIDENCE_TIER_LABEL, RECOMMENDATIONS, RECOMMENDATION_LABEL, RESULT_HELP, RESULT_LABEL, RESULTS, type AssessmentResult, type Evidence, type Recommendation } from "@/lib/domain";
 import { useSourceViewer } from "@/components/source-viewer";
 import { StagedProgress } from "@/components/staged-progress";
 import { useToast } from "@/components/toast";
@@ -34,6 +34,14 @@ const resultTone: Record<string, "ok" | "warn" | "gap" | "danger"> = {
   conflicting: "danger",
   not_stated: "gap",
 };
+
+const tierClass = { found: "text-ok", uncertain: "text-warn", missing: "text-gap" } as const;
+/** Quick read: evidence found, uncertain or missing. The detailed result badge stays next to it. */
+function TierLabel({ result }: { result: string }) {
+  const t = EVIDENCE_TIER[result as AssessmentResult];
+  if (!t) return null;
+  return <span className={clsx("text-[12px] font-semibold", tierClass[t])}>{EVIDENCE_TIER_LABEL[t]}</span>;
+}
 
 export function ResultBadge({ result, struck = false }: { result: string; struck?: boolean }) {
   const r = result as AssessmentResult;
@@ -167,6 +175,7 @@ export function ItemCard({ item }: { item: ItemView }) {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
+          <TierLabel result={effective} />
           {item.overrideResult && <ResultBadge result={item.result} struck />}
           <ResultBadge result={effective} />
           {item.confidence && !item.overrideResult && (

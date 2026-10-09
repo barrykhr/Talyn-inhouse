@@ -97,6 +97,7 @@ export async function generateIcp(roleId: string): Promise<ActionState> {
   });
   await audit(auth, "icp.generated", { subjectType: "role", subjectId: icp.id, roleId, meta: { version, items: items.length, generator } });
   revalidatePath(`/roles/${roleId}`);
+  revalidatePath(`/roles/${roleId}/discover`);
   return { ok: true, message: notice ?? `Draft profile v${version} ready for review.` };
 }
 
@@ -141,6 +142,7 @@ export async function saveIcp(icpId: string, _prev: ActionState, fd: FormData): 
   ]);
   if (approve) await audit(auth, "icp.approved", { subjectType: "role", subjectId: icpId, roleId: icp.roleId, meta: { version: icp.version } });
   revalidatePath(`/roles/${icp.roleId}`);
+  revalidatePath(`/roles/${icp.roleId}/discover`);
   return { ok: true, message: approve ? `Profile v${icp.version} approved. It now drives search.` : "Draft saved." };
 }
 
@@ -177,5 +179,6 @@ export async function reviseIcp(icpId: string): Promise<ActionState> {
     },
   });
   revalidatePath(`/roles/${icp.roleId}`);
+  revalidatePath(`/roles/${icp.roleId}/discover`);
   return { ok: true };
 }

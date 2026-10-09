@@ -118,7 +118,7 @@ export async function buildQueue(orgId: string): Promise<QueueSection[]> {
     {
       key: "decision",
       title: "Recruiter decision pending",
-      hint: "Reviewed assessments with no Advance, Hold or Decline recorded.",
+      hint: "Reviewed assessments with no Shortlist, Hold or Reject recorded.",
       items: assessed
         .filter((a) => a.assessments[0].status === "reviewed" && !a.decision)
         .map((a) => ({
@@ -166,7 +166,7 @@ export async function buildQueue(orgId: string): Promise<QueueSection[]> {
     },
     {
       key: "sourcing",
-      title: "Sourcing results to review",
+      title: "Discover results to review",
       hint: "Profiles from authorized sources waiting for save, dismiss or feedback.",
       items: sourced
         .map((g) => {
@@ -178,7 +178,7 @@ export async function buildQueue(orgId: string): Promise<QueueSection[]> {
             roleId: g.roleId,
             roleTitle: role?.title ?? "Role",
             since: g._min.createdAt ?? new Date(),
-            href: `/roles/${g.roleId}/sourcing#results`,
+            href: `/roles/${g.roleId}/discover#results`,
           };
         })
         .sort(byAge),
