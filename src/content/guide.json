@@ -1,0 +1,351 @@
+{
+  "intro": "Where each Talyn feature lives, what it needs, and how to use it. The badge next to each feature reads this workspace's real configuration: Ready means it works now; Needs setup means an integration isn't connected and the feature shows a setup or demo state instead.",
+  "sections": [
+    {
+      "id": "getting-around",
+      "title": "Getting around",
+      "features": [
+        {
+          "name": "Sidebar, search and workspaces",
+          "where": "Left sidebar on every page",
+          "href": "/home",
+          "needs": [],
+          "steps": [
+            "Use the main areas: Home, Roles, Discover, Candidates, Interviews, Integrations.",
+            "Workspace settings, Team & permissions, Calibration, Import & export and this Guide are under Workspace.",
+            "Press ⌘K (Ctrl+K) or click “Search or jump to…” to open any role, candidate or screen.",
+            "Click the workspace name at the top to switch workspaces or create a new one.",
+            "Your name at the bottom opens the account menu: your calendar connection and Sign out."
+          ],
+          "notes": "The thin blue bar at the very top shows a page is loading. Motion stops if your device is set to reduce motion."
+        },
+        {
+          "name": "Home",
+          "where": "Home",
+          "href": "/home",
+          "needs": [],
+          "steps": [
+            "Check “Needs your attention”: applicants without a decision, criteria to approve, CV details to confirm, Discover results, outreach drafts, replies and interviews to schedule.",
+            "Click any item to go straight to where the work happens.",
+            "Follow “Get started” until each step shows Done (it disappears when the required steps are complete)."
+          ],
+          "notes": "Counts are real records only."
+        }
+      ]
+    },
+    {
+      "id": "roles",
+      "title": "Roles, skills and criteria",
+      "features": [
+        {
+          "name": "Create a role",
+          "where": "Roles → New role",
+          "href": "/roles/new",
+          "needs": ["ai_optional"],
+          "steps": [
+            "Choose “From a job description” to upload a PDF/DOCX, or “Enter manually”.",
+            "Review the details Talyn read from the JD (each shows the excerpt it came from) and save.",
+            "Set the status (Draft, Open, On hold, Closed) with Edit role → Status. Approving criteria does not change the status."
+          ],
+          "notes": "With AI on, details are read by AI; otherwise a basic parser reads labelled lines and bullet points."
+        },
+        {
+          "name": "Role Overview",
+          "where": "Role → Overview",
+          "href": "/roles",
+          "needs": [],
+          "steps": [
+            "See the next work for the role, its approved skills and criteria, the skill-matching summary, people on the role and recent activity.",
+            "Use the tabs: Applicants, Discover, Shortlist, Interviews; Criteria and Job description are under Setup."
+          ],
+          "notes": "Skill-matching numbers are evidence-based matches, not hiring decisions. Fictional sample people are excluded."
+        },
+        {
+          "name": "Skills and evaluation criteria",
+          "where": "Role → Criteria",
+          "href": "/roles",
+          "needs": ["ai_optional"],
+          "steps": [
+            "Click “Extract bullet points” (no AI) or “Propose with AI” to get suggestions from the JD. Suggestions are not used until approved.",
+            "Approve, edit, reject or reclassify each suggestion (Skill or Evaluation criterion; Required, Preferred or Informational).",
+            "Use “+ Add skill” for a named skill. Add other names in “Also counts as” (e.g. Postgres for PostgreSQL) and optionally link it to an evaluation criterion.",
+            "Use “+ Add criterion” for broader requirements such as experience, location or domain knowledge.",
+            "Reorder within a group with the ↑ ↓ buttons."
+          ],
+          "notes": "Changing approved skills or criteria marks existing assessments out of date; reordering does not."
+        },
+        {
+          "name": "Skill threshold and weights",
+          "where": "Role → Criteria → Skill threshold and weights",
+          "href": "/roles",
+          "needs": [],
+          "steps": [
+            "Enter the minimum, e.g. “At least 5 of 6 required skills with evidence found”.",
+            "Tick “Count Partial evidence” only if partial evidence should count (off by default).",
+            "Set the Required and Preferred weights for the evaluation-criteria calculation.",
+            "Click Save rubric. Every candidate's count and threshold status update immediately."
+          ],
+          "notes": "The threshold describes evidence only. Nobody is hidden, rejected or advanced by it."
+        },
+        {
+          "name": "Reassess candidates",
+          "where": "Role → Criteria → Reassess candidates",
+          "href": "/roles",
+          "needs": ["ai_optional"],
+          "steps": [
+            "Click “Reassess candidates (n)” to re-run everyone whose assessment is missing or out of date, or “Reassess all”.",
+            "Uses AI when configured; otherwise the labelled keyword check. Rejected candidates are skipped.",
+            "Candidates with no CV, profile or source text show Needs review and no count."
+          ],
+          "notes": "Decisions and stages never change when reassessing."
+        }
+      ]
+    },
+    {
+      "id": "applicants",
+      "title": "Applicants and assessment",
+      "features": [
+        {
+          "name": "Applicants list",
+          "where": "Role → Applicants",
+          "href": "/roles",
+          "needs": [],
+          "steps": [
+            "Add applicants with “Add applicant” (with CV), “Import CSV”, or pick an existing candidate.",
+            "Switch between List, Board and Ranked views.",
+            "Read each person's required-skill count (e.g. 5/6) with Meets / Below / Needs review, and their criteria evidence.",
+            "Filter by search, stage, review status, skill threshold and minimum required skills; sort by most required skills evidenced.",
+            "Record Shortlist, Hold or Reject (Reject needs a job-related reason)."
+          ],
+          "notes": "Only people who applied appear here. People found in Discover appear in Discover and Shortlist, labelled Discovered."
+        },
+        {
+          "name": "Candidate assessment",
+          "where": "Candidate → Assessment tab",
+          "href": "/candidates",
+          "needs": ["ai_optional"],
+          "steps": [
+            "Click “Assess with AI” or “Keyword check (no AI)”.",
+            "In Skills, open any skill to see the excerpt, where it came from (CV file, candidate information or linked source) and its date.",
+            "Use “Correct this status”, choose the right status and write a note. “Confirmed not present” is only for something you checked.",
+            "Open “Correction history” to see every change with who and when, and restore an earlier value.",
+            "Review Evaluation criteria the same way, then “Mark as reviewed”.",
+            "Review the AI recommendation (accept, edit or override), suggest follow-up questions, and record your decision in the side panel."
+          ],
+          "notes": "“No evidence found” means missing evidence, not proof the candidate lacks the skill. The skill count is separate from the criteria score and is never a decision."
+        },
+        {
+          "name": "Profile checks",
+          "where": "Candidate → CV & profile → Profile checks",
+          "href": "/candidates",
+          "needs": [],
+          "steps": [
+            "Review flags: possible or linked duplicate, details that differ from a linked source record (with source and date), and ATS conflicts.",
+            "Click “Request clarification” to add a task with the questions to your queue (nothing is sent to the candidate)."
+          ],
+          "notes": "Talyn never labels a person fake. No claim is marked verified because no verification process is configured. Contact-control and identity checks are not available."
+        },
+        {
+          "name": "Possible duplicates",
+          "where": "Candidates → Possible duplicates (button appears when there are some)",
+          "href": "/candidates/duplicates",
+          "needs": [],
+          "steps": [
+            "Compare the two records side by side, with the reason and confidence (High: shared email, phone or profile URL; Medium: name and company; Low: name only).",
+            "Choose “Same person — link”, “Different people” or “Decide later”, with an optional note.",
+            "Use “Undo decision” to reopen any decision."
+          ],
+          "notes": "Nothing is merged or deleted. Linked records keep their own roles, assessments, interviews and outreach."
+        },
+        {
+          "name": "Shortlist",
+          "where": "Role → Shortlist",
+          "href": "/roles",
+          "needs": [],
+          "steps": [
+            "See everyone shortlisted from Applicants and everyone saved from Discover, each labelled Applied or Discovered.",
+            "Filter by origin, skill threshold and minimum required skills; open a skill count to see the evidence."
+          ],
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "id": "discover",
+      "title": "Discover (sourcing)",
+      "features": [
+        {
+          "name": "Search setup and Boolean",
+          "where": "Discover → Start a search, or Role → Discover",
+          "href": "/discover",
+          "needs": ["ai_optional"],
+          "steps": [
+            "Upload a JD to suggest the fields, or fill them in: role title, other titles, required and preferred skills, years, location, work arrangement, exclusions.",
+            "Check each field's label (from the JD, a suggestion, or not stated) and edit.",
+            "Review and edit the generated Boolean search.",
+            "Choose sources and click Search."
+          ],
+          "notes": "The assistant panel shows each step: criteria, plan, sources, evidence, your review."
+        },
+        {
+          "name": "Pool estimate",
+          "where": "Role → Discover → Pool estimate",
+          "href": "/discover",
+          "needs": [],
+          "steps": [
+            "Save the search setup with required skills, then click “Estimate pool”.",
+            "Read how many people already in Talyn mention all must-have skills, which skill narrows the pool most, and the pool if a skill moved to Preferred."
+          ],
+          "notes": "Covers Talyn's own candidates only (no external provider offers a count before searching). Years of experience aren't applied. Under 5 people shows Insufficient data."
+        },
+        {
+          "name": "Sources",
+          "where": "Role → Discover → Search setup → Sources",
+          "href": "/integrations",
+          "needs": ["sourcing"],
+          "steps": [
+            "Talyn rediscovery (your existing candidates) always works.",
+            "A licensed provider can be searched once its credentials are added (see Integrations).",
+            "Demo mode uses fictional people, labelled Sample · fictional everywhere, and is never a live search."
+          ],
+          "notes": "Talyn never scrapes websites. An authorized CSV export can be imported on the Discover tab."
+        },
+        {
+          "name": "Review results",
+          "where": "Role → Discover → Results",
+          "href": "/discover",
+          "needs": [],
+          "steps": [
+            "Review each person's evidence, source and retrieval date; Save or Dismiss.",
+            "Saved people appear in “Saved from Discover” and the Shortlist as Discovered, with their required-skill count after reassessment."
+          ],
+          "notes": "Ordering by matched terms is a review aid, not a score."
+        }
+      ]
+    },
+    {
+      "id": "outreach",
+      "title": "Outreach, interest and permission",
+      "features": [
+        {
+          "name": "Email and WhatsApp sequences",
+          "where": "Candidate → Outreach tab (or Outreach from a saved Discover person)",
+          "href": "/candidates",
+          "needs": ["email", "whatsapp"],
+          "steps": [
+            "Choose Email or WhatsApp and 2 or 3 follow-ups; draft the sequence.",
+            "Check which candidate facts were used and their sources; edit each message and its delay.",
+            "Approve every message, then Activate. Nothing is sent before that.",
+            "Without a connected provider, send the message yourself and mark it sent."
+          ],
+          "notes": "Follow-ups stop on a reply, decline, opt-out, bounce or pause. Delivery and reply states come from the provider only when one is connected. WhatsApp needs a recorded opt-in."
+        },
+        {
+          "name": "Expressed interest and contact permission",
+          "where": "Candidate → Outreach → Expressed interest",
+          "href": "/candidates",
+          "needs": [],
+          "steps": [
+            "Record what the candidate said: Interested, Not now or Declined.",
+            "Choose the channel they used and note when/where (e.g. “reply to email of 3 Oct”), plus any restriction.",
+            "Record WhatsApp permission or an opt-out separately."
+          ],
+          "notes": "Interest shows Unknown until recorded. It is never inferred from profiles, job changes or AI, and never triggers contact or a decision."
+        }
+      ]
+    },
+    {
+      "id": "interviews",
+      "title": "Interviews and scheduling",
+      "features": [
+        {
+          "name": "Interview plans, scorecards and debrief",
+          "where": "Role → Interviews, or Interviews",
+          "href": "/interviews",
+          "needs": ["ai_optional"],
+          "steps": [
+            "Click “Create interview plan” for a shortlisted candidate. The plan is built from the role's approved skills and criteria.",
+            "Edit competencies, questions and stages; assign interviewers to each stage; share the plan.",
+            "Each interviewer submits their own scorecard. Others' scores stay hidden until they submit.",
+            "Open the debrief to see evidence by competency, disagreements and uncovered competencies, then record the team decision."
+          ],
+          "notes": "No recording or transcription. The decision is always recorded by a person."
+        },
+        {
+          "name": "Scheduling with Google Calendar",
+          "where": "Interview plan → Schedule a stage; your connection: account menu → My calendar connection",
+          "href": "/integrations#calendar",
+          "needs": ["calendar"],
+          "steps": [
+            "Each interviewer connects their own Google Calendar (free/busy and the events Talyn creates only).",
+            "On a stage, propose times from shared free/busy, review, and create the event with a Meet link.",
+            "Reschedule or cancel from the same screen."
+          ],
+          "notes": "Without Google set up, scheduling runs in a labelled demo mode and times are entered manually. Talyn never reads event details."
+        }
+      ]
+    },
+    {
+      "id": "workspace",
+      "title": "Workspace, team and quality",
+      "features": [
+        {
+          "name": "Calibration",
+          "where": "Workspace → Calibration",
+          "href": "/settings/calibration",
+          "needs": [],
+          "steps": [
+            "Pick a period (30 days, 90 days or 12 months).",
+            "See which skills and criteria are corrected most or lack evidence, which evidence recruiters overruled, shortlist and interview rates by band, and assessments that changed after interviews."
+          ],
+          "notes": "Every rate shows its denominator; under 5 reads Insufficient data. It describes what happened and does not change how Talyn assesses."
+        },
+        {
+          "name": "Team and permissions",
+          "where": "Workspace → Team & permissions",
+          "href": "/settings#team",
+          "needs": [],
+          "steps": [
+            "Admins create invite links for recruiters, hiring managers or admins.",
+            "Change roles or remove members from the same list."
+          ],
+          "notes": "Only admins can invite, change retention, view the audit log, link the ATS or delete the workspace."
+        },
+        {
+          "name": "Integrations",
+          "where": "Integrations",
+          "href": "/integrations",
+          "needs": [],
+          "steps": [
+            "See each integration's status, which variables are set or missing (never their values), and setup steps.",
+            "Connect your own Google Calendar here."
+          ],
+          "notes": "Credentials are added as environment variables in Vercel, then redeploy."
+        },
+        {
+          "name": "Import and export",
+          "where": "Workspace → Import & export; Role → Export CSV",
+          "href": "/import",
+          "needs": [],
+          "steps": [
+            "Import candidates from CSV (existing emails are skipped).",
+            "Export a role's pipeline with decisions, skill counts and per-criterion results."
+          ],
+          "notes": ""
+        },
+        {
+          "name": "Success measures, audit log and retention",
+          "where": "Workspace settings",
+          "href": "/settings",
+          "needs": [],
+          "steps": [
+            "Success measures: definitions and values from real data.",
+            "Audit log (admins): who viewed, exported, assessed, corrected or decided what.",
+            "Data retention (admins): how long inactive candidate data is kept."
+          ],
+          "notes": ""
+        }
+      ]
+    }
+  ]
+}

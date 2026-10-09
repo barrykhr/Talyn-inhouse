@@ -10,6 +10,7 @@ type Item = { key: string; label: string; hint: string; href: string; group: str
 const COMMANDS: Item[] = [
   { key: "c-home", label: "Go to Home", hint: "G then H", href: "/home", group: "Go to" },
   { key: "c-integrations", label: "Go to integrations", hint: "", href: "/integrations", group: "Go to" },
+  { key: "c-guide", label: "Open the guide", hint: "", href: "/guide", group: "Go to" },
   { key: "c-queue", label: "Go to full review queue", hint: "G then Q", href: "/queue", group: "Go to" },
   { key: "c-discover", label: "Go to Discover", hint: "G then D", href: "/discover", group: "Go to" },
   { key: "c-interviews", label: "Go to interviews", hint: "G then I", href: "/interviews", group: "Go to" },

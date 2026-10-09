@@ -27,6 +27,7 @@ const SECONDARY = [
   { href: "/settings#team", label: "Team & permissions" },
   { href: "/settings/calibration", label: "Calibration" },
   { href: "/import", label: "Import & export" },
+  { href: "/guide", label: "Guide" },
 ] as const;
 
 /**
