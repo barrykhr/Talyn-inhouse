@@ -113,6 +113,11 @@ export const REJECT_REASONS = [
 ] as const;
 export const REJECT_REASON_LABEL: Record<string, string> = Object.fromEntries(REJECT_REASONS.map((r) => [r.value, r.label]));
 
+/** Expressed interest is only what the candidate said. Not recorded = Unknown, never inferred. */
+export const INTEREST_LABEL: Record<string, string> = { not_expressed: "Unknown — not recorded", interested: "Interested", not_now: "Not now", declined: "Declined" };
+export const INTEREST_CHANNELS = ["email", "whatsapp", "phone", "in_person", "application", "other"] as const;
+export const INTEREST_CHANNEL_LABEL: Record<string, string> = { email: "Email", whatsapp: "WhatsApp", phone: "Phone call", in_person: "In person", application: "In their application", other: "Other" };
+
 /** How a person came to this role. Never merged: applicants and discovered people stay distinct. */
 export const APP_ORIGIN_LABEL: Record<string, string> = { applied: "Applied", discovered: "Discovered" };
 

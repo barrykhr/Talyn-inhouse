@@ -236,3 +236,26 @@ export async function updateRubric(roleId: string, _prev: ActionState, fd: FormD
   revalidatePath(`/roles/${roleId}`);
   return { ok: true, message: "Rubric saved. Counts and threshold status update for every candidate right away." };
 }
+
+/** Moves an item up or down within its group (same kind and importance). Order only — never changes assessments. */
+export async function moveCriterion(id: string, dir: "up" | "down") {
+  const auth = await requireAuth();
+  const c = await ownCriterion(auth, id);
+  const siblings = await db.criterion.findMany({
+    where: { orgId: auth.orgId, roleId: c.roleId, kind: c.kind, importance: c.importance, status: c.status },
+    orderBy: [{ priority: "asc" }, { position: "asc" }],
+    select: { id: true, position: true, priority: true },
+  });
+  const i = siblings.findIndex((x) => x.id === id);
+  const j = dir === "up" ? i - 1 : i + 1;
+  if (i < 0 || j < 0 || j >= siblings.length) return;
+  // Re-number the group in its current display order with the two swapped. Manual order replaces
+  // the optional priority numbers in this group, so what you see is the order that's stored.
+  const order = [...siblings];
+  [order[i], order[j]] = [order[j], order[i]];
+  const base = Math.min(...siblings.map((x) => x.position));
+  // Raw update on purpose: order is not content, so it must not bump updatedAt (which would mark
+  // every assessment out of date).
+  await db.$transaction(order.map((x, k) => db.$executeRaw`UPDATE "Criterion" SET "position" = ${base + k}, "priority" = NULL WHERE "id" = ${x.id} AND "orgId" = ${auth.orgId}`));
+  revalidatePath(`/roles/${c.roleId}`);
+}

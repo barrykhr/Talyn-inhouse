@@ -290,6 +290,31 @@ use, and **New search**.
   out-of-date ones (or all) with AI when configured, otherwise with the labeled keyword check.
   Threshold, partial credit and weights apply immediately without reassessment.
 
+## Corrections, calibration, duplicates and profile checks
+
+- **Correction history**: every recruiter correction to a skill or criterion result is stored
+  (`AssessmentCorrection`, append-only) with who, when, from/to and the note; the engine's
+  original result never changes. Any earlier value can be restored (recorded as a new change).
+  Corrections made before this feature have no history rows.
+- **Calibration** (Workspace → Calibration): per-criterion correction and "not enough evidence"
+  rates, evidence recruiters overruled by source and generator, shortlist/interview rates by
+  skill-threshold and criteria-alignment band, and assessments that changed after interview
+  scorecards. Period, n and denominator shown; under 5 reads "Insufficient data". Descriptive
+  only — nothing changes model behaviour.
+- **Possible duplicates** (Candidates → Possible duplicates): normalized email, phone (last 10
+  digits) and profile URL = high confidence; name + company = medium; name only = low/uncertain.
+  Recruiters link (same person), dismiss or defer, with an undo. Nothing is merged, moved or
+  deleted; both records keep their applications, assessments, interviews and outreach.
+- **Profile checks** (candidate → CV & profile): possible/linked duplicates, details that differ
+  between the Talyn record and a linked source record (with source and retrieval date), ATS
+  conflicts, and a plain "claims not verified" statement. No authenticity score; contact-control
+  and identity checks aren't offered because no consent-based process exists.
+- **Pool estimate** (role → Discover): counts people already in Talyn whose CV or provided
+  information mentions each saved must-have skill, the effect of moving each to Preferred, and
+  location. External providers are listed as not included (none offers a pre-search count).
+- **Interest** records the channel and when/where the candidate said it; unrecorded = Unknown.
+- **Reordering** skills and criteria within a group doesn't mark assessments out of date.
+
 ## Role workspace: Applicants · Discover · Shortlist
 
 Each role has three people tabs, kept deliberately separate:

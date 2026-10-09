@@ -1,3 +1,4 @@
+import { INTEREST_CHANNEL_LABEL, INTEREST_LABEL } from "@/lib/domain";
 import { auditAccess } from "@/lib/audit";
 import clsx from "clsx";
 import Link from "next/link";
@@ -35,6 +36,7 @@ import { AddToRole } from "./add-role";
 import { GeneratorTag, ItemCard, RecommendationPanel, ReviewControls, RunAssessment, SkillRow, StaleNotice, type ItemView } from "./assessment";
 import { CV_LISTS, CV_SCALARS } from "@/lib/extraction-fields";
 import { CvReviewForm, type CvFact } from "./cv-review";
+import { ClarifyButton } from "./clarify";
 import { DecisionForm } from "./decision";
 import { TasksCard } from "./tasks";
 import { AtsConflictsCard } from "./ats-conflicts";
@@ -53,7 +55,6 @@ export const maxDuration = 300;
 
 export const metadata = { title: "Candidate" };
 
-const INTEREST_LABEL: Record<string, string> = { not_expressed: "None expressed", interested: "Interested", not_now: "Not now", declined: "Declined" };
 const CANDIDATE_SOURCE_LABEL: Record<string, string> = { manual: "entered by a recruiter", csv: "CSV import", cv_upload: "CV upload", ats: "from the ATS", sample: "sample data" };
 
 export default async function CandidatePage({
@@ -82,7 +83,7 @@ export default async function CandidatePage({
           tasks: { where: { status: "open" }, orderBy: { createdAt: "asc" } },
           questions: { where: { kind: "follow_up" }, orderBy: [{ status: "asc" }, { createdAt: "asc" }] },
           role: { include: { criteria: { where: { status: "approved" }, select: { id: true, updatedAt: true, kind: true, importance: true, status: true } }, questions: { where: { kind: "core", status: "approved" } } } },
-          assessments: { orderBy: { createdAt: "desc" }, include: { items: true, resume: { select: { fileName: true } } } },
+          assessments: { orderBy: { createdAt: "desc" }, include: { items: { include: { corrections: { orderBy: { createdAt: "desc" } } } }, resume: { select: { fileName: true } } } },
           interviewKit: { include: { stages: { orderBy: { position: "asc" }, include: { assignments: { select: { id: true, interviewerId: true, interviewerName: true, status: true, submittedAt: true } }, events: { where: { status: "scheduled" }, select: { mode: true, startAt: true, timeZone: true, meetUrl: true } } } } } },
         },
         orderBy: { createdAt: "asc" },
@@ -131,6 +132,16 @@ export default async function CandidatePage({
     ...i,
     evidence: parseEvidence(i.evidenceJson),
     overriddenAt: i.overriddenAt?.toISOString() ?? null,
+    corrections: i.corrections.map((c) => ({
+      id: c.id,
+      fromResult: c.fromResult,
+      toResult: c.toResult,
+      note: c.note,
+      fromNote: c.fromNote,
+      byName: c.byName,
+      createdAt: c.createdAt.toISOString(),
+      restored: !!c.restoredFromId,
+    })),
   }));
   const resumeQuotes = items.flatMap((i) => i.evidence.filter((e) => e.source === "resume" && e.verified).map((e) => e.quote));
   const profileQuotes = items.flatMap((i) => i.evidence.filter((e) => e.source === "profile" && e.verified).map((e) => e.quote));
@@ -186,6 +197,41 @@ export default async function CandidatePage({
   // What Talyn has done, what needs review, and the next available action — most important first.
   const status: StatusItem[] = [];
   const atsConflicts = await db.atsConflict.findMany({ where: { orgId: auth.orgId, candidateId: candidate.id, status: "open" }, orderBy: { createdAt: "asc" } });
+
+  // Profile checks: specific, explained flags only — never an overall "fake" judgement.
+  const [dupReviews, linkedSources] = await Promise.all([
+    db.duplicateReview.findMany({
+      where: { orgId: auth.orgId, status: { not: "dismissed" }, OR: [{ candidateAId: candidate.id }, { candidateBId: candidate.id }] },
+      include: { candidateA: { select: { id: true, fullName: true } }, candidateB: { select: { id: true, fullName: true } } },
+    }),
+    db.sourcedProfile.findMany({
+      where: { orgId: auth.orgId, id: { in: candidate.applications.map((a) => a.sourcedProfileId).filter((x): x is string => !!x) } },
+      select: { id: true, source: true, sourceUrl: true, retrievedAt: true, currentTitle: true, currentCompany: true, location: true },
+    }),
+  ]);
+  const same = (x: string | null, y: string | null) => (x ?? "").trim().toLowerCase().replace(/\s+/g, " ") === (y ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const conflicts = linkedSources.flatMap((sp) =>
+    (
+      [
+        ["Current title", candidate.currentTitle, sp.currentTitle, "currentTitle"],
+        ["Current company", candidate.currentCompany, sp.currentCompany, "currentCompany"],
+        ["Location", candidate.location, sp.location, "location"],
+      ] as const
+    )
+      .filter(([, mine, theirs]) => mine && theirs && !same(mine, theirs))
+      .map(([label, mine, theirs, column]) => ({
+        label,
+        mine: mine!,
+        mineSource: ORIGIN_LABEL[origins[column] ?? ""] ?? "Talyn record",
+        theirs: theirs!,
+        theirsSource: `${sourceLabel(sp.source)} · retrieved ${formatDate(sp.retrievedAt)}`,
+        url: sp.sourceUrl,
+      })),
+  );
+  const openDups = dupReviews.filter((r) => r.status === "open" || r.status === "deferred");
+  if (openDups.length) status.push({ tone: "attention", text: `Possible duplicate record${openDups.length === 1 ? "" : "s"} to review`, href: "/candidates/duplicates", action: "Compare" });
+  if (conflicts.length) status.push({ tone: "attention", text: `${conflicts.length} detail${conflicts.length === 1 ? "" : "s"} differ between sources`, href: "?view=cv#profile-checks", action: "Review" });
+  const clarifyQuestions = conflicts.map((c) => `Confirm ${c.label.toLowerCase()}: Talyn has “${c.mine}”, ${c.theirsSource} shows “${c.theirs}”.`);
   if (atsConflicts.length) status.push({ tone: "attention", text: `${atsConflicts.length} field${atsConflicts.length === 1 ? "" : "s"} differ from the ATS`, href: "#ats-conflicts", action: "Resolve" });
   if (needsReview) status.push({ tone: "attention", text: "Details extracted from the CV are waiting for your review", href: "#cv-review", action: "Review" });
   if (app) {
@@ -222,9 +268,78 @@ export default async function CandidatePage({
   );
 
   // ---------------------------------------------------------------- tab: CV & profile
+  const profileChecks = (
+    <Card className="p-4" id="profile-checks">
+      <SectionTitle hint="Specific issues with where they came from. Talyn never labels a person fake or scores authenticity.">Profile checks</SectionTitle>
+      <ul className="space-y-2.5 text-[13px]">
+        {dupReviews.map((r) => {
+          const other = r.candidateAId === candidate.id ? r.candidateB : r.candidateA;
+          const reasons = JSON.parse(r.reasonsJson) as string[];
+          return (
+            <li key={r.id} className="flex flex-wrap items-baseline gap-x-2">
+              <Badge tone={r.status === "linked" ? "neutral" : "warn"}>{r.status === "linked" ? "Linked record" : "Possible duplicate"}</Badge>
+              <span>
+                {r.status === "linked" ? "Confirmed as the same person as " : "May be the same person as "}
+                <Link href={`/candidates/${other.id}`} className="font-medium hover:underline">
+                  {other.fullName}
+                </Link>{" "}
+                <span className="text-muted">
+                  · {reasons.join(", ")} · {r.confidence} confidence
+                  {r.status === "linked" && r.decidedByName ? ` · linked by ${r.decidedByName}${r.decidedAt ? ` on ${formatDate(r.decidedAt)}` : ""}` : ""}
+                </span>{" "}
+                <Link href={`/candidates/duplicates?status=${r.status}`} className="text-[12.5px] text-brand hover:underline">
+                  {r.status === "linked" ? "Review" : "Compare"}
+                </Link>
+              </span>
+            </li>
+          );
+        })}
+        {conflicts.map((c, i) => (
+          <li key={i}>
+            <Badge tone="warn">Conflicting information</Badge> <span className="font-medium">{c.label}</span>
+            <div className="mt-0.5 text-[12.5px] text-ink-2">
+              “{c.mine}” <span className="text-muted">({c.mineSource})</span> vs “{c.theirs}”{" "}
+              <span className="text-muted">
+                ({c.url ? (
+                  <a href={c.url} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline">
+                    {c.theirsSource}
+                  </a>
+                ) : (
+                  c.theirsSource
+                )}
+                )
+              </span>
+            </div>
+          </li>
+        ))}
+        {atsConflicts.length > 0 && (
+          <li>
+            <Badge tone="warn">Conflicting information</Badge> {atsConflicts.length} field{atsConflicts.length === 1 ? "" : "s"} differ from the ATS —{" "}
+            <a href="#ats-conflicts" className="text-brand hover:underline">
+              resolve above
+            </a>
+          </li>
+        )}
+        <li className="text-[12.5px] text-ink-2">
+          <Badge>Claims not verified</Badge> Details come from the CV, the candidate, a recruiter or a source (each labelled below). A source or public profile is not proof, and
+          no verification process is configured in Talyn, so none are marked verified.
+        </li>
+        <li className="text-[12.5px] text-muted">
+          Contact control and identity checks: not available — Talyn has no consent-based process for them. Employment gaps, name variations or sparse profiles are not treated as issues.
+        </li>
+      </ul>
+      {app && clarifyQuestions.length > 0 && (
+        <div className="mt-3">
+          <ClarifyButton applicationId={app.id} questions={clarifyQuestions} />
+        </div>
+      )}
+    </Card>
+  );
+
   const cvProfile = (
     <div className="grid gap-5 xl:grid-cols-2">
       <div className="space-y-5">
+        {profileChecks}
         <Card className="p-4">
           <SectionTitle hint="Where each detail came from.">Profile</SectionTitle>
           <dl className="space-y-1.5 text-[13px]">
@@ -798,6 +913,8 @@ export default async function CandidatePage({
         <div className="mt-2 border-t border-line pt-2 text-[12.5px]">
           <span className="text-muted">Expressed interest in this role: </span>
           <span className="font-medium">{INTEREST_LABEL[app.interest] ?? app.interest}</span>
+          {app.interestChannel && <span className="text-faint"> · via {INTEREST_CHANNEL_LABEL[app.interestChannel] ?? app.interestChannel}</span>}
+          {app.interestSource && <span className="text-faint"> · {app.interestSource}</span>}
           {app.interestByName && <span className="text-faint"> · recorded by {app.interestByName}</span>}
           <p className="text-[11.5px] text-faint">Only what the candidate told you — never inferred from profiles or public activity.</p>
         </div>

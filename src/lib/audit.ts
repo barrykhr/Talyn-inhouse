@@ -73,6 +73,8 @@ export const AUDIT_LABEL: Record<string, string> = {
   "assessment.batch": "Reassessed candidates",
   "assessment.run": "Ran assessment",
   "assessment.corrected": "Corrected assessment result",
+  "assessment.correction_restored": "Restored an earlier assessment value",
+  "duplicate.reviewed": "Reviewed a possible duplicate",
   "assessment.reviewed": "Marked assessment reviewed",
   "assessment.deleted": "Deleted assessment",
   "recommendation.reviewed": "Reviewed AI recommendation",

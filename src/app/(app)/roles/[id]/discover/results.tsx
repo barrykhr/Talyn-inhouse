@@ -1,5 +1,6 @@
 "use client";
 
+import { INTEREST_LABEL } from "@/lib/domain";
 import clsx from "clsx";
 import Link from "next/link";
 import { useId, useState } from "react";
@@ -47,7 +48,6 @@ const CAT: Record<string, string> = {
   seniority: "Seniority",
   experience: "Experience",
 };
-const INTEREST_LABEL: Record<string, string> = { not_expressed: "None expressed", interested: "Said they're interested", not_now: "Said not now", declined: "Declined" };
 const REASONS = ["Wrong title or function", "Missing key skills", "Wrong location", "Seniority mismatch", "Already known / contacted", "Other"];
 const fmt = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
@@ -186,7 +186,7 @@ export function ResultCard({ p, outreachHref }: { p: ProfileView; outreachHref: 
         </div>
         <div>
           <dt className="font-semibold uppercase tracking-wide text-faint">Expressed interest</dt>
-          <dd className="text-ink-2">{p.application ? INTEREST_LABEL[p.application.interest] ?? "None expressed" : "None — not inferred from public activity"}</dd>
+          <dd className="text-ink-2">{p.application ? INTEREST_LABEL[p.application.interest] ?? "Unknown — not recorded" : "Unknown — not inferred from public activity"}</dd>
         </div>
         <div>
           <dt className="font-semibold uppercase tracking-wide text-faint">Permission to contact</dt>

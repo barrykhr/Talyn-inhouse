@@ -3,6 +3,7 @@ import { StageBadge } from "@/components/status";
 import { OriginBadge, SampleBadge } from "@/components/role-workspace";
 import { Card, EmptyState, Input, LinkButton, PageHeader, Select, buttonClass, formatDate } from "@/components/ui";
 import { requireAuth } from "@/lib/auth";
+import { scanDuplicates } from "@/lib/duplicates";
 import { db } from "@/lib/db";
 
 export const metadata = { title: "Candidates" };
@@ -39,6 +40,8 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
     db.role.findMany({ where: { orgId: auth.orgId }, select: { id: true, title: true }, orderBy: { title: "asc" } }),
   ]);
 
+  await scanDuplicates(auth.orgId).catch(() => 0);
+  const openDuplicates = await db.duplicateReview.count({ where: { orgId: auth.orgId, status: "open" } });
   return (
     <>
       <PageHeader
@@ -46,6 +49,11 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
         meta={<span>{total} in workspace</span>}
         actions={
           <>
+            {openDuplicates > 0 && (
+              <LinkButton href="/candidates/duplicates" variant="ghost">
+                Possible duplicates ({openDuplicates})
+              </LinkButton>
+            )}
             <LinkButton href="/import">Import CSV</LinkButton>
             <LinkButton href="/candidates/new" variant="primary">New candidate</LinkButton>
           </>

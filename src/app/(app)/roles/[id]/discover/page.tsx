@@ -23,6 +23,7 @@ import { DiscoverSetupForm, type SourceOption } from "./discover-setup";
 import { GenerateIcpButton, IcpApprovedView, IcpDraftEditor, type IcpView } from "./icp-editor";
 import { ImportExportForm } from "./import-export";
 import { ResultCard, type ProfileView } from "./results";
+import { PoolEstimatePanel } from "./pool-estimate";
 
 export const metadata = { title: "Discover" };
 // Searches, JD extraction and outreach drafting run as server actions on this page.
@@ -363,6 +364,10 @@ export default async function DiscoverPage({
           />
         </Card>
       </section>
+
+      <div className="mb-8">
+        <PoolEstimatePanel roleId={role.id} hasRequired={fields.skillsRequired.length > 0 && !!brief} />
+      </div>
 
       <section id="results" className="mb-8 scroll-mt-6" aria-labelledby="results-h">
         <SectionTitle

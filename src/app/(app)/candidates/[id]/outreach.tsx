@@ -7,6 +7,7 @@ import { ActionButton, ActionForm, FormMessage, SubmitButton, useServerForm } fr
 import { useToast } from "@/components/toast";
 import { AiMark, Button, Card, EmptyState, Field, Input, Notice, Select, Textarea } from "@/components/ui";
 import { setInterest, setWhatsappPermission } from "@/server/contact-actions";
+import { INTEREST_CHANNELS, INTEREST_CHANNEL_LABEL, INTEREST_LABEL } from "@/lib/domain";
 import {
   activateSequence,
   approveAll,
@@ -51,7 +52,7 @@ export type OutreachView = {
   phoneIntl: boolean;
   optedOut: boolean;
   whatsappPermission: { status: string; at: string | null; note: string | null; by: string | null };
-  interest: { value: string; at: string | null; by: string | null; note: string | null };
+  interest: { value: string; at: string | null; by: string | null; note: string | null; channel: string | null; source: string | null };
   aiConfigured: boolean;
   emailProvider: { connected: boolean; label: string | null };
   whatsapp: { connected: boolean; templateName: string | null; templatePreview: string | null; usesMessageParam: boolean };
@@ -85,7 +86,7 @@ const STOP_REASON: Record<string, string> = {
   recruiter: "cancelled by recruiter",
   permission_withdrawn: "WhatsApp permission withdrawn",
 };
-const INTEREST: Record<string, string> = { not_expressed: "None expressed", interested: "Interested", not_now: "Not now", declined: "Declined" };
+const INTEREST = INTEREST_LABEL;
 const fmt = (d: string) => new Date(d).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 type Channel = "email" | "whatsapp";
@@ -201,12 +202,16 @@ function WhatsAppPermission({ v }: { v: OutreachView }) {
 function InterestRecorder({ v }: { v: OutreachView }) {
   const [value, setValue] = useState(v.interest.value);
   const [note, setNote] = useState(v.interest.note ?? "");
+  const [channel, setChannel] = useState(v.interest.channel ?? "");
+  const [source, setSource] = useState(v.interest.source ?? "");
   const [msg, setMsg] = useState<string | null>(null);
   const router = useRouter();
+  const known = value !== "not_expressed";
+  const unchanged = value === v.interest.value && note === (v.interest.note ?? "") && channel === (v.interest.channel ?? "") && source === (v.interest.source ?? "");
   return (
     <div className="space-y-1 text-[12.5px]">
       <div className="text-[11.5px] font-semibold uppercase tracking-wide text-muted">Expressed interest</div>
-      <p className="text-[11.5px] text-faint">What they told you. Never inferred from profiles or activity.</p>
+      <p className="text-[11.5px] text-faint">Only what they told you — Unknown until recorded. Never inferred from profiles, activity or AI. Separate from contact permission.</p>
       <div className="flex gap-1.5">
         <Select value={value} onChange={(e) => setValue(e.target.value)} className="h-8 w-auto text-[12.5px]" aria-label="Expressed interest">
           {Object.entries(INTEREST).map(([k, label]) => (
@@ -217,9 +222,9 @@ function InterestRecorder({ v }: { v: OutreachView }) {
         </Select>
         <Button
           size="sm"
-          disabled={value === v.interest.value && note === (v.interest.note ?? "")}
+          disabled={unchanged}
           onClick={async () => {
-            const r = await setInterest(v.applicationId, value, note).catch(() => ({ error: "Couldn't save." }));
+            const r = await setInterest(v.applicationId, value, note, channel, source).catch(() => ({ error: "Couldn't save." }));
             setMsg(r?.error ?? "Saved");
             router.refresh();
           }}
@@ -227,11 +232,26 @@ function InterestRecorder({ v }: { v: OutreachView }) {
           Save
         </Button>
       </div>
-      <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" className="h-8 text-[12.5px]" aria-label="Interest note" />
+      {known && (
+        <div className="flex flex-wrap gap-1.5">
+          <Select value={channel} onChange={(e) => setChannel(e.target.value)} className="h-8 w-auto text-[12.5px]" aria-label="Channel the candidate used">
+            <option value="">How did they tell you?</option>
+            {INTEREST_CHANNELS.map((c) => (
+              <option key={c} value={c}>
+                {INTEREST_CHANNEL_LABEL[c]}
+              </option>
+            ))}
+          </Select>
+          <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="When / where, e.g. reply to email of 3 Oct" className="h-8 min-w-48 flex-1 text-[12.5px]" aria-label="When and where it was expressed" maxLength={300} />
+        </div>
+      )}
+      <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note, incl. any restriction (optional)" className="h-8 text-[12.5px]" aria-label="Interest note" />
       {v.interest.at && (
         <div className="text-[11.5px] text-faint">
           Recorded {new Date(v.interest.at).toLocaleDateString()}
           {v.interest.by ? ` by ${v.interest.by}` : ""}
+          {v.interest.channel ? ` · via ${INTEREST_CHANNEL_LABEL[v.interest.channel] ?? v.interest.channel}` : ""}
+          {v.interest.source ? ` · ${v.interest.source}` : ""}
         </div>
       )}
       {value === "declined" && value !== v.interest.value && <p className="text-[11.5px] text-warn">Saving “Declined” cancels any unsent follow-ups.</p>}

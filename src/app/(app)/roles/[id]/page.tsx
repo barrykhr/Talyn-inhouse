@@ -265,8 +265,15 @@ export default async function RolePage({ params, searchParams }: { params: Promi
                         {imp === "essential" ? "Required skills" : "Preferred skills"} · {list.length}
                       </div>
                       <Card className="divide-y divide-line overflow-hidden">
-                        {list.map((c) => (
-                          <CriterionRow key={c.id} c={toView(c)} options={criterionOptions} mappedName={nameOf(c.mappedCriterionId)} />
+                        {list.map((c, i) => (
+                          <CriterionRow
+                            key={c.id}
+                            c={toView(c)}
+                            options={criterionOptions}
+                            mappedName={nameOf(c.mappedCriterionId)}
+                            canMoveUp={i > 0}
+                            canMoveDown={i < list.length - 1}
+                          />
                         ))}
                       </Card>
                     </div>
@@ -313,11 +320,11 @@ export default async function RolePage({ params, searchParams }: { params: Promi
                         {IMPORTANCE_LABEL[imp]} · {list.length}
                       </div>
                       <Card className="divide-y divide-line overflow-hidden">
-                        {list.map((c) => {
+                        {list.map((c, i) => {
                           const mapped = approvedSkills.filter((sk) => sk.mappedCriterionId === c.id);
                           return (
                             <div key={c.id}>
-                              <CriterionRow c={toView(c)} />
+                              <CriterionRow c={toView(c)} canMoveUp={i > 0} canMoveDown={i < list.length - 1} />
                               {mapped.length > 0 && <p className="-mt-2 px-4 pb-2.5 text-[12px] text-muted">Supported by skills: {mapped.map((m) => m.name).join(", ")}</p>}
                             </div>
                           );

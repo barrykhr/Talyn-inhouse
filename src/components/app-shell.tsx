@@ -25,6 +25,7 @@ const PRIMARY = [
 const SECONDARY = [
   { href: "/settings", label: "Workspace settings" },
   { href: "/settings#team", label: "Team & permissions" },
+  { href: "/settings/calibration", label: "Calibration" },
   { href: "/import", label: "Import & export" },
 ] as const;
 

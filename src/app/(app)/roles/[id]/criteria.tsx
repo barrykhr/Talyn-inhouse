@@ -13,6 +13,7 @@ import {
   approveAllProposed,
   deleteCriterion,
   proposeCriteria,
+  moveCriterion,
   setCriterionStatus,
   updateCriterion,
   updateRubric,
@@ -107,7 +108,19 @@ export function ReviewBanner({ roleId, count }: { roleId: string; count: number 
 
 export type CriterionOption = { id: string; name: string };
 
-export function CriterionRow({ c, options = [], mappedName }: { c: CriterionView; options?: CriterionOption[]; mappedName?: string | null }) {
+export function CriterionRow({
+  c,
+  options = [],
+  mappedName,
+  canMoveUp = false,
+  canMoveDown = false,
+}: {
+  c: CriterionView;
+  options?: CriterionOption[];
+  mappedName?: string | null;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+}) {
   const [editing, setEditing] = useState(false);
   const [showSource, setShowSource] = useState(false);
   const proposed = c.status === "proposed";
@@ -177,6 +190,18 @@ export function CriterionRow({ c, options = [], mappedName }: { c: CriterionView
               </>
             )}
             {rejected && <ActionButton action={() => setCriterionStatus(c.id, "proposed")} variant="ghost">Restore</ActionButton>}
+            {canMoveUp && (
+              <ActionButton action={() => moveCriterion(c.id, "up")} variant="ghost" title="Move up">
+                <span aria-hidden>↑</span>
+                <span className="sr-only">Move {c.name} up</span>
+              </ActionButton>
+            )}
+            {canMoveDown && (
+              <ActionButton action={() => moveCriterion(c.id, "down")} variant="ghost" title="Move down">
+                <span aria-hidden>↓</span>
+                <span className="sr-only">Move {c.name} down</span>
+              </ActionButton>
+            )}
             {!rejected && <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>Edit</Button>}
             <ActionButton action={() => deleteCriterion(c.id)} variant="ghost" confirm={`Delete this ${c.kind === "skill" ? "skill" : "criterion"}? Past assessments keep their snapshot.`}>
               Delete

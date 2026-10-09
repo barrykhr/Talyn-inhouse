@@ -1,5 +1,7 @@
 "use server";
 
+import { INTEREST_CHANNELS } from "@/lib/domain";
+
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { audit } from "@/lib/audit";
@@ -42,14 +44,24 @@ export async function setWhatsappPermission(candidateId: string, status: "grante
 }
 
 /** What the candidate has said about this role — recorded by a recruiter, never inferred. */
-export async function setInterest(applicationId: string, interest: string, note: string): Promise<ActionState> {
+export async function setInterest(applicationId: string, interest: string, note: string, channel = "", source = ""): Promise<ActionState> {
   const auth = await requireAuth();
   const app = await ownApplication(auth, applicationId);
   const v = z.enum(["not_expressed", "interested", "not_now", "declined"]).safeParse(interest);
   if (!v.success) return { error: "Choose what the candidate said." };
+  const known = v.data !== "not_expressed";
+  const ch = z.enum(INTEREST_CHANNELS).safeParse(channel);
+  if (known && !ch.success) return { error: "Choose the channel the candidate used to tell you." };
   await db.application.update({
     where: { id: applicationId },
-    data: { interest: v.data, interestAt: new Date(), interestByName: auth.userName, interestNote: note.trim().slice(0, 500) || null },
+    data: {
+      interest: v.data,
+      interestAt: new Date(),
+      interestByName: auth.userName,
+      interestNote: note.trim().slice(0, 500) || null,
+      interestChannel: known && ch.success ? ch.data : null,
+      interestSource: known ? source.trim().slice(0, 300) || null : null,
+    },
   });
   // A decline stops follow-ups, like a recorded reply would.
   if (v.data === "declined") {
@@ -61,7 +73,7 @@ export async function setInterest(applicationId: string, interest: string, note:
         db.outreachEvent.create({ data: { orgId: auth.orgId, sequenceId: q.id, type: "stopped", actorName: auth.userName, note: "Candidate declined" } }),
       ]);
   }
-  await audit(auth, "interest.recorded", { subjectType: "application", subjectId: applicationId, candidateId: app.candidateId, roleId: app.roleId, applicationId, meta: { interest: v.data } });
+  await audit(auth, "interest.recorded", { subjectType: "application", subjectId: applicationId, candidateId: app.candidateId, roleId: app.roleId, applicationId, meta: { interest: v.data, channel: known && ch.success ? ch.data : null } });
   refresh(app.candidateId, app.roleId);
   return { ok: true };
 }

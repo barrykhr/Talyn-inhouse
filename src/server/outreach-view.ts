@@ -44,7 +44,7 @@ export async function loadOutreachView(auth: AuthContext, applicationId: string)
     phoneIntl: !!waNumber(c.phone),
     optedOut: c.contactOptOut,
     whatsappPermission: { status: c.whatsappPermission, at: c.whatsappPermissionAt?.toISOString() ?? null, note: c.whatsappPermissionNote, by: c.whatsappPermissionBy },
-    interest: { value: app.interest, at: app.interestAt?.toISOString() ?? null, by: app.interestByName, note: app.interestNote },
+    interest: { value: app.interest, at: app.interestAt?.toISOString() ?? null, by: app.interestByName, note: app.interestNote, channel: app.interestChannel, source: app.interestSource },
     aiConfigured: aiStatus().configured,
     emailProvider: { connected: !!email, label: email?.label ?? null },
     whatsapp: {

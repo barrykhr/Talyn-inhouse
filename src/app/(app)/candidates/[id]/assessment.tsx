@@ -11,7 +11,7 @@ import { evidenceOriginLabel } from "@/lib/evidence";
 import { SKILL_STATUS_LABEL, SKILL_STATUS_RESULT, skillStatus } from "@/lib/skills";
 import { StagedProgress } from "@/components/staged-progress";
 import { useToast } from "@/components/toast";
-import { markReviewed, overrideItem, reviewRecommendation, runAssessment } from "@/server/assessment-actions";
+import { markReviewed, overrideItem, restoreCorrection, reviewRecommendation, runAssessment } from "@/server/assessment-actions";
 import { createInfoRequest } from "@/server/task-actions";
 import type { ActionState } from "@/server/form";
 
@@ -29,7 +29,9 @@ export type ItemView = {
   overrideNote: string | null;
   overriddenBy: string | null;
   overriddenAt: string | null;
+  corrections: CorrectionView[];
 };
+export type CorrectionView = { id: string; fromResult: string | null; toResult: string | null; note: string | null; fromNote: string | null; byName: string; createdAt: string; restored: boolean };
 
 const resultTone: Record<string, "ok" | "warn" | "gap" | "danger"> = {
   supported: "ok",
@@ -255,6 +257,7 @@ export function ItemCard({ item }: { item: ItemView }) {
             {item.overrideResult ? "Change correction" : "Correct this"}
           </button>
         )}
+        <CorrectionHistory item={item} label={(r) => RESULT_LABEL[r as AssessmentResult] ?? r} />
       </div>
     </div>
   );
@@ -506,6 +509,7 @@ export function SkillRow({ item }: { item: ItemView }) {
               {item.overrideResult ? "Change correction" : "Correct this status"}
             </button>
           )}
+          <CorrectionHistory item={item} label={(r) => SKILL_STATUS_LABEL[skillStatus(r)]} />
         </div>
       )}
     </div>
@@ -549,5 +553,41 @@ function SkillCorrectionForm({ item, onDone }: { item: ItemView; onDone: () => v
         </div>
       </div>
     </ActionForm>
+  );
+}
+
+/** Who changed this item, from what to what, and when — with a way back to any earlier value. */
+function CorrectionHistory({ item, label }: { item: ItemView; label: (result: string) => string }) {
+  if (!item.corrections.length) return null;
+  const show = (r: string | null) => (r ? label(r) : `${label(item.result)} (original)`);
+  const current = item.overrideResult ?? null;
+  return (
+    <details className="mt-2 text-[12.5px]">
+      <summary className="cursor-pointer text-muted hover:text-ink">Correction history ({item.corrections.length})</summary>
+      <ol className="mt-1.5 space-y-1.5 border-l-2 border-line pl-3">
+        {item.corrections.map((c) => (
+          <li key={c.id}>
+            <div>
+              <span className="font-medium">{c.byName}</span>{" "}
+              <span className="text-muted">
+                {c.restored ? "restored" : "changed"} {show(c.fromResult)} → {show(c.toResult)} ·{" "}
+                {new Date(c.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+              </span>
+            </div>
+            {c.note && <p className="text-ink-2">{c.note}</p>}
+            {(c.fromResult ?? null) !== current && (
+              <ActionButton
+                action={() => restoreCorrection(c.id, "before")}
+                variant="ghost"
+                confirm={`Restore “${show(c.fromResult)}”? This is recorded as a new change; nothing is deleted.`}
+                successMessage="Earlier value restored"
+              >
+                Restore “{show(c.fromResult)}”
+              </ActionButton>
+            )}
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }

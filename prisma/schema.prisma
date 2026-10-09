@@ -195,7 +195,7 @@ model Criterion {
 }
 
 model Candidate {
-  id                     String           @id @default(cuid())
+  id                     String            @id @default(cuid())
   orgId                  String
   fullName               String
   email                  String?
@@ -205,24 +205,26 @@ model Candidate {
   currentTitle           String?
   currentCompany         String?
   candidateSummary       String? // information provided by the candidate (e.g. application answers)
-  source                 String           @default("manual") // manual | csv | cv_upload
-  fieldOriginsJson       String           @default("{}") // { fieldName: "cv" | "cv_corrected" | "recruiter" }
+  source                 String            @default("manual") // manual | csv | cv_upload
+  fieldOriginsJson       String            @default("{}") // { fieldName: "cv" | "cv_corrected" | "recruiter" }
   extractionStatus       String? // null | needs_review | reviewed (when a CV extraction awaits review)
-  isSample               Boolean          @default(false) // fictional person from Talyn sample data (demo only)
-  contactOptOut          Boolean          @default(false) // candidate asked not to be contacted: blocks all outreach
+  isSample               Boolean           @default(false) // fictional person from Talyn sample data (demo only)
+  contactOptOut          Boolean           @default(false) // candidate asked not to be contacted: blocks all outreach
   optOutAt               DateTime?
   atsExternalId          String? // id in the connected ATS (set by ATS sync)
   atsSyncedAt            DateTime?
-  createdAt              DateTime         @default(now())
-  updatedAt              DateTime         @updatedAt
-  org                    Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  org                    Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   resumes                Resume[]
   notes                  Note[]
   applications           Application[]
   extracted              ExtractedField[]
   atsConflicts           AtsConflict[]
+  duplicatesAsA          DuplicateReview[] @relation("DuplicateA")
+  duplicatesAsB          DuplicateReview[] @relation("DuplicateB")
   // WhatsApp needs channel-specific, recorded permission before Talyn can send on it.
-  whatsappPermission     String           @default("none") // none | granted | withdrawn
+  whatsappPermission     String            @default("none") // none | granted | withdrawn
   whatsappPermissionAt   DateTime?
   whatsappPermissionNote String? // how it was obtained (recruiter-entered)
   whatsappPermissionBy   String?
@@ -310,6 +312,8 @@ model Application {
   interestAt       DateTime?
   interestByName   String?
   interestNote     String?
+  interestChannel  String? // how the candidate said it: email | whatsapp | phone | in_person | application | other
+  interestSource   String? // where/when, in the recruiter's words (e.g. "reply to email of 3 Oct")
   interviewKit     InterviewKit?
 
   @@unique([candidateId, roleId])
@@ -365,25 +369,74 @@ model Assessment {
 }
 
 model AssessmentItem {
-  id             String     @id @default(cuid())
+  id             String                 @id @default(cuid())
   assessmentId   String
   criterionId    String?
   criterionName  String // snapshot so history survives criterion edits
   importance     String
-  kind           String     @default("criterion") // skill | criterion (snapshot)
+  kind           String                 @default("criterion") // skill | criterion (snapshot)
   result         String // supported | partially_supported | inferred | conflicting | not_stated
-  evidenceJson   String     @default("[]") // JSON: [{quote, source, page, section, verified}]
-  explanation    String     @default("")
-  missingInfo    String     @default("")
+  evidenceJson   String                 @default("[]") // JSON: [{quote, source, page, section, verified}]
+  explanation    String                 @default("")
+  missingInfo    String                 @default("")
   confidence     String? // high | medium | low
   overrideResult String? // recruiter correction
   overrideNote   String?
   overriddenBy   String?
   overriddenAt   DateTime?
-  assessment     Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  criterion      Criterion? @relation(fields: [criterionId], references: [id], onDelete: SetNull)
+  assessment     Assessment             @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  criterion      Criterion?             @relation(fields: [criterionId], references: [id], onDelete: SetNull)
+  corrections    AssessmentCorrection[]
 
   @@index([assessmentId])
+}
+
+/// Every recruiter correction to an assessment item, append-only. The engine's original result
+/// stays on the item; the item's override fields hold the current correction.
+model AssessmentCorrection {
+  id             String         @id @default(cuid())
+  orgId          String
+  itemId         String
+  assessmentId   String
+  applicationId  String
+  kind           String         @default("criterion") // skill | criterion (snapshot)
+  criterionName  String
+  engineResult   String // what the assessment engine produced (never changes)
+  fromResult     String? // correction in effect before this change (null = engine result)
+  toResult       String? // correction after this change (null = cleared back to the engine result)
+  fromNote       String?
+  note           String?
+  restoredFromId String? // set when this change restored an earlier correction
+  byId           String?
+  byName         String
+  createdAt      DateTime       @default(now())
+  item           AssessmentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, createdAt])
+  @@index([itemId, createdAt])
+}
+
+/// A possible duplicate pair, reviewed by a recruiter. Nothing is merged or deleted: "linked"
+/// records that two records are the same person while keeping both, and can be undone.
+model DuplicateReview {
+  id            String    @id @default(cuid())
+  orgId         String
+  candidateAId  String // lower id of the pair
+  candidateBId  String
+  reasonsJson   String    @default("[]") // ["Same email (normalized)", ...]
+  confidence    String // high | medium | low
+  status        String    @default("open") // open | linked | dismissed | deferred
+  note          String?
+  decidedById   String?
+  decidedByName String?
+  decidedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  candidateA    Candidate @relation("DuplicateA", fields: [candidateAId], references: [id], onDelete: Cascade)
+  candidateB    Candidate @relation("DuplicateB", fields: [candidateBId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, candidateAId, candidateBId])
+  @@index([orgId, status])
 }
 
 // Append-only record of meaningful actions (access, export, assessment, decision, outreach…).
