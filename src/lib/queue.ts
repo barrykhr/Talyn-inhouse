@@ -97,7 +97,9 @@ export async function buildQueue(orgId: string): Promise<QueueSection[]> {
             roleId: t.application.role.id,
             roleTitle: t.application.role.title,
             since: t.createdAt,
-            detail: `${t.title}${q.length ? ` · ${q.length} question${q.length > 1 ? "s" : ""}` : ""}${t.dueAt ? ` · due ${t.dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`,
+            detail: `${t.title}${q.length ? ` · ${q.length} question${q.length > 1 ? "s" : ""}` : ""}${t.dueAt ? ` · due ${t.dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}${
+              t.agentStatus === "drafted" ? " · assistant draft awaiting your approval" : t.agentStatus === "sent" ? ` · asked on ${t.agentChannel === "whatsapp" ? "WhatsApp" : "email"}, waiting for reply` : t.agentStatus === "replied" ? " · candidate replied — add their answers" : t.agentStatus === "failed" ? " · sending failed" : ""
+            }`,
             href: href(t.application.candidate.id, t.application.role.id),
           };
         }),

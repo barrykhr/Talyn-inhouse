@@ -25,7 +25,11 @@ export const attention = cache(async (orgId: string): Promise<AttentionGroup[]> 
       select: { id: true, dueAt: true, sequence: { select: { channel: true, application: { select: { roleId: true, candidate: { select: { id: true, fullName: true } } } } } } },
       take: 100,
     }),
-    db.task.findMany({ where: { orgId, status: "open", type: "reply" }, select: { id: true, createdAt: true, application: { select: { roleId: true, candidate: { select: { id: true, fullName: true } } } } }, take: 100 }),
+    db.task.findMany({
+      where: { orgId, status: "open", OR: [{ type: "reply" }, { type: "gather_info", agentStatus: { in: ["drafted", "replied", "failed"] } }] },
+      select: { id: true, type: true, agentStatus: true, agentChannel: true, createdAt: true, agentReplyAt: true, application: { select: { roleId: true, candidate: { select: { id: true, fullName: true } } } } },
+      take: 100,
+    }),
     db.candidate.findMany({ where: { orgId, extractionStatus: "needs_review" }, select: { id: true, fullName: true, updatedAt: true }, take: 50 }),
     db.criterion.groupBy({ by: ["roleId"], where: { orgId, status: "proposed" }, _count: true }),
     db.interviewKit.findMany({
@@ -90,9 +94,25 @@ export const attention = cache(async (orgId: string): Promise<AttentionGroup[]> 
     },
     {
       key: "replies",
-      label: "Candidates who replied",
-      hint: "Follow-ups stopped. Respond and record what they said.",
-      items: replies.map((t) => ({ key: t.id, title: t.application.candidate.fullName, detail: "Reply recorded", href: `/candidates/${t.application.candidate.id}?role=${t.application.roleId}&view=outreach`, action: "Respond", at: t.createdAt })),
+      label: "Candidate replies and follow-up questions",
+      hint: "Replies to outreach and to your questions, and assistant drafts waiting for your approval.",
+      items: replies.map((t) =>
+        t.type === "gather_info"
+          ? {
+              key: t.id,
+              title: t.application.candidate.fullName,
+              detail:
+                t.agentStatus === "replied"
+                  ? `Replied to your questions on ${t.agentChannel === "whatsapp" ? "WhatsApp" : "email"} — add their answers`
+                  : t.agentStatus === "failed"
+                    ? "Follow-up questions failed to send"
+                    : "Assistant drafted follow-up questions — approve to send",
+              href: `/candidates/${t.application.candidate.id}?role=${t.application.roleId}`,
+              action: t.agentStatus === "replied" ? "Add answers" : t.agentStatus === "failed" ? "Check" : "Approve",
+              at: t.agentReplyAt ?? t.createdAt,
+            }
+          : { key: t.id, title: t.application.candidate.fullName, detail: "Reply recorded", href: `/candidates/${t.application.candidate.id}?role=${t.application.roleId}&view=outreach`, action: "Respond", at: t.createdAt },
+      ),
     },
     {
       key: "interviews",

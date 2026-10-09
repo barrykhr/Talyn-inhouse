@@ -161,7 +161,7 @@
           "href": "/candidates",
           "needs": [],
           "steps": [
-            "Read the score and band label, with evidence coverage shown separately.",
+            "Right after an assessment, a pop-up shows the score and band, evidence coverage and required skills, with Shortlist / Hold / Reject. Reopen it any time with “Review score & decide” in the side panel.",
             "Open “How this score was calculated” for every criterion's weight, result, credit, points and excerpt count, and the scoring version.",
             "Correct a skill or criterion if the evidence is wrong — the score is re-recorded and the earlier one kept in “Score history”.",
             "If the candidate asks for another way to be assessed, set Alternative assessment to Requested. The screening score is then not shown or used. Don't record why."
@@ -265,6 +265,24 @@
       "id": "outreach",
       "title": "Outreach, interest and permission",
       "features": [
+        {
+          "name": "Ask the candidate (assistant follow-up)",
+          "where": "Candidate → side panel → Information requests (also listed in the review queue and on Home)",
+          "href": "/queue",
+          "needs": [
+            "whatsapp",
+            "email",
+            "ai_optional"
+          ],
+          "steps": [
+            "Create an information request (or “Create information request” from an AI recommendation).",
+            "Click “Ask on WhatsApp” or “Ask by email”. The assistant drafts a short message with your questions — nothing is sent yet.",
+            "Edit if needed, then “Approve & send”. Without a connected provider, copy it, send it yourself and click “Mark as sent”.",
+            "When the candidate replies, the request shows “Candidate replied” (reported by WhatsApp or your mail service, or click “They replied”).",
+            "Paste or summarise the answers and click “Add answers to profile” — optionally reassessing straight away."
+          ],
+          "notes": "Needs the candidate's contact details, no opt-out, and for WhatsApp a recorded opt-in. WhatsApp only lets businesses start a conversation with an approved template: the questions go in your template's “message” parameter, or as free text within 24 hours of the candidate's last message. Talyn doesn't store reply text; answers you add are labelled with channel and date."
+        },
         {
           "name": "Email and WhatsApp sequences",
           "where": "Candidate → Outreach tab (or Outreach from a saved Discover person)",

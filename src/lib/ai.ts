@@ -574,3 +574,23 @@ ${input.criteria.map((c) => `- criterion_id=${c.id} [${c.importance}] ${c.name}$
 </criteria>`;
   return runStructured({ system, user, schema: InterviewKitOutput, name: "interview_kit", maxTokens: 8000 });
 }
+
+// ---------- Follow-up questions to a candidate (information request) ----------
+
+const FollowUpMessage = z.object({
+  subject: z.string().describe("Short email subject; ignored for WhatsApp"),
+  body: z.string().describe("The message: a short greeting, why you're asking, the questions as a numbered list, a thank-you. No sign-off placeholders."),
+});
+
+export async function draftInfoRequestWithAi(input: { channel: "whatsapp" | "email"; firstName: string; roleTitle: string; company: string; recruiter: string; questions: string[] }) {
+  const system = `You draft a short, friendly message from an in-house recruiter asking a candidate a few job-related questions about their application.
+Rules:
+- Ask exactly the questions provided, in plain language, as a numbered list. Don't add new questions or requirements.
+- Don't mention scores, assessments, AI, gaps or weaknesses; say the answers help the team understand their experience.
+- Don't claim anything about the candidate beyond their name and the role. Don't promise outcomes.
+- ${input.channel === "whatsapp" ? "WhatsApp: under 700 characters, no markdown headings." : "Email: under 1,200 characters."}
+- Sign off with the recruiter's name.
+${FAIRNESS_RULES}`;
+  const user = `Candidate first name: ${input.firstName}\nRole: ${input.roleTitle}\nCompany: ${input.company}\nRecruiter: ${input.recruiter}\n\n<questions>\n${input.questions.map((q, i) => `${i + 1}. ${q}`).join("\n")}\n</questions>`;
+  return runStructured({ system, user, schema: FollowUpMessage, name: "info_request_message" });
+}

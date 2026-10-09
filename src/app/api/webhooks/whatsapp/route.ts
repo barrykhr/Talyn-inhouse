@@ -45,6 +45,15 @@ export async function POST(req: Request) {
       }
     }
     for (const msg of change.value?.messages ?? []) {
+      // A reply to an assistant follow-up (information request): mark it replied. Text isn't stored.
+      const task =
+        (msg.context?.id ? await db.task.findFirst({ where: { agentProviderId: msg.context.id, agentStatus: "sent" }, select: { id: true } }) : null) ??
+        (await db.task.findFirst({ where: { agentChannel: "whatsapp", agentTo: msg.from, agentStatus: "sent" }, orderBy: { agentSentAt: "desc" }, select: { id: true } }));
+      if (task) {
+        await db.task.update({ where: { id: task.id }, data: { agentStatus: "replied", agentReplyAt: new Date(), agentReplyVia: "WhatsApp" } });
+        applied++;
+        continue;
+      }
       // A reply: match the message it answers, else the latest WhatsApp message sent to this number.
       const m =
         (msg.context?.id ? await db.outreachMessage.findFirst({ where: { providerMessageId: msg.context.id }, select: { id: true, orgId: true, sequenceId: true } }) : null) ??

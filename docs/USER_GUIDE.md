@@ -146,7 +146,7 @@ _“No evidence found” means missing evidence, not proof the candidate lacks t
 
 **Needs:** Works now — no integration needed
 
-1. Read the score and band label, with evidence coverage shown separately.
+1. Right after an assessment, a pop-up shows the score and band, evidence coverage and required skills, with Shortlist / Hold / Reject. Reopen it any time with “Review score & decide” in the side panel.
 2. Open “How this score was calculated” for every criterion's weight, result, credit, points and excerpt count, and the scoring version.
 3. Correct a skill or criterion if the evidence is wrong — the score is re-recorded and the earlier one kept in “Score history”.
 4. If the candidate asks for another way to be assessed, set Alternative assessment to Requested. The screening score is then not shown or used. Don't record why.
@@ -235,6 +235,20 @@ _Talyn never scrapes websites. An authorized CSV export can be imported on the D
 _Ordering by matched terms is a review aid, not a score._
 
 ## Outreach, interest and permission
+
+### Ask the candidate (assistant follow-up)
+
+**Where:** Candidate → side panel → Information requests (also listed in the review queue and on Home) (`/queue`)
+
+**Needs:** Needs WhatsApp Cloud API for WhatsApp sending; Needs SMTP for sending (manual sending otherwise); Works without AI; better with AI
+
+1. Create an information request (or “Create information request” from an AI recommendation).
+2. Click “Ask on WhatsApp” or “Ask by email”. The assistant drafts a short message with your questions — nothing is sent yet.
+3. Edit if needed, then “Approve & send”. Without a connected provider, copy it, send it yourself and click “Mark as sent”.
+4. When the candidate replies, the request shows “Candidate replied” (reported by WhatsApp or your mail service, or click “They replied”).
+5. Paste or summarise the answers and click “Add answers to profile” — optionally reassessing straight away.
+
+_Needs the candidate's contact details, no opt-out, and for WhatsApp a recorded opt-in. WhatsApp only lets businesses start a conversation with an approved template: the questions go in your template's “message” parameter, or as free text within 24 hours of the candidate's last message. Talyn doesn't store reply text; answers you add are labelled with channel and date._
 
 ### Email and WhatsApp sequences
 

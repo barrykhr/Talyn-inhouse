@@ -479,24 +479,39 @@ model AuditEvent {
 // Recruiter tasks, e.g. "Gather more information". Completing or cancelling a task never
 // records a hiring decision.
 model Task {
-  id             String      @id @default(cuid())
-  orgId          String
-  applicationId  String
-  type           String // gather_info | send_outreach
-  title          String
-  detailsJson    String      @default("{}") // { questions: string[], criteria: string[], messageId? }
-  status         String      @default("open") // open | done | cancelled
-  dueAt          DateTime?
-  createdById    String?
-  createdByName  String      @default("")
-  resolvedNote   String?
-  resolvedByName String?
-  resolvedAt     DateTime?
-  createdAt      DateTime    @default(now())
-  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  id              String      @id @default(cuid())
+  orgId           String
+  applicationId   String
+  type            String // gather_info | send_outreach
+  title           String
+  detailsJson     String      @default("{}") // { questions: string[], criteria: string[], messageId? }
+  status          String      @default("open") // open | done | cancelled
+  dueAt           DateTime?
+  createdById     String?
+  createdByName   String      @default("")
+  resolvedNote    String?
+  resolvedByName  String?
+  resolvedAt      DateTime?
+  // Assistant follow-up: the questions sent to the candidate after recruiter approval.
+  agentStatus     String? // drafted | sent | replied | answered | failed
+  agentChannel    String? // whatsapp | email
+  agentSubject    String?
+  agentDraft      String?
+  agentDraftedBy  String? // ai:<model> | template
+  agentApprovedBy String?
+  agentSentAt     DateTime?
+  agentSentVia    String? // provider label, or "manual"
+  agentProviderId String?
+  agentTo         String? // number or address it was sent to
+  agentError      String?
+  agentReplyAt    DateTime?
+  agentReplyVia   String? // WhatsApp (provider-confirmed) | Email provider | recruiter
+  createdAt       DateTime    @default(now())
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
   @@index([orgId, status])
   @@index([applicationId])
+  @@index([agentProviderId])
 }
 
 // Ideal Candidate Profile: the recruiter-approved description of who to look for. Versioned;

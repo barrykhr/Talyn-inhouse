@@ -91,3 +91,25 @@ export function verifyWhatsAppSignature(raw: string, header: string | null): boo
 
 export const WHATSAPP_SETUP_HINT =
   "WhatsApp isn't connected, so Talyn can't send on it. To enable it, connect the WhatsApp Business Platform (Cloud API) with an approved message template (Settings → Integrations). Drafts can still be prepared.";
+
+/** Whether the approved template carries a free-text `message` parameter (so drafted text can be sent in it). */
+export function templateCarriesMessage() {
+  return whatsappTemplate().params.includes("message");
+}
+
+/**
+ * A free-form text message. WhatsApp only allows this within 24 hours of the candidate's last
+ * message to you (the customer-service window); callers must check that first.
+ */
+export async function sendWhatsAppText(to: string, text: string): Promise<{ providerMessageId: string }> {
+  const res = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(process.env.WHATSAPP_PHONE_NUMBER_ID!)}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}` },
+    body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: text.slice(0, 4000) } }),
+    signal: AbortSignal.timeout(30_000),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`WhatsApp API responded ${res.status}`);
+  const body = (await res.json()) as { messages?: { id: string }[] };
+  return { providerMessageId: body.messages?.[0]?.id ?? "" };
+}

@@ -25,6 +25,16 @@ export async function POST(req: Request) {
   let unknown = 0;
   for (const e of parsed.data.events) {
     const id = e.messageId.replace(/^<|>$/g, "");
+    // Replies and bounces for assistant follow-ups (information requests).
+    const task = await db.task.findFirst({ where: { agentProviderId: id, agentChannel: "email", agentStatus: "sent" }, select: { id: true } });
+    if (task && (e.type === "replied" || e.type === "bounced")) {
+      await db.task.update({
+        where: { id: task.id },
+        data: e.type === "replied" ? { agentStatus: "replied", agentReplyAt: new Date(), agentReplyVia: "Email provider" } : { agentStatus: "failed", agentError: "The email bounced (reported by the mail service)." },
+      });
+      applied++;
+      continue;
+    }
     const m = await db.outreachMessage.findFirst({ where: { providerMessageId: id }, select: { id: true, orgId: true, sequenceId: true } });
     if (!m) {
       unknown++;

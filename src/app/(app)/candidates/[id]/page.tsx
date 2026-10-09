@@ -44,6 +44,8 @@ import { CvReviewForm, type CvFact } from "./cv-review";
 import { ClarifyButton } from "./clarify";
 import { DecisionForm } from "./decision";
 import { TasksCard } from "./tasks";
+import { templateCarriesMessage, waNumber, whatsappConfigured } from "@/lib/outreach/whatsapp";
+import { getEmailProvider } from "@/lib/outreach/provider";
 import { AtsConflictsCard } from "./ats-conflicts";
 import { FIELD_LABEL as ATS_FIELD_LABEL, FIELD_OWNERSHIP, getAtsConnector } from "@/lib/ats/connector";
 import { QuestionList } from "@/components/questions";
@@ -162,6 +164,20 @@ export default async function CandidatePage({
         : undefined;
 
   const stale = !!latest && (isStale(latest.criteriaSnapshot, app!.role.criteria) || (latest.criteriaVersion != null && latest.criteriaVersion !== app!.role.criteriaVersion));
+  // Which channels the follow-up assistant may use for this candidate, and why not.
+  const baseBlock = [candidate.isSample ? "This is a fictional sample person." : "", candidate.contactOptOut ? "The candidate opted out of contact." : ""].filter(Boolean);
+  const followUpChannels = {
+    whatsapp: {
+      blocked: [...baseBlock, ...(!waNumber(candidate.phone) ? ["No phone number with a country code on file."] : []), ...(candidate.whatsappPermission !== "granted" ? ["No WhatsApp opt-in recorded (Outreach tab)."] : [])],
+      provider: whatsappConfigured(),
+      note: whatsappConfigured()
+        ? templateCarriesMessage()
+          ? "Sent inside your approved WhatsApp template's message field."
+          : "Your approved template has no message field, so this can only be sent within 24 hours of the candidate's last WhatsApp message."
+        : undefined,
+    },
+    email: { blocked: [...baseBlock, ...(!candidate.email ? ["No email address on file."] : [])], provider: !!getEmailProvider() },
+  };
   // Profile score: the latest stored score for the latest assessment, under the version that produced it.
   const [scoreRows, currentVersion, org] = await Promise.all([
     app ? db.profileScore.findMany({ where: { orgId: auth.orgId, applicationId: app.id }, orderBy: { createdAt: "desc" }, take: 20, include: { scoringVersion: true } }) : [],
@@ -1058,7 +1074,22 @@ export default async function CandidatePage({
             dueAt: t.dueAt?.toISOString() ?? null,
             createdByName: t.createdByName,
             createdAt: t.createdAt.toISOString(),
+            followUp: {
+              status: t.agentStatus,
+              channel: t.agentChannel,
+              subject: t.agentSubject,
+              draft: t.agentDraft,
+              draftedBy: t.agentDraftedBy,
+              approvedBy: t.agentApprovedBy,
+              sentAt: t.agentSentAt?.toISOString() ?? null,
+              sentVia: t.agentSentVia,
+              to: t.agentTo,
+              error: t.agentError,
+              replyAt: t.agentReplyAt?.toISOString() ?? null,
+              replyVia: t.agentReplyVia,
+            },
           }))}
+          channels={followUpChannels}
         />
       </Card>
 
