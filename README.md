@@ -189,6 +189,13 @@ people decide. No recording, transcription, analytics or behavioral/emotion anal
 5. **Debrief** — evidence and ratings per competency with who gave them and when, where
    interviewers agree or disagree (two or more levels apart), what wasn't assessed or is still
    waiting, interviewer notes, and a team discussion. There is no overall score.
+5b. **Scheduling** — on each stage, **Schedule interview**: choose interviewers, duration, date
+   range, working hours and time zone; enter availability people gave you; **Find available
+   times** (Google free/busy for connected calendars, never event details; unknown is never shown as
+   free); propose times to the candidate (copy, or the connected email/WhatsApp after you confirm);
+   review and **Schedule interview** to create one Google Calendar event with invitations and a new
+   Meet link. Reschedule or cancel from the plan. Without Google configured it runs in a labeled
+   demo mode. Setup: docs/INTEGRATIONS.md §1a.
 6. **Decision** — an admin, a hiring manager, or the plan's owner records **Advance**, **Hold** or
    **Decline** with a rationale. Nothing is pre-selected or recommended, and it doesn't change the
    pipeline stage or the shortlist decision.

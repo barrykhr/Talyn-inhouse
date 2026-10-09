@@ -48,7 +48,7 @@ export default async function InterviewsHome() {
                   <div className="font-medium">{a.stage.kit.application.candidate.fullName}</div>
                   <div className="text-[12.5px] text-muted">
                     {a.stage.kit.application.role.title} · {a.stage.name}
-                    {a.stage.scheduledAt ? ` · ${formatDateTime(a.stage.scheduledAt)} (entered manually)` : ""}
+                    {a.stage.scheduledAt ? ` · ${formatDateTime(a.stage.scheduledAt)}` : ""}
                   </div>
                 </div>
                 <Badge tone={STATUS[a.status].tone}>{STATUS[a.status].label}</Badge>

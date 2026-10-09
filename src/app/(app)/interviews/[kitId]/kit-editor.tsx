@@ -292,7 +292,7 @@ export function AddCompetencyForm({ kitId, available }: { kitId: string; availab
 }
 
 /** A stage: purpose, competencies covered, manual schedule note, and interviewers. */
-export function StageCard({ stage, competencies, members, canRemove }: { stage: StageView; competencies: { id: string; name: string }[]; members: Member[]; canRemove: boolean }) {
+export function StageCard({ stage, competencies, members, canRemove, scheduleSlot }: { stage: StageView; competencies: { id: string; name: string }[]; members: Member[]; canRemove: boolean; scheduleSlot?: React.ReactNode }) {
   const [editing, setEditing] = useState(!stage.competencyIds.length);
   const [state, action, pending] = useServerForm(updateStage.bind(null, stage.id));
   const [pick, setPick] = useState("");
@@ -345,7 +345,7 @@ export function StageCard({ stage, competencies, members, canRemove }: { stage: 
           </fieldset>
           <fieldset className="rounded-lg border border-dashed border-line-strong p-3">
             <legend className="px-1 text-[12.5px] font-medium">Schedule (entered manually)</legend>
-            <p className="mb-2 text-[12px] text-muted">No calendar is connected. Book the meeting in your own calendar; these details are for the team&apos;s reference only — Talyn doesn&apos;t send invites.</p>
+            <p className="mb-2 text-[12px] text-muted">For interviews you booked outside Talyn. These details are for the team&apos;s reference only — Talyn doesn&apos;t send invites from here. Use “Schedule interview” to book through Google Calendar.</p>
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Date and time">
                 <Input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
@@ -380,6 +380,8 @@ export function StageCard({ stage, competencies, members, canRemove }: { stage: 
           </div>
         </div>
       )}
+
+      {scheduleSlot && <div className="mt-3 border-t border-line pt-3">{scheduleSlot}</div>}
 
       <div className="mt-3 border-t border-line pt-3">
         <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted">Interviewers</div>

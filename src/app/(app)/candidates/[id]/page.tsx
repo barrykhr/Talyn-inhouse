@@ -40,6 +40,7 @@ import { QuestionList } from "@/components/questions";
 import { generateFollowUps } from "@/server/question-actions";
 import { createKit } from "@/server/interview-actions";
 import { DECISION_LABEL as INTERVIEW_DECISION_LABEL } from "@/lib/interviews/rubric";
+import { formatInZone } from "@/lib/calendar/time";
 import { OutreachPanel, type OutreachView } from "./outreach";
 import { loadOutreachView } from "@/server/outreach-view";
 import { DeleteCandidateButton, DeleteResumeButton, EditProfile, NoteForm, NoteItem, ResumeUpload } from "./panels";
@@ -79,7 +80,7 @@ export default async function CandidatePage({
           questions: { where: { kind: "follow_up" }, orderBy: [{ status: "asc" }, { createdAt: "asc" }] },
           role: { include: { criteria: { where: { status: "approved" }, select: { id: true, updatedAt: true } }, questions: { where: { kind: "core", status: "approved" } } } },
           assessments: { orderBy: { createdAt: "desc" }, include: { items: true, resume: { select: { fileName: true } } } },
-          interviewKit: { include: { stages: { orderBy: { position: "asc" }, include: { assignments: { select: { id: true, interviewerId: true, interviewerName: true, status: true, submittedAt: true } } } } } },
+          interviewKit: { include: { stages: { orderBy: { position: "asc" }, include: { assignments: { select: { id: true, interviewerId: true, interviewerName: true, status: true, submittedAt: true } }, events: { where: { status: "scheduled" }, select: { mode: true, startAt: true, timeZone: true, meetUrl: true } } } } } },
         },
         orderBy: { createdAt: "asc" },
       },
@@ -528,7 +529,13 @@ export default async function CandidatePage({
                 <span className="font-medium">{st.name}</span>
                 <span className="text-muted">
                   {" "}
-                  · {st.scheduledAt ? `${formatDateTime(st.scheduledAt)} (entered manually)` : "not scheduled"} ·{" "}
+                  ·{" "}
+                  {st.events[0]
+                    ? `${formatInZone(st.events[0].startAt, st.events[0].timeZone)} ${st.events[0].timeZone} (${st.events[0].mode === "live" ? "Google Calendar" : "demo — simulated"})`
+                    : st.scheduledAt
+                      ? `${formatDateTime(st.scheduledAt)} (entered manually)`
+                      : "not scheduled"}{" "}
+                  ·{" "}
                   {st.assignments.length
                     ? st.assignments.map((a) => `${a.interviewerName} — ${a.status === "submitted" ? "submitted" : a.status === "draft" ? "draft" : "not started"}`).join(", ")
                     : "no interviewers"}

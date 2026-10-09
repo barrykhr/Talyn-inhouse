@@ -237,6 +237,22 @@ predictive validity.
 - Debrief "agreement" describes the spread of ratings per competency only; nothing is averaged
   into a verdict. No recording, transcription, analytics or trait inference exists.
 
+## Interview scheduling (Google Calendar)
+
+- `CalendarConnection` (per user + org): Google account email, granted scopes, AES-256-GCM sealed
+  access/refresh tokens (`src/lib/secretbox.ts`), expiry, status (connected / permission_required /
+  revoked / error). OAuth: `/api/calendar/connect` → Google (PKCE, state cookie, offline access,
+  narrow scopes) → `/api/calendar/callback`. `src/lib/calendar/google.ts` refreshes tokens, maps
+  401/403/404/409/429/timeouts to recruiter-facing errors, and marks revoked connections.
+- `InterviewScheduling` (per stage): inputs and hand-entered windows (interviewers without a
+  calendar, candidate). `src/lib/calendar/availability.ts` resolves each interviewer to own calendar
+  → shared calendar → manual windows → unknown; `findSlots` (`src/lib/calendar/time.ts`, pure,
+  Intl-based time zones) never treats unknown as free.
+- `InterviewEvent`: live (Google event id, htmlLink, Meet URL/status, attendees + responses) or demo
+  (simulated). `requestKey` is unique and also seeds the Google event id, so retries can't
+  duplicate. Live reschedule/cancel run with the organizer's own authorization.
+- Scheduling status lives on the stage and event; it is never mixed into scorecards or decisions.
+
 ## Extensibility (later phases, not implemented)
 
 - Interview recording/intelligence, a hiring-manager portal and advanced analytics are out of

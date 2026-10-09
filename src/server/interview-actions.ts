@@ -263,6 +263,7 @@ export async function removeStage(stageId: string): Promise<Ok> {
   const st = await db.interviewStage.findFirst({ where: { id: stageId, kit: { orgId: auth.orgId } } });
   if (!st) return { error: "Not found." };
   if ((await submittedFor(st.kitId)).stageIds.has(stageId)) return { error: "This stage has submitted scorecards, so it can't be removed." };
+  if (await db.interviewEvent.findFirst({ where: { stageId, status: "scheduled" } })) return { error: "This stage has a scheduled interview. Cancel it first so the calendar event is removed too." };
   await db.interviewStage.delete({ where: { id: stageId } });
   refresh(st.kitId);
   return { ok: true };

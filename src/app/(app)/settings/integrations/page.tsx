@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { Card, PageHeader, SectionTitle, formatDateTime } from "@/components/ui";
+import { Card, Notice, PageHeader, SectionTitle, formatDateTime } from "@/components/ui";
+import { CALENDAR_RESULT, CalendarConnection } from "@/components/calendar/connection";
+import { calendarConfigured, calendarSetup } from "@/lib/calendar/google";
 import { PROVIDER_LABEL, aiStatus } from "@/lib/ai";
 import { ATS_ENV, atsSetup, getAtsConnector } from "@/lib/ats/connector";
 import { requireAuth } from "@/lib/auth";
@@ -38,8 +40,16 @@ function EnvList({ checks }: { checks: (EnvCheck & { optional: boolean })[] }) {
 
 const RUN_LABEL: Record<string, string> = { running: "Running", completed: "Completed", partial: "Completed with problems", failed: "Failed" };
 
-export default async function IntegrationsPage() {
+export default async function IntegrationsPage({ searchParams }: { searchParams: Promise<{ calendar?: string }> }) {
   const auth = await requireAuth();
+  const { calendar } = await searchParams;
+  const calLive = calendarConfigured();
+  const calSetup = calendarSetup();
+  const calMsg = calendar ? CALENDAR_RESULT[calendar] : null;
+  const myCal = await db.calendarConnection.findUnique({ where: { userId_orgId: { userId: auth.userId, orgId: auth.orgId } } });
+  const teamConns = await db.calendarConnection.findMany({ where: { orgId: auth.orgId }, select: { userId: true, status: true } });
+  const teamUsers = await db.user.findMany({ where: { id: { in: teamConns.map((c) => c.userId) } }, select: { id: true, name: true } });
+  const teamCal = teamConns.map((c) => ({ name: teamUsers.find((u) => u.id === c.userId)?.name ?? "Member", status: c.status }));
   const isAdmin = auth.membershipRole === "admin";
   const ai = aiStatus();
   const email = emailSetup();
@@ -102,6 +112,37 @@ export default async function IntegrationsPage() {
             </p>
           </details>
           {(provider || wa.ready) && isAdmin && <EmailButtons />}
+        </div>
+      </Card>
+
+      <Card className="p-5" id="calendar">
+        <SectionTitle hint="Free/busy lookups and interview events only. Each person connects their own calendar.">
+          Google Calendar <Status on={calLive} label={calLive ? "Available" : "Not connected · demo mode"} />
+        </SectionTitle>
+        <div className="space-y-3 text-[13px] text-ink-2">
+          {calMsg && <Notice tone={calMsg.tone}>{calMsg.text}</Notice>}
+          <div className="rounded-lg border border-line p-3">
+            <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted">Your calendar</div>
+            <CalendarConnection
+              configured={calLive}
+              returnTo="/settings/integrations#calendar"
+              conn={myCal ? { status: myCal.status, googleEmail: myCal.googleEmail, lastError: myCal.lastError, connectedAt: myCal.connectedAt.toISOString() } : null}
+            />
+          </div>
+          {calLive && teamCal.length > 0 && (
+            <p className="text-[12.5px] text-muted">
+              Connected in this workspace: {teamCal.map((c) => `${c.name} (${c.status === "connected" ? "connected" : c.status.replace("_", " ")})`).join(", ")}
+            </p>
+          )}
+          <p>
+            Scopes requested only when someone clicks Connect: <code className="font-mono text-[12px]">calendar.freebusy</code> (busy/free times, no event details) and{" "}
+            <code className="font-mono text-[12px]">calendar.events.owned</code> (create, change and cancel the interview events Talyn schedules), plus <code className="font-mono text-[12px]">openid email</code> to show which
+            account is connected. No Gmail, Drive or Contacts access. Tokens are encrypted and kept server-side.
+          </p>
+          <EnvList checks={calSetup.checks} />
+          <p className="text-[12.5px] text-muted">
+            Authorized redirect URI to add to your Google OAuth client: <code className="font-mono">{base}/api/calendar/callback</code>. See docs/INTEGRATIONS.md for the Google Cloud steps.
+          </p>
         </div>
       </Card>
 

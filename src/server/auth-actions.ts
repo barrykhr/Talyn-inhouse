@@ -109,6 +109,7 @@ export async function deleteOrganization(_prev: ActionState, fd: FormData): Prom
   // Org-level records without a foreign key to Organization:
   await db.$transaction([
     db.auditEvent.deleteMany({ where: { orgId: auth.orgId } }),
+    db.calendarConnection.deleteMany({ where: { orgId: auth.orgId } }),
     db.outreachTemplate.deleteMany({ where: { orgId: auth.orgId } }),
     db.pendingSignup.deleteMany({ where: { email: auth.email } }),
   ]);

@@ -7,6 +7,9 @@ import { db } from "@/lib/db";
 import { loadKitForUser } from "@/lib/interviews/access";
 import { RATING_LABEL, RATING_LEVELS, parseAnchors } from "@/lib/interviews/rubric";
 import { addStage, shareKit } from "@/server/interview-actions";
+import { eventViews } from "@/server/scheduling-store";
+import { calendarConfigured } from "@/lib/calendar/google";
+import { EventCard } from "@/components/calendar/event-card";
 import { KitHeader } from "../kit-header";
 import { AddCompetencyForm, CompetencyCard, HiringManagerSelect, StageCard, type CompetencyView, type StageView } from "./kit-editor";
 
@@ -52,6 +55,8 @@ export default async function KitPage({ params, searchParams }: { params: Promis
   const ai = kit.generator.startsWith("ai:");
   const criteriaChanged = kit.criteriaVersion != null && kit.criteriaVersion !== kit.application.role.criteriaVersion;
   const assignedCount = stages.reduce((n, s) => n + s.assignments.length, 0);
+  const events = await eventViews(auth, kit, kit.stages.map((s) => s.id));
+  const calendarLive = calendarConfigured();
 
   return (
     <>
@@ -135,9 +140,30 @@ export default async function KitPage({ params, searchParams }: { params: Promis
           >
             <span id="stages-h">Stages &amp; interviewers</span>
           </SectionTitle>
-          {stages.map((s) => (
-            <StageCard key={s.id} stage={s} competencies={competencies.map((c) => ({ id: c.id, name: c.name }))} members={memberViews} canRemove={!submittedStages.has(s.id)} />
-          ))}
+          {stages.map((s) => {
+            const ev = events.find((e) => e.stageId === s.id)?.view;
+            return (
+              <StageCard
+                key={s.id}
+                stage={s}
+                competencies={competencies.map((c) => ({ id: c.id, name: c.name }))}
+                members={memberViews}
+                canRemove={!submittedStages.has(s.id) && !ev}
+                scheduleSlot={
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[12px] font-semibold uppercase tracking-wide text-muted">Interview time</span>
+                      {!calendarLive && <span className="text-[11.5px] text-warn">Google Calendar not connected — demo mode</span>}
+                      <Link href={`/interviews/${kit.id}/schedule/${s.id}${ev ? "?reschedule=1" : ""}`} className="ml-auto rounded-lg border border-line-strong px-2.5 py-1 text-[12.5px] font-medium hover:bg-sunken">
+                        {ev ? "Reschedule" : "Schedule interview"}
+                      </Link>
+                    </div>
+                    {ev ? <EventCard e={ev} rescheduleHref={`/interviews/${kit.id}/schedule/${s.id}?reschedule=1`} /> : <p className="text-[12.5px] text-faint">Not scheduled through Talyn.</p>}
+                  </div>
+                }
+              />
+            );
+          })}
           <Card className="p-4 text-[12.5px]">
             <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted">Rating scale (same for every competency)</div>
             <ul className="space-y-0.5">

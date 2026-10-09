@@ -1,6 +1,6 @@
 # Integrations
 
-Talyn has four built-in integrations. **Each is off until its environment
+Talyn has five built-in integrations. **Each is off until its environment
 variables are set** (Vercel → Project → Settings → Environment Variables, then redeploy).
 Settings → Integrations shows which variables are set or missing — never their values — and the
 controls for each integration once it's on.
@@ -8,6 +8,7 @@ controls for each integration once it's on.
 | Integration | Turns on with | Until then |
 | --- | --- | --- |
 | Email sending (SMTP) | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `OUTREACH_FROM_EMAIL`, `OUTREACH_SECRET` | Recruiters send from their own mail client and click **Record as sent**. |
+| Google Calendar (interview scheduling) | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY`, `GOOGLE_CALENDAR_ENABLED=true`; then each person clicks **Connect Google Calendar** | Demo mode: sample availability and simulated events, clearly labeled. |
 | WhatsApp (Business Platform / Cloud API) | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TEMPLATE_NAME` (+ optional template language, params, preview, webhook secrets) | WhatsApp drafts can be prepared; sending is disabled. |
 | Sourcing provider | `SOURCING_PROVIDER_NAME`, `SOURCING_API_URL`, `SOURCING_API_KEY` | Talyn rediscovery + **Import an authorized export** (CSV). |
 | ATS | `ATS_NAME`, `ATS_API_URL`, `ATS_API_KEY` (+ `ATS_PUSH_STAGES=true` for write-back), then an admin clicks **Link this workspace** | CSV import/export. |
@@ -59,6 +60,50 @@ Rules applied (same as recruiter-recorded outcomes): **replied** → stop sequen
 **opted_out / complained** → stop all sequences + block candidate; **bounced** → pause;
 **delivered** → mark delivered. Events from the webhook are labeled provider-confirmed; unknown
 message ids are ignored. Up to 500 events per request.
+
+---
+
+## 1a. Google Calendar (interview scheduling)
+
+**What Talyn does with it.** From an interview plan, a recruiter picks interviewers, duration,
+date range, working hours and time zone. Talyn reads **free/busy only** for interviewers who
+connected their own calendar (or who shared their calendar's free/busy with the recruiter),
+combines it with availability typed in by hand, and proposes slots. Interviewers with neither are
+shown as *unknown*, never as free. After the recruiter reviews and clicks **Schedule interview**,
+Talyn rechecks free/busy and creates **one** event on the recruiter's calendar with the candidate
+and interviewers as attendees (`sendUpdates=all`, so Google sends the invitations) and a new Google
+Meet link when "Google Meet" is chosen. The event ID is derived from a per-confirmation key, so a
+retried request can't create a second event. Reschedule (PATCH) and cancel (DELETE) update the same
+Google event and notify attendees. Talyn never reads event titles, descriptions or attendees of
+anyone's other events.
+
+**Scopes** (requested only when a user clicks Connect — incremental authorization, never at
+sign-in): `openid`, `email`, `https://www.googleapis.com/auth/calendar.freebusy`,
+`https://www.googleapis.com/auth/calendar.events.owned`. No Gmail, Drive, Contacts or full
+calendar access. Refresh tokens are encrypted with AES-256-GCM (`TOKEN_ENCRYPTION_KEY`) and stored
+server-side only; **Disconnect** revokes at Google and deletes them. Revoked/expired access,
+missing permissions, rate limits and timeouts are reported with a reconnect/retry path.
+
+**Google Cloud setup**
+
+1. In Google Cloud Console, use the project that holds Talyn's existing OAuth client (Google
+   sign-in), or create one.
+2. **APIs & Services → Library → Google Calendar API → Enable.**
+3. **OAuth consent screen** (Google Auth Platform → Data access): add the scopes
+   `.../auth/calendar.freebusy` and `.../auth/calendar.events.owned` (plus `openid`, `email`).
+   Calendar scopes are *sensitive*: for an **Internal** app (Google Workspace, your own users)
+   no verification is needed; for an **External** app, add test users while in testing and submit
+   the app for Google's verification before general use.
+4. **Credentials → your OAuth 2.0 Client ID (Web application) → Authorized redirect URIs**: add
+   `https://<your-domain>/api/calendar/callback` (and `http://localhost:3000/api/calendar/callback`
+   for local development). Keep the existing `/api/auth/google/callback` for sign-in.
+5. In Vercel → Settings → Environment Variables set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+   (if not already), `APP_URL`, `TOKEN_ENCRYPTION_KEY` (e.g. `openssl rand -base64 48`) and
+   `GOOGLE_CALENDAR_ENABLED=true`, then redeploy.
+6. Each recruiter and interviewer opens **Settings → Integrations → Google Calendar → Connect**
+   (or **Connect** on the scheduling screen). Google Meet links require a Google Workspace or
+   personal Google account where Meet is available for that calendar; otherwise the event is created
+   without one and Talyn says so.
 
 ---
 

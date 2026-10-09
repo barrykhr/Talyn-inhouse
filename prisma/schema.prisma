@@ -851,6 +851,8 @@ model InterviewStage {
   locationNote      String?
   kit               InterviewKit          @relation(fields: [kitId], references: [id], onDelete: Cascade)
   assignments       InterviewAssignment[]
+  scheduling        InterviewScheduling?
+  events            InterviewEvent[]
 
   @@index([kitId])
 }
@@ -888,4 +890,86 @@ model DebriefComment {
   kit        InterviewKit @relation(fields: [kitId], references: [id], onDelete: Cascade)
 
   @@index([kitId])
+}
+
+/// A user's Google Calendar authorization. Tokens are encrypted at rest (AES-256-GCM) and never
+/// leave the server. Only free/busy and events Talyn creates are used.
+model CalendarConnection {
+  id              String    @id @default(cuid())
+  orgId           String
+  userId          String
+  provider        String    @default("google")
+  googleEmail     String
+  scopes          String    @default("") // as granted by Google
+  accessTokenEnc  String?
+  refreshTokenEnc String?
+  expiresAt       DateTime?
+  status          String    @default("connected") // connected | permission_required | revoked | error
+  lastError       String?
+  connectedAt     DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+}
+
+/// Scheduling inputs for one interview stage. Availability entered by hand is stored here; free/busy
+/// from Google is fetched on demand and never stored.
+model InterviewScheduling {
+  id                   String         @id @default(cuid())
+  stageId              String         @unique
+  kitId                String
+  interviewerIdsJson   String         @default("[]")
+  durationMins         Int            @default(60)
+  dateFrom             String // YYYY-MM-DD in timeZone
+  dateTo               String
+  workStart            String         @default("09:00")
+  workEnd              String         @default("17:00")
+  timeZone             String         @default("UTC")
+  candidateEmail       String?
+  candidatePhone       String?
+  candidateWindowsJson String         @default("[]") // [{ start, end }] ISO — what the candidate told the recruiter
+  manualWindowsJson    String         @default("{}") // { userId: [{ start, end }] } — entered by the recruiter
+  meetingMethod        String         @default("meet") // meet | phone | in_person | other
+  locationNote         String?
+  proposedSlotsJson    String         @default("[]") // times proposed to the candidate
+  proposedVia          String? // email | whatsapp | manual
+  proposedAt           DateTime?
+  updatedByName        String         @default("")
+  updatedAt            DateTime       @updatedAt
+  stage                InterviewStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+}
+
+/// A scheduled interview. Live events mirror a Google Calendar event; demo events are simulated.
+model InterviewEvent {
+  id              String         @id @default(cuid())
+  orgId           String
+  kitId           String
+  stageId         String
+  requestKey      String         @unique // idempotency: a retried "Schedule" never creates a second event
+  mode            String // live | demo
+  organizerUserId String
+  organizerEmail  String?
+  calendarId      String         @default("primary")
+  googleEventId   String?
+  status          String         @default("scheduled") // scheduled | cancelled | error
+  startAt         DateTime
+  endAt           DateTime
+  timeZone        String
+  attendeesJson   String         @default("[]") // [{ email, name, kind: candidate|interviewer, responseStatus? }]
+  meetUrl         String?
+  meetStatus      String? // created | pending | unavailable | not_requested
+  htmlLink        String?
+  meetingMethod   String         @default("meet")
+  locationNote    String?
+  lastError       String?
+  createdByName   String
+  updatedByName   String?
+  lastSyncedAt    DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  stage           InterviewStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([stageId, status])
 }
