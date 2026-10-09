@@ -118,7 +118,7 @@ No output is ever presented as coming from a model unless it did.
 ## Keyboard
 
 - **⌘K / Ctrl+K** — search roles and candidates, or jump anywhere
-- **G then R / G then C / G then D / G then Q** — go to roles / candidates / Discover / queue
+- **G then R / C / D / I / Q** — go to roles / candidates / Discover / interviews / queue
 - Tabs support arrow keys; dialogs close with **Esc**
 
 ## Manual walkthrough
@@ -163,6 +163,35 @@ No output is ever presented as coming from a model unless it did.
    engine version and model.
 9. **Role → Export CSV** includes stage, decision, criteria version, score, coverage, AI
    recommendation, its review status and the final recommendation.
+
+## Interviews (Phase 3, first slice)
+
+Structured interviews, independent scorecards and a team debrief. Talyn organizes the evidence;
+people decide. No recording, transcription, analytics or behavioral/emotion analysis.
+
+1. **Team** — admins invite teammates in **Settings → Team** (Recruiter, Hiring manager or
+   Admin). Talyn creates a one-time link to copy; it doesn't email it.
+2. **Plan** — from a role's **Interviews** tab (shortlisted candidates) or a candidate's
+   **Interviews** tab, **Create interview plan**. The kit is built only from the role's approved
+   criteria: one competency per criterion, the role's approved core questions, plus AI-drafted
+   (labeled) or template questions with follow-ups and interviewer notes, and behavioral anchors for
+   one 4-point scale (Not / Partly / Demonstrated / Strongly demonstrated) plus *Not assessed*.
+   Edit, add, reorder or remove competencies and questions; a competency that isn't in the role's
+   criteria is labeled as recruiter-added.
+3. **Stages & interviewers** — name each stage, its purpose and competencies, assign workspace
+   members, and note the date/time/location you booked yourself (labeled as entered manually — no
+   calendar is connected and Talyn sends no invites). **Share with interviewers** opens their
+   scorecards under **Interviews**.
+4. **Scorecards** — each interviewer rates their stage's competencies against the anchors, writes
+   the evidence behind every rating (required), may mark *Not assessed*, and saves a private draft
+   or submits. Submitted scorecards are locked (the plan owner or an admin can reopen one; it's
+   recorded). An interviewer can't see anyone else's feedback until they've submitted their own.
+5. **Debrief** — evidence and ratings per competency with who gave them and when, where
+   interviewers agree or disagree (two or more levels apart), what wasn't assessed or is still
+   waiting, interviewer notes, and a team discussion. There is no overall score.
+6. **Decision** — an admin, a hiring manager, or the plan's owner records **Advance**, **Hold** or
+   **Decline** with a rationale. Nothing is pre-selected or recommended, and it doesn't change the
+   pipeline stage or the shortlist decision.
 
 ## Discover (outbound sourcing)
 

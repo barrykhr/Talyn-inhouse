@@ -18,6 +18,11 @@ const ACTIVE = { notIn: ["hired", "rejected"] };
 
 /** Actionable recruiter work, oldest first. Every item links to where the action happens. */
 export async function buildQueue(orgId: string): Promise<QueueSection[]> {
+  const kits = await db.interviewKit.findMany({
+    where: { orgId, status: "shared" },
+    include: { application: { select: { candidate: { select: { id: true, fullName: true } }, role: { select: { id: true, title: true } } } }, stages: { include: { assignments: true } } },
+    take: 200,
+  });
   const [profiles, tasks, apps, sourced, dueMessages, atsConflicts, failedPushes] = await Promise.all([
     db.candidate.findMany({
       where: { orgId, extractionStatus: "needs_review" },
@@ -204,6 +209,45 @@ export async function buildQueue(orgId: string): Promise<QueueSection[]> {
           ? [{ key: f.id, candidateId: a.candidate.id, candidateName: a.candidate.fullName, roleId: a.role.id, roleTitle: a.role.title, since: f.createdAt, detail: `${f.talynStage} → ${f.atsStage} · ${f.lastError ?? "failed"}`, href: "/settings/integrations" }]
           : [];
       }),
+    },
+    {
+      key: "scorecards",
+      title: "Interview scorecards not submitted",
+      hint: "Assigned interviewers who haven't submitted. Feedback is collected independently before the debrief.",
+      items: kits.flatMap((k) =>
+        k.stages.flatMap((st) =>
+          st.assignments
+            .filter((a) => a.status !== "submitted")
+            .map((a) => ({
+              key: a.id,
+              candidateId: k.application.candidate.id,
+              candidateName: k.application.candidate.fullName,
+              roleId: k.application.role.id,
+              roleTitle: k.application.role.title,
+              since: st.scheduledAt && st.scheduledAt < new Date() ? st.scheduledAt : k.sharedAt ?? k.createdAt,
+              detail: `${a.interviewerName} · ${st.name}${a.status === "draft" ? " · draft saved" : ""}`,
+              href: `/interviews/${k.id}`,
+            })),
+        ),
+      ).sort(byAge),
+    },
+    {
+      key: "debrief",
+      title: "Debriefs ready for a team decision",
+      hint: "Every scorecard is in and no decision is recorded. A person decides — Talyn doesn't.",
+      items: kits
+        .filter((k) => !k.decision && k.stages.some((st) => st.assignments.length) && k.stages.every((st) => st.assignments.every((a) => a.status === "submitted")))
+        .map((k) => ({
+          key: k.id,
+          candidateId: k.application.candidate.id,
+          candidateName: k.application.candidate.fullName,
+          roleId: k.application.role.id,
+          roleTitle: k.application.role.title,
+          since: new Date(Math.max(...k.stages.flatMap((st) => st.assignments.map((a) => a.submittedAt?.getTime() ?? 0)))),
+          detail: "All scorecards submitted",
+          href: `/interviews/${k.id}/debrief`,
+        }))
+        .sort(byAge),
     },
   ];
 }

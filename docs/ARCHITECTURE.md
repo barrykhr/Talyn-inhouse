@@ -218,6 +218,25 @@ predictive validity.
   is what the candidate said (recruiter-recorded or "declined" from an outcome) — kept apart from
   role fit. Replies (webhooks or recruiter), declines, opt-outs and pauses stop follow-ups.
 
+## Interviews (Phase 3, first slice)
+
+- `InterviewKit` (one per application) → `InterviewCompetency` (from approved criteria; anchors
+  JSON; origin + anchorsOrigin) → `InterviewQuestion` (origin ai | template | core_question |
+  recruiter, `edited`); `InterviewStage` (purpose, competency ids, manually entered schedule) →
+  `InterviewAssignment` (one interviewer on one stage + their scorecard: entries
+  `{ competencyId, rating 1–4 | null, notAssessed, evidence }`, question notes, notes, draft /
+  submitted with timestamps); `DebriefComment`. The team decision (`decision`, rationale, who,
+  when) lives on the kit and is separate from `Application.decision` and the stage.
+- Access (`src/lib/interviews/access.ts`) layers on the existing model where every member sees
+  roles and candidates: drafts are visible only to their author; submitted feedback is hidden from
+  an assigned interviewer until they submit; the decision needs admin, hiring manager, the plan
+  owner or the plan's named hiring manager. `Membership.role` gains `hiring_manager`; `Invite`
+  holds hashed one-time join links.
+- Kit drafting (`generateInterviewKitWithAi`) receives only the approved criteria and ignores any
+  output for criteria it wasn't given; without AI, template questions and anchors are used.
+- Debrief "agreement" describes the spread of ratings per competency only; nothing is averaged
+  into a verdict. No recording, transcription, analytics or trait inference exists.
+
 ## Extensibility (later phases, not implemented)
 
 - Interview recording/intelligence, a hiring-manager portal and advanced analytics are out of

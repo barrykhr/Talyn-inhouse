@@ -7,7 +7,7 @@ import { Card, Field, Input, Notice } from "@/components/ui";
 import { completeGoogleSignup, login, signup } from "@/server/auth-actions";
 import { GoogleButton, OrDivider } from "./google-button";
 
-export function LoginForm({ google, error }: { google: boolean; error?: string }) {
+export function LoginForm({ google, error, next }: { google: boolean; error?: string; next?: string }) {
   const [state, action] = useActionState(login, undefined);
   return (
     <Card className="p-6">
@@ -20,6 +20,7 @@ export function LoginForm({ google, error }: { google: boolean; error?: string }
         </>
       )}
       <form action={action} className="space-y-4">
+        {next && <input type="hidden" name="next" value={next} />}
         <Field label="Work email">
           <Input name="email" type="email" autoComplete="email" required />
         </Field>

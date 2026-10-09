@@ -38,6 +38,8 @@ import { AtsConflictsCard } from "./ats-conflicts";
 import { FIELD_LABEL as ATS_FIELD_LABEL, FIELD_OWNERSHIP, getAtsConnector } from "@/lib/ats/connector";
 import { QuestionList } from "@/components/questions";
 import { generateFollowUps } from "@/server/question-actions";
+import { createKit } from "@/server/interview-actions";
+import { DECISION_LABEL as INTERVIEW_DECISION_LABEL } from "@/lib/interviews/rubric";
 import { OutreachPanel, type OutreachView } from "./outreach";
 import { loadOutreachView } from "@/server/outreach-view";
 import { DeleteCandidateButton, DeleteResumeButton, EditProfile, NoteForm, NoteItem, ResumeUpload } from "./panels";
@@ -77,6 +79,7 @@ export default async function CandidatePage({
           questions: { where: { kind: "follow_up" }, orderBy: [{ status: "asc" }, { createdAt: "asc" }] },
           role: { include: { criteria: { where: { status: "approved" }, select: { id: true, updatedAt: true } }, questions: { where: { kind: "core", status: "approved" } } } },
           assessments: { orderBy: { createdAt: "desc" }, include: { items: true, resume: { select: { fileName: true } } } },
+          interviewKit: { include: { stages: { orderBy: { position: "asc" }, include: { assignments: { select: { id: true, interviewerId: true, interviewerName: true, status: true, submittedAt: true } } } } } },
         },
         orderBy: { createdAt: "asc" },
       },
@@ -484,6 +487,68 @@ export default async function CandidatePage({
     </div>
   );
 
+  // ---------------------------------------------------------------- tab: interviews
+  const kit = app?.interviewKit ?? null;
+  const interviewsTab = app && (
+    <div className="space-y-4">
+      {!kit ? (
+        <EmptyState
+          title="No interview plan yet"
+          body={
+            app.role.criteria.length
+              ? "Create a structured plan from this role's approved criteria: competencies, questions, a shared rubric, stages and interviewers."
+              : "Approve the role's criteria first — interview kits are built only from them."
+          }
+          action={
+            app.role.criteria.length ? (
+              <ActionButton action={createKit.bind(null, app.id)} variant="primary" size="md" pendingLabel="Drafting kit…">
+                Create interview plan
+              </ActionButton>
+            ) : undefined
+          }
+        />
+      ) : (
+        <Card className="p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">Interview plan</span>
+            <Badge tone={kit.status === "shared" ? "ok" : "neutral"}>{kit.status === "shared" ? "Shared" : "Draft"}</Badge>
+            {kit.decision && <Badge tone="ink">Team decision: {INTERVIEW_DECISION_LABEL[kit.decision as keyof typeof INTERVIEW_DECISION_LABEL]}</Badge>}
+            <span className="ml-auto flex gap-2 text-[13px]">
+              <Link href={`/interviews/${kit.id}`} className="rounded-lg border border-line-strong px-2.5 py-1 font-medium hover:bg-sunken">
+                Plan
+              </Link>
+              <Link href={`/interviews/${kit.id}/debrief`} className="rounded-lg border border-line-strong px-2.5 py-1 font-medium hover:bg-sunken">
+                Debrief
+              </Link>
+            </span>
+          </div>
+          <ul className="mt-3 space-y-1.5 text-[13px]">
+            {kit.stages.map((st) => (
+              <li key={st.id}>
+                <span className="font-medium">{st.name}</span>
+                <span className="text-muted">
+                  {" "}
+                  · {st.scheduledAt ? `${formatDateTime(st.scheduledAt)} (entered manually)` : "not scheduled"} ·{" "}
+                  {st.assignments.length
+                    ? st.assignments.map((a) => `${a.interviewerName} — ${a.status === "submitted" ? "submitted" : a.status === "draft" ? "draft" : "not started"}`).join(", ")
+                    : "no interviewers"}
+                </span>
+                {st.assignments
+                  .filter((a) => a.interviewerId === auth.userId && a.status !== "submitted" && kit.status === "shared")
+                  .map((a) => (
+                    <Link key={a.id} href={`/interviews/${kit.id}/scorecard/${a.id}`} className="ml-2 font-medium text-signal underline">
+                      Your scorecard
+                    </Link>
+                  ))}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-[12px] text-faint">Ratings and evidence stay in the plan and debrief; they don&apos;t change this candidate&apos;s assessment, shortlist decision or stage.</p>
+        </Card>
+      )}
+    </div>
+  );
+
   // ---------------------------------------------------------------- right panel: score → recommendation → decision
   const panel = app && (
     <>
@@ -773,12 +838,13 @@ export default async function CandidatePage({
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="min-w-0">
             <Tabs
-              initial={view === "outreach" ? 1 : 0}
+              initial={view === "outreach" ? 1 : view === "interviews" ? 4 : 0}
               tabs={[
                 { label: "Assessment", content: assessmentMain },
                 { label: "Outreach", content: outreach ? <OutreachPanel v={outreach} /> : null },
                 { label: "CV & profile", content: cvProfile },
                 { label: "Notes & activity", count: candidate.notes.length, content: notesHistory },
+                { label: "Interviews", content: interviewsTab },
               ]}
             />
           </div>

@@ -24,6 +24,7 @@ model Organization {
   roles         Role[]
   candidates    Candidate[]
   atsSyncRuns   AtsSyncRun[]
+  invites       Invite[]
 }
 
 model User {
@@ -41,7 +42,7 @@ model Membership {
   id        String       @id @default(cuid())
   userId    String
   orgId     String
-  role      String       @default("admin") // admin | recruiter
+  role      String       @default("admin") // admin | recruiter | hiring_manager
   createdAt DateTime     @default(now())
   user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -299,6 +300,7 @@ model Application {
   interestAt       DateTime?
   interestByName   String?
   interestNote     String?
+  interviewKit     InterviewKit?
 
   @@unique([candidateId, roleId])
   @@index([orgId, roleId])
@@ -751,4 +753,139 @@ model DiscoveryBrief {
   role                Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
+}
+
+/// Invitation to join a workspace. The link token is stored only as a SHA-256 hash.
+model Invite {
+  id            String       @id @default(cuid())
+  tokenHash     String       @unique
+  orgId         String
+  email         String
+  name          String
+  role          String // recruiter | hiring_manager | admin
+  invitedByName String
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  revokedAt     DateTime?
+  createdAt     DateTime     @default(now())
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+// ── Interviews (Phase 3, first slice): kit → stages → interviewer scorecards → debrief ──
+
+/// The interview plan for one candidate in one role. Competencies come from the role's criteria.
+model InterviewKit {
+  id                String                @id @default(cuid())
+  orgId             String
+  applicationId     String                @unique
+  roleId            String
+  candidateId       String
+  status            String                @default("draft") // draft | shared
+  generator         String                @default("recruiter") // ai:<provider>:<model>/kit-v1 | template:kit-v1 | recruiter
+  criteriaVersion   Int?
+  ownerId           String // recruiter who created it; can record the team decision
+  ownerName         String
+  hiringManagerId   String?
+  sharedAt          DateTime?
+  sharedByName      String?
+  // The team decision after the debrief — always recorded by a person, separate from scores.
+  decision          String? // advance | hold | decline
+  decisionRationale String?
+  decidedById       String?
+  decidedByName     String?
+  decidedAt         DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  application       Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  competencies      InterviewCompetency[]
+  stages            InterviewStage[]
+  comments          DebriefComment[]
+
+  @@index([orgId, roleId])
+}
+
+model InterviewCompetency {
+  id            String              @id @default(cuid())
+  kitId         String
+  criterionId   String? // null when added by a recruiter for this kit
+  name          String
+  description   String              @default("")
+  importance    String              @default("essential") // essential | preferred
+  position      Int                 @default(0)
+  anchorsJson   String              @default("{}") // { "1": "...", "2": "...", "3": "...", "4": "..." } behavioral anchors
+  origin        String              @default("criteria") // criteria | recruiter
+  anchorsOrigin String              @default("template") // ai | template | recruiter
+  kit           InterviewKit        @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  questions     InterviewQuestion[]
+
+  @@index([kitId])
+}
+
+model InterviewQuestion {
+  id           String              @id @default(cuid())
+  competencyId String
+  kitId        String
+  text         String
+  followUps    String              @default("") // optional follow-up prompts, one per line
+  guidance     String              @default("") // optional interviewer notes: what good evidence looks like
+  position     Int                 @default(0)
+  origin       String // ai | template | core_question | recruiter
+  edited       Boolean             @default(false)
+  competency   InterviewCompetency @relation(fields: [competencyId], references: [id], onDelete: Cascade)
+
+  @@index([kitId])
+}
+
+model InterviewStage {
+  id                String                @id @default(cuid())
+  kitId             String
+  name              String
+  purpose           String                @default("")
+  position          Int                   @default(0)
+  competencyIdsJson String                @default("[]")
+  // Scheduling is manual: these are what the recruiter entered. Talyn doesn't book meetings or send invites.
+  scheduledAt       DateTime?
+  durationMins      Int?
+  locationNote      String?
+  kit               InterviewKit          @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  assignments       InterviewAssignment[]
+
+  @@index([kitId])
+}
+
+/// One interviewer on one stage, and their scorecard.
+model InterviewAssignment {
+  id                String         @id @default(cuid())
+  kitId             String
+  stageId           String
+  interviewerId     String
+  interviewerName   String
+  assignedByName    String
+  status            String         @default("not_started") // not_started | draft | submitted
+  entriesJson       String         @default("[]") // [{ competencyId, rating: 1-4|null, notAssessed, evidence }]
+  questionNotesJson String         @default("{}") // { questionId: note }
+  notes             String         @default("") // role-relevant notes only
+  savedAt           DateTime?
+  submittedAt       DateTime?
+  createdAt         DateTime       @default(now())
+  stage             InterviewStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+
+  @@unique([stageId, interviewerId])
+  @@index([interviewerId, status])
+  @@index([kitId])
+}
+
+model DebriefComment {
+  id         String       @id @default(cuid())
+  kitId      String
+  authorId   String
+  authorName String
+  body       String
+  kind       String       @default("comment") // comment | decision
+  createdAt  DateTime     @default(now())
+  kit        InterviewKit @relation(fields: [kitId], references: [id], onDelete: Cascade)
+
+  @@index([kitId])
 }

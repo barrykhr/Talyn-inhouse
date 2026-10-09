@@ -56,9 +56,15 @@ export async function login(_prev: ActionState, fd: FormData): Promise<ActionSta
   }
   if (!(await verifyPassword(password, user.passwordHash))) return generic;
   const membership = user.memberships[0];
-  if (!membership) return { error: "Your account is not part of an organization." };
+  // An invite link can bring someone here before they belong to a workspace.
+  const next = str(fd, "next", 300);
+  const safeNext = /^\/invite\/[\w-]+$/.test(next) ? next : null;
+  if (!membership) {
+    if (safeNext) return { error: "Sign-in worked, but you aren't in a workspace yet. Open your invite link and create your account there." };
+    return { error: "Your account is not part of an organization." };
+  }
   await createSession(user.id, membership.orgId);
-  redirect("/roles");
+  redirect(safeNext ?? "/roles");
 }
 
 /** Second step of Google sign-up: the identity is already verified; create the workspace. */

@@ -10,6 +10,7 @@ import { CONNECTORS } from "@/lib/sourcing/connectors";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { DeleteOrg } from "./delete-org";
+import { TeamCard } from "./team";
 
 export const metadata = { title: "Settings" };
 
@@ -18,6 +19,7 @@ export default async function SettingsPage() {
   const ai = aiStatus();
   const org = await db.organization.findUniqueOrThrow({ where: { id: auth.orgId }, select: { retentionDays: true } });
   const eligible = org.retentionDays ? (await eligibleForRetention(auth.orgId, org.retentionDays)).length : null;
+  const invites = await db.invite.findMany({ where: { orgId: auth.orgId, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" } });
   const [roles, candidates, members] = await Promise.all([
     db.role.count({ where: { orgId: auth.orgId } }),
     db.candidate.count({ where: { orgId: auth.orgId } }),
@@ -34,13 +36,16 @@ export default async function SettingsPage() {
           <dd className="font-medium">{auth.orgName}</dd>
           <dt className="text-muted">Data</dt>
           <dd>{roles} roles · {candidates} candidates</dd>
-          <dt className="text-muted">Members</dt>
-          <dd className="space-y-0.5">
-            {members.map((m) => (
-              <div key={m.id}>{m.user.name} <span className="text-muted">· {m.user.email} · {m.role}</span></div>
-            ))}
-          </dd>
         </dl>
+      </Card>
+
+      <Card className="p-5">
+        <SectionTitle hint="Invite recruiters and hiring managers so they can interview and submit scorecards.">Team</SectionTitle>
+        <TeamCard
+          isAdmin={auth.membershipRole === "admin"}
+          members={members.map((m) => ({ id: m.id, name: m.user.name, email: m.user.email, role: m.role, you: m.userId === auth.userId }))}
+          invites={invites.map((i) => ({ id: i.id, name: i.name, email: i.email, role: i.role, expiresAt: i.expiresAt.toISOString(), invitedByName: i.invitedByName }))}
+        />
       </Card>
 
       <Card className="p-5">
