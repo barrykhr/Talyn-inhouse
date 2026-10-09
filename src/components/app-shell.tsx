@@ -3,7 +3,8 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { NavProgress, SlidingIndicator } from "./nav-motion";
 import { createWorkspace, switchWorkspace } from "@/server/team-actions";
 import { logout } from "@/server/auth-actions";
 import { ActionForm, FormMessage, SubmitButton, useServerForm } from "./client";
@@ -59,7 +60,8 @@ export function AppShell({
       <div className="px-3 pt-3">
         <OpenPaletteButton />
       </div>
-      <nav aria-label="Primary" className="mt-2 flex flex-col gap-0.5 px-3">
+      <nav aria-label="Primary" className="mt-2 px-3">
+        <SlidingIndicator id="primary-nav" variant="pill" className="flex flex-col gap-0.5">
         {PRIMARY.map((i) => {
           const active = path === i.href || path.startsWith(i.href + "/") || false;
           return (
@@ -68,8 +70,8 @@ export function AppShell({
               href={i.href}
               aria-current={active ? "page" : undefined}
               className={clsx(
-                "group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13.5px] font-medium transition-colors",
-                active ? "bg-brand-soft text-brand" : "text-ink-2 hover:bg-sunken hover:text-ink",
+                "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13.5px] font-medium transition-colors",
+                active ? "text-brand" : "text-ink-2 hover:bg-sunken hover:text-ink",
               )}
             >
               <NavIcon name={i.icon} />
@@ -82,6 +84,7 @@ export function AppShell({
             </Link>
           );
         })}
+        </SlidingIndicator>
       </nav>
       <div className="mt-6 px-3">
         <div className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-faint">Workspace</div>
@@ -108,6 +111,9 @@ export function AppShell({
 
   return (
     <div className="min-h-screen md:flex">
+      <Suspense fallback={null}>
+        <NavProgress />
+      </Suspense>
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:shadow">
         Skip to content
       </a>

@@ -1,5 +1,6 @@
 "use client";
 
+import { SlidingIndicator } from "./nav-motion";
 import clsx from "clsx";
 import { useId, useRef, useState, type ReactNode } from "react";
 
@@ -15,7 +16,7 @@ export function Tabs({ tabs, initial = 0 }: { tabs: { label: string; count?: num
   };
   return (
     <div>
-      <div role="tablist" className="mb-4 flex gap-1 border-b border-line">
+      <SlidingIndicator id={`tabs-${tabs.map((t) => t.label).join("|")}`} variant="underline" match='[aria-selected="true"]' role="tablist" className="mb-4 flex gap-1 border-b border-line">
         {tabs.map((t, i) => (
           <button
             key={t.label}
@@ -35,17 +36,17 @@ export function Tabs({ tabs, initial = 0 }: { tabs: { label: string; count?: num
               else if (e.key === "End") focus(tabs.length - 1);
             }}
             className={clsx(
-              "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13.5px] font-medium transition-colors",
-              active === i ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink",
+              "relative -mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13.5px] font-medium transition-colors",
+              active === i ? "text-ink" : "text-muted hover:text-ink",
             )}
           >
             {t.label}
             {t.count ? <span className="text-[12px] tabular-nums text-faint">{t.count}</span> : null}
           </button>
         ))}
-      </div>
+      </SlidingIndicator>
       {tabs.map((t, i) => (
-        <div key={t.label} role="tabpanel" id={`${id}-panel-${i}`} aria-labelledby={`${id}-tab-${i}`} hidden={active !== i} className={active === i ? "motion-fade" : undefined}>
+        <div key={t.label} role="tabpanel" id={`${id}-panel-${i}`} aria-labelledby={`${id}-tab-${i}`} hidden={active !== i} className={active === i ? "motion-enter" : undefined}>
           {t.content}
         </div>
       ))}

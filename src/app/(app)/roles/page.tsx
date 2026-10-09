@@ -59,7 +59,7 @@ export default async function RolesPage({ searchParams }: { searchParams: Promis
       ) : roles.length === 0 ? (
         <EmptyState title="No roles with this status" />
       ) : (
-        <div className="grid gap-2">
+        <div className="motion-arrive grid gap-2">
           {roles.map((r) => {
             const approved = r.criteria.filter((c) => c.status === "approved").length;
             const proposed = r.criteria.filter((c) => c.status === "proposed").length;
@@ -67,7 +67,7 @@ export default async function RolesPage({ searchParams }: { searchParams: Promis
             const fresh = r.applications.filter((a) => a.stage === "new").length;
             return (
               <Link key={r.id} href={`/roles/${r.id}`} className="group">
-                <Card className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4 transition-colors group-hover:border-line-strong">
+                <Card className="motion-lift flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4 group-hover:border-line-strong">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate text-[15px] font-semibold tracking-tight">{r.title}</span>

@@ -187,3 +187,30 @@ kbd {
 /* Login: the product line circling the logo. Stops under prefers-reduced-motion (rule above). */
 @keyframes talyn-orbit { to { transform: rotate(360deg); } }
 .motion-orbit { animation: talyn-orbit 36s linear infinite; transform-origin: 50% 50%; }
+
+/* Page change: content rises in, section by section (first six sections staggered). */
+@keyframes talyn-page {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.motion-page > * { animation: talyn-page 340ms var(--ease-out) both; }
+.motion-page > *:nth-child(2) { animation-delay: 45ms; }
+.motion-page > *:nth-child(3) { animation-delay: 90ms; }
+.motion-page > *:nth-child(4) { animation-delay: 135ms; }
+.motion-page > *:nth-child(5) { animation-delay: 180ms; }
+.motion-page > *:nth-child(n + 6) { animation-delay: 220ms; }
+
+/* Navigation progress: creeps toward the end without claiming a percentage. */
+@keyframes talyn-nav-progress {
+  0% { transform: scaleX(0); }
+  20% { transform: scaleX(0.45); }
+  100% { transform: scaleX(0.9); }
+}
+.nav-progress-loading { animation: talyn-nav-progress 8s cubic-bezier(0.1, 0.7, 0.2, 1) forwards; }
+
+/* Cards that open something lift slightly on hover. */
+.motion-lift { transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
+.group:hover .motion-lift, .motion-lift:hover { transform: translateY(-2px); box-shadow: 0 6px 18px -10px rgb(23 23 26 / 0.25); }
+@media (prefers-reduced-motion: reduce) {
+  .group:hover .motion-lift, .motion-lift:hover { transform: none; }
+}

@@ -2,6 +2,7 @@ import clsx from "clsx";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { APP_ORIGIN_LABEL } from "@/lib/domain";
+import { SlidingIndicator } from "./nav-motion";
 
 export type WorkspaceTab = "overview" | "applicants" | "discover" | "shortlist" | "interviews" | "criteria" | "description" | "ats";
 
@@ -25,7 +26,8 @@ export function RoleTabs({
   showAts?: boolean;
 }) {
   return (
-    <nav aria-label="Role workspace" className="mb-5 flex flex-wrap items-end gap-x-1 border-b border-line">
+    <nav aria-label="Role workspace" className="mb-5">
+      <SlidingIndicator id="role-tabs" variant="underline" className="flex flex-wrap items-end gap-x-1 border-b border-line">
       <Tab href={`/roles/${roleId}?tab=overview`} active={active === "overview"} label="Overview" hint="Criteria and the next work" />
       <Tab href={`/roles/${roleId}?tab=applicants`} active={active === "applicants"} label="Applicants" count={counts.applicants} hint="People who applied" icon={<InboundIcon />} />
       <Tab href={`/roles/${roleId}/discover`} active={active === "discover"} label="Discover" count={counts.discover} countLabel="to review" hint="People you find" icon={<OutboundIcon />} attention={attention.discover} />
@@ -36,6 +38,7 @@ export function RoleTabs({
       <Tab href={`/roles/${roleId}?tab=criteria`} active={active === "criteria"} label="Criteria" count={counts.criteria} attention={attention.criteria} quiet />
       <Tab href={`/roles/${roleId}?tab=description`} active={active === "description"} label="Job description" attention={attention.description} quiet />
       {showAts && <Tab href={`/roles/${roleId}/ats`} active={active === "ats"} label="ATS" quiet />}
+      </SlidingIndicator>
     </nav>
   );
 }
@@ -66,9 +69,9 @@ function Tab({
       href={href}
       aria-current={active ? "page" : undefined}
       className={clsx(
-        "-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 font-medium",
+        "relative -mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 font-medium transition-colors",
         quiet ? "text-[13px]" : "text-[14px]",
-        active ? "border-brand text-ink" : "border-transparent text-muted hover:text-ink",
+        active ? "text-ink" : "text-muted hover:text-ink",
       )}
     >
       {icon}
