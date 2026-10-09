@@ -5,6 +5,7 @@ import { RetentionForm } from "./retention";
 import { PROVIDER_LABEL, aiStatus } from "@/lib/ai";
 import { ATS_SETUP_HINT, getAtsConnector } from "@/lib/ats/connector";
 import { SENDING_SETUP_HINT, getEmailProvider } from "@/lib/outreach/provider";
+import { WHATSAPP_SETUP_HINT, whatsappConfigured } from "@/lib/outreach/whatsapp";
 import { CONNECTORS } from "@/lib/sourcing/connectors";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -92,6 +93,12 @@ export default async function SettingsPage() {
               Email sending <span className={getEmailProvider() ? "text-ok" : "text-faint"}>{getEmailProvider() ? "● Connected" : "○ Not connected"}</span>
             </dt>
             <dd className="text-muted">{getEmailProvider() ? "SMTP — sends only approved messages in sequences a recruiter activated." : SENDING_SETUP_HINT}</dd>
+          </div>
+          <div>
+            <dt className="font-medium">
+              WhatsApp <span className={whatsappConfigured() ? "text-ok" : "text-faint"}>{whatsappConfigured() ? "● Connected" : "○ Not connected"}</span>
+            </dt>
+            <dd className="text-muted">{whatsappConfigured() ? "Sends approved templates to candidates with a recorded WhatsApp opt-in." : WHATSAPP_SETUP_HINT}</dd>
           </div>
           <div>
             <dt className="font-medium">

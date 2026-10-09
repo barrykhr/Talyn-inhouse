@@ -2,23 +2,27 @@ import Link from "next/link";
 import { ActionButton } from "@/components/client";
 import { ModeBanner, OriginBadge, RoleTabs, SampleBadge } from "@/components/role-workspace";
 import { RoleStatusBadge } from "@/components/status";
+import { DiscoverJdFlow } from "@/components/upload-flows";
 import { Badge, Card, EmptyState, Notice, PageHeader, SectionTitle, formatDate } from "@/components/ui";
 import { aiStatus } from "@/lib/ai";
 import { getAtsConnector } from "@/lib/ats/connector";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { getEmailProvider } from "@/lib/outreach/provider";
+import { EMPTY_BRIEF } from "@/lib/discovery/brief";
+import { briefFields, briefProvenance } from "@/lib/discovery/store";
 import { REVIEW_STATUS_LABEL, REVIEW_STATUS_TONE, reviewStatus } from "@/lib/review-status";
 import { CONNECTORS, isLiveSourceConnected, sourceLabel } from "@/lib/sourcing/connectors";
-import { EMPTY_FILTERS, FILTER_LABEL, parseFilters, type SearchFilters } from "@/lib/sourcing/filters";
 import { clearSampleData } from "@/server/sourcing-actions";
+import { loadOutreachView } from "@/server/outreach-view";
 import { ownRole } from "@/server/scope";
-import { DiscoverSearch, ImportExportForm, type SourceOption } from "./discover-search";
+import { OutreachPanel } from "../../../candidates/[id]/outreach";
+import { DiscoverSetupForm, type SourceOption } from "./discover-setup";
 import { GenerateIcpButton, IcpApprovedView, IcpDraftEditor, type IcpView } from "./icp-editor";
+import { ImportExportForm } from "./import-export";
 import { ResultCard, type ProfileView } from "./results";
 
 export const metadata = { title: "Discover" };
-// Searches and ICP generation run as server actions on this page.
+// Searches, JD extraction and outreach drafting run as server actions on this page.
 export const maxDuration = 300;
 
 type IcpWithItems = Awaited<ReturnType<typeof loadIcps>>[number];
@@ -47,16 +51,18 @@ const VIEWS = [
   ["excluded", "Set aside by exclusions"],
 ] as const;
 
-/** Outbound workflow: people a recruiter finds for this role. Kept separate from applicants. */
-export default async function DiscoverPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ run?: string; view?: string }> }) {
+type SourceStatus = { key: string; label: string; status: "ok" | "error" | "setup_required"; count: number; error?: string };
+
+/** Outbound workflow for one role: set up the search, choose sources, review people, reach out. */
+export default async function DiscoverPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ run?: string; view?: string; outreach?: string; setup?: string }> }) {
   const auth = await requireAuth();
   const { id } = await params;
   const role = await ownRole(auth, id);
-  const { run: runParam, view: viewParam = "review" } = await searchParams;
+  const { run: runParam, view: viewParam = "review", outreach: outreachParam, setup } = await searchParams;
   const view = VIEWS.some(([k]) => k === viewParam) ? viewParam : "review";
   const ai = aiStatus();
 
-  const [criteria, icps, apps, strategies, rediscoverable] = await Promise.all([
+  const [criteria, icps, apps, strategies, rediscoverable, brief, jd] = await Promise.all([
     db.criterion.findMany({ where: { roleId: id, orgId: auth.orgId }, select: { status: true } }),
     loadIcps(auth.orgId, id),
     db.application.findMany({
@@ -67,34 +73,47 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
         originDetail: true,
         decision: true,
         stage: true,
+        interest: true,
         createdAt: true,
         candidateId: true,
-        candidate: { select: { fullName: true, currentTitle: true, currentCompany: true, isSample: true } },
+        candidate: { select: { fullName: true, currentTitle: true, currentCompany: true, isSample: true, contactOptOut: true, whatsappPermission: true } },
         assessments: { orderBy: { createdAt: "desc" }, take: 1, select: { status: true } },
+        outreach: { orderBy: { createdAt: "desc" }, take: 1, select: { status: true, channel: true } },
       },
     }),
     db.searchStrategy.findMany({ where: { orgId: auth.orgId, roleId: id }, orderBy: { version: "desc" }, take: 8, include: { runs: { orderBy: { createdAt: "desc" }, take: 5 } } }),
     db.candidate.count({ where: { orgId: auth.orgId, isSample: false, applications: { none: { roleId: id } } } }),
+    db.discoveryBrief.findUnique({ where: { roleId: id } }),
+    db.jobDescription.findFirst({ where: { roleId: id, orgId: auth.orgId, isCurrent: true }, select: { id: true, fileName: true, createdAt: true, pagesJson: true } }),
   ]);
   const approvedCriteria = criteria.filter((c) => c.status === "approved").length;
   const proposedCriteria = criteria.filter((c) => c.status === "proposed").length;
-  const draft = icps.find((i) => i.status === "draft");
+  const draftIcp = icps.find((i) => i.status === "draft");
   const approvedIcp = icps.find((i) => i.status === "approved");
 
   const allRuns = strategies.flatMap((st) => st.runs.map((r) => ({ ...r, strategyVersion: st.version }))).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-  const currentRun = allRuns.find((r) => r.id === runParam) ?? allRuns.find((r) => r.status === "completed");
+  const currentRun = allRuns.find((r) => r.id === runParam) ?? allRuns[0];
+  const runSources = currentRun ? (JSON.parse(currentRun.sourcesJson) as SourceStatus[]) : [];
   const profiles = currentRun ? await db.sourcedProfile.findMany({ where: { orgId: auth.orgId, runId: currentRun.id } }) : [];
   const toReview = await db.sourcedProfile.count({ where: { orgId: auth.orgId, roleId: id, status: "new" } });
   const appById = new Map(apps.map((a) => [a.id, a]));
-  const profileView = (p: (typeof profiles)[number]): ProfileView => ({
-    ...p,
-    sourceLabel: sourceLabel(p.source),
-    retrievedAt: p.retrievedAt.toISOString(),
-    fields: JSON.parse(p.fieldsJson),
-    signals: JSON.parse(p.signalsJson),
-    savedCandidateId: p.savedApplicationId ? (appById.get(p.savedApplicationId)?.candidateId ?? null) : null,
-  });
-  // Ordering by matched terms is a review aid, not an assessment. Limited/stale evidence is listed separately, unranked.
+  const permissionText = (a: (typeof apps)[number]) =>
+    a.candidate.isSample ? "Fictional — no one to contact" : a.candidate.contactOptOut ? "Opted out" : a.candidate.whatsappPermission === "granted" ? "WhatsApp opt-in recorded" : a.origin === "applied" ? "Applied to this role" : "Not recorded";
+  const profileView = (p: (typeof profiles)[number]): ProfileView => {
+    const app = p.savedApplicationId ? appById.get(p.savedApplicationId) : undefined;
+    return {
+      ...p,
+      sourceLabel: sourceLabel(p.source),
+      retrievedAt: p.retrievedAt.toISOString(),
+      fields: JSON.parse(p.fieldsJson),
+      signals: JSON.parse(p.signalsJson),
+      sources: JSON.parse(p.sourcesJson),
+      isDemo: p.source === "sample",
+      savedCandidateId: app?.candidateId ?? null,
+      application: app ? { interest: app.interest, permission: permissionText(app) } : null,
+    };
+  };
+  // Ordering by matched terms is a review aid, not an assessment. Limited evidence is listed separately, unranked.
   const bySignals = (a: (typeof profiles)[number], b: (typeof profiles)[number]) => b.matchedSignals - a.matchedSignals || a.displayName.localeCompare(b.displayName);
   const groups: Record<string, typeof profiles> = {
     review: profiles.filter((p) => p.status === "new" && p.evidenceStatus === "ok").sort(bySignals),
@@ -104,48 +123,43 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
     excluded: profiles.filter((p) => p.status === "excluded"),
   };
 
-  // Prefill: last search → approved Ideal Candidate Profile → the role itself.
-  const latest = strategies[0];
-  let initial: SearchFilters = { ...EMPTY_FILTERS, titles: [role.title], locations: role.location ? [role.location] : [] };
-  let initialFrom = "Prefilled from the role title and location — edit before searching.";
-  if (latest) {
-    initial = parseFilters(latest.filtersJson);
-    initialFrom = `Prefilled from your last search (v${latest.version}).`;
-  } else if (approvedIcp) {
-    const pick = (...cats: string[]) => approvedIcp.items.filter((i) => i.status === "approved" && cats.includes(i.category)).map((i) => i.value);
-    initial = { ...EMPTY_FILTERS, titles: pick("target_title"), adjacent_titles: pick("adjacent_title"), skills_required: pick("skill_essential"), skills_preferred: pick("skill_preferred"), locations: pick("location"), seniority: pick("seniority") };
-    initialFrom = `Prefilled from the approved Ideal Candidate Profile (v${approvedIcp.version}).`;
-  }
-
+  const fields = brief ? briefFields(brief) : { ...EMPTY_BRIEF, roleName: role.title.startsWith("Untitled role") ? "" : role.title, location: role.location || null };
   const live = isLiveSourceConnected();
   const sources: SourceOption[] = CONNECTORS.map((c) => ({
     key: c.key,
     label: c.label,
     kind: c.kind,
-    available: c.configured(),
+    configured: c.configured(),
     note:
       c.kind === "internal"
         ? `${rediscoverable} existing Talyn candidate${rediscoverable === 1 ? "" : "s"} not in this role`
         : c.kind === "external"
           ? c.configured()
             ? "Licensed provider · live search"
-            : "Not connected — Settings → Integrations"
-          : c.configured()
-            ? "Fictional profiles · not a live search"
-            : "Off — a live source is connected",
+            : "Add the provider's credentials to search it"
+          : "Fictional people · not a live search",
   }));
-  const defaultSource = live ? "external" : rediscoverable > 0 ? "talyn" : "sample";
   const discovered = apps.filter((a) => a.origin === "discovered");
   const sampleCount = apps.filter((a) => a.candidate.isSample).length;
-  const isSampleRun = currentRun?.source === "sample";
+  const outreachApp = outreachParam ? appById.get(outreachParam) : undefined;
+  const outreach = outreachApp ? await loadOutreachView(auth, outreachApp.id) : null;
+  const runQs = currentRun ? `run=${currentRun.id}&` : "";
+  const outreachHref = (appId: string | null) => (appId ? `/roles/${role.id}/discover?${runQs}view=${view}&outreach=${appId}#outreach` : null);
+  const extractorLabel = brief?.extractor ? (brief.extractor.startsWith("ai:") ? `AI (${brief.extractor.split(":")[2]?.split("/")[0]})` : "basic parser (no AI)") : null;
 
   return (
     <>
       <PageHeader
         eyebrow={
-          <Link href="/roles" className="hover:text-ink">
-            Roles
-          </Link>
+          <>
+            <Link href="/discover" className="hover:text-ink">
+              Discover
+            </Link>{" "}
+            /{" "}
+            <Link href="/roles" className="hover:text-ink">
+              Roles
+            </Link>
+          </>
         }
         title={
           <span className="flex flex-wrap items-center gap-2">
@@ -168,47 +182,123 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
       />
 
       <ModeBanner mode="discover">
-        People you find for this role. They haven&apos;t applied, and their interest or availability isn&apos;t known. Saving someone marks them Discovered and adds them to the Shortlist — never to
-        Applicants.
+        People you find for this role. They haven&apos;t applied, and their interest isn&apos;t known. Saving someone marks them Discovered; nothing is sent or decided automatically.
       </ModeBanner>
 
       {!live && (
         <Notice tone="signal" className="mb-4">
-          <strong>No live talent source is connected.</strong> Search your existing Talyn candidates (<em>Talyn rediscovery</em>) or <em>sample data</em> — fictional people for exploring this
-          workflow, not live search results.{" "}
+          <strong>No external talent provider is connected.</strong> Live searches cover your existing Talyn candidates. Use <em>Demo mode</em> to try the workflow with fictional people — demo results
+          are never shown as live.{" "}
           <Link href="/settings/integrations" className="font-medium underline">
-            Connect a source
+            Connect a provider
           </Link>
         </Notice>
       )}
 
-      <section className="mb-8" aria-labelledby="search-h">
-        <SectionTitle hint="Each search is saved as a version so you can see what ran and re-run it.">
-          <span id="search-h">Search</span>
+      <section id="setup" className="mb-8 scroll-mt-6" aria-labelledby="setup-h">
+        <SectionTitle
+          hint={
+            brief?.confirmedAt
+              ? `Confirmed ${formatDate(brief.confirmedAt)}${brief.confirmedByName ? ` by ${brief.confirmedByName}` : ""}${extractorLabel ? ` · suggested from the JD by ${extractorLabel}` : ""}`
+              : brief
+                ? `Suggested from the JD by ${extractorLabel ?? "Talyn"} — review every field, then save or search`
+                : "Upload a job description to suggest these fields, or fill them in yourself."
+          }
+        >
+          <span id="setup-h">Search setup</span>
         </SectionTitle>
-        <DiscoverSearch roleId={role.id} initial={initial} initialFrom={initialFrom} sources={sources} defaultSource={defaultSource} canPlanFromProfile={!!approvedIcp} />
+        {setup === "jd" && brief && !brief.confirmedAt && (
+          <Notice tone="ok" className="mb-3">
+            Fields suggested from the JD. Green labels quote the JD; amber ones are suggestions to check; grey ones weren&apos;t stated and are left empty.
+          </Notice>
+        )}
+
+        <Card className="mb-3 p-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
+            <span className="font-medium">Job description</span>
+            {jd ? (
+              <>
+                <a href={`/api/jds/${jd.id}`} target="_blank" rel="noopener" className="underline-offset-2 hover:underline">
+                  {jd.fileName}
+                </a>
+                <span className="text-faint">uploaded {formatDate(jd.createdAt)}</span>
+              </>
+            ) : (
+              <span className="text-muted">None uploaded</span>
+            )}
+          </div>
+          {jd && (
+            <details className="mt-2 text-[12.5px]">
+              <summary className="cursor-pointer text-muted hover:text-ink">Review the JD text</summary>
+              <div className="mt-2 max-h-80 overflow-y-auto whitespace-pre-wrap rounded-md bg-sunken/60 p-3 leading-relaxed text-ink-2">{(JSON.parse(jd.pagesJson) as string[]).join("\n\n")}</div>
+            </details>
+          )}
+          <details className="mt-2 text-[12.5px]" open={!jd && !brief}>
+            <summary className="cursor-pointer font-medium text-ink-2">{jd ? "Replace the JD" : "Upload a JD to suggest the fields"}</summary>
+            <div className="mt-3">
+              <DiscoverJdFlow roleId={role.id} compact />
+              {jd && <p className="mt-2 text-[12px] text-muted">Fields you edited are kept; the others are re-suggested from the new JD for you to review.</p>}
+            </div>
+          </details>
+        </Card>
+
+        <Card className="p-4 sm:p-5">
+          <DiscoverSetupForm
+            key={brief?.updatedAt.toISOString() ?? "new"}
+            roleId={role.id}
+            fields={fields}
+            provenance={brief ? briefProvenance(brief) : {}}
+            booleanQuery={brief?.booleanQuery}
+            booleanEdited={brief?.booleanEdited ?? false}
+            booleanKey={brief?.booleanFieldsKey ?? null}
+            sources={sources}
+            confirmed={!!brief?.confirmedAt}
+          />
+        </Card>
       </section>
 
       <section id="results" className="mb-8 scroll-mt-6" aria-labelledby="results-h">
         <SectionTitle
           hint={
             currentRun
-              ? `Search v${currentRun.strategyVersion} · ${sourceLabel(currentRun.source)} · ${currentRun.createdAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}${currentRun.createdByName ? ` · ${currentRun.createdByName}` : ""}`
+              ? `Search v${currentRun.strategyVersion} · ${currentRun.createdAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}${currentRun.createdByName ? ` · ${currentRun.createdByName}` : ""}`
               : undefined
           }
         >
-          <span id="results-h">Results</span>
+          <span id="results-h" className="flex flex-wrap items-center gap-2">
+            Results
+            {currentRun && (currentRun.isDemo ? <Badge tone="warn">Demo — sample data</Badge> : <Badge tone="ok">Live search</Badge>)}
+          </span>
         </SectionTitle>
         {!currentRun ? (
-          <EmptyState title="No search yet" body="Enter a query or filters above and press Search. Results appear here as cards with the evidence behind each match." />
+          <EmptyState title="No search yet" body="Confirm the fields above, choose sources and search. Each person appears with the evidence and source behind the match." />
         ) : (
           <>
-            {isSampleRun && (
-              <Notice tone="warn" className="mb-3">
-                <strong>Sample results.</strong> These are fictional people from Talyn&apos;s example list, matched against your terms. They are not live search results and can&apos;t be contacted.
+            {runSources.length > 0 && (
+              <ul className="mb-3 flex flex-wrap gap-2 text-[12.5px]" aria-label="Sources searched">
+                {runSources.map((s) => (
+                  <li
+                    key={s.key}
+                    className={
+                      s.status === "ok" ? "rounded-md bg-ok-soft px-2 py-0.5 text-ok" : s.status === "error" ? "rounded-md bg-danger-soft px-2 py-0.5 text-danger" : "rounded-md bg-sunken px-2 py-0.5 text-muted"
+                    }
+                  >
+                    {s.label}: {s.status === "ok" ? `${s.count} found` : s.status === "error" ? `failed — ${s.error}` : "not connected"}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {runSources.some((s) => s.status === "error") && (
+              <Notice tone="danger" className="mb-3">
+                {runSources.filter((s) => s.status === "error").map((s) => s.label).join(", ")} returned an error, so no results from {runSources.filter((s) => s.status === "error").length > 1 ? "them" : "it"} are shown.
+                Nothing was substituted. Try again later, or check the connection in Settings → Integrations.
               </Notice>
             )}
-            {currentRun.status === "failed" && <Notice tone="danger" className="mb-3">This search failed. Run it again, or choose another source.</Notice>}
+            {currentRun.isDemo && (
+              <Notice tone="warn" className="mb-3">
+                <strong>Demo results.</strong> Fictional people from Talyn&apos;s sample list, matched against your fields. Not a live search; they can&apos;t be contacted.
+              </Notice>
+            )}
             <nav className="mb-3 flex flex-wrap gap-1 text-[13px]" aria-label="Result filters">
               {VIEWS.map(([k, label]) => (
                 <Link
@@ -224,23 +314,25 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
             <p className="mb-2 text-[12px] text-faint">
               {view === "limited"
                 ? "Little profile text, no date, or an old profile: listed unranked rather than forcing an order."
-                : "Ordered by how many of your search terms were found with a quote — a review aid, not an assessment or a score."}
+                : "Ordered by how many search terms were found with a quote — a review aid, not a score. People found in several sources are merged into one card."}
             </p>
             {groups[view].length ? (
               <Card className="divide-y divide-line overflow-hidden">
                 {groups[view].map((p) => (
-                  <ResultCard key={p.id} p={profileView(p)} emailProviderConnected={!!getEmailProvider()} />
+                  <ResultCard key={p.id} p={profileView(p)} outreachHref={outreachHref(p.savedApplicationId)} />
                 ))}
               </Card>
             ) : (
               <EmptyState
-                title={view === "review" ? "Nothing left to review in this search" : "Nothing here"}
+                title={currentRun.status === "failed" ? "No results — every source failed" : view === "review" ? "Nothing left to review in this search" : "Nothing here"}
                 body={
-                  view === "review" && currentRun.resultCount === 0
-                    ? isSampleRun
-                      ? "None of the sample profiles match these terms. Sample data covers a small set of fictional engineering, data, design, product, recruiting, sales, finance and HR profiles — try broader terms."
-                      : "No profiles matched. Try broader titles, fewer required skills, or another source."
-                    : undefined
+                  currentRun.status === "failed"
+                    ? "See the source errors above. No sample or cached data is shown in place of a failed live search."
+                    : view === "review" && currentRun.resultCount === 0
+                      ? currentRun.isDemo
+                        ? "None of the sample people match these fields. The sample list covers a small set of fictional engineering, data, design, product, recruiting, sales, finance and HR profiles."
+                        : "No one matched. Try fewer required skills, more alternative titles, or another source."
+                      : undefined
                 }
               />
             )}
@@ -248,8 +340,28 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
         )}
       </section>
 
+      {outreachParam && (
+        <section id="outreach" className="mb-8 scroll-mt-6" aria-labelledby="outreach-h">
+          <SectionTitle
+            hint="Draft, review and approve. Nothing is sent until you activate, and follow-ups stop on a reply, decline, opt-out or pause."
+            action={
+              <Link href={`/roles/${role.id}/discover?${runQs}view=${view}#results`} className="text-[13px] text-muted underline hover:text-ink">
+                Close
+              </Link>
+            }
+          >
+            <span id="outreach-h">Outreach — {outreach?.candidateName ?? "not found"}</span>
+          </SectionTitle>
+          {outreach ? (
+            <OutreachPanel v={outreach} />
+          ) : (
+            <EmptyState title="Candidate not found in this role" body="Save the person to the role first, then open outreach from their card." />
+          )}
+        </section>
+      )}
+
       <section className="mb-8" aria-labelledby="saved-h">
-        <SectionTitle hint="People saved from Discover for this role. Open one for the shared candidate view; your decision there is separate from how they were found.">
+        <SectionTitle hint="People saved from Discover. Role fit, expressed interest and contact permission are tracked separately.">
           <span id="saved-h">Saved from Discover</span>
         </SectionTitle>
         {discovered.length === 0 ? (
@@ -258,6 +370,7 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
           <Card className="divide-y divide-line overflow-hidden">
             {discovered.map((a) => {
               const st = reviewStatus(a);
+              const seq = a.outreach[0];
               return (
                 <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                   <div className="min-w-0">
@@ -269,10 +382,17 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
                       {a.candidate.isSample && <SampleBadge />}
                     </div>
                     <div className="text-[12px] text-muted">
-                      {[a.candidate.currentTitle, a.candidate.currentCompany].filter(Boolean).join(" · ") || "No current role on record"} · saved {formatDate(a.createdAt)}
+                      {[a.candidate.currentTitle, a.candidate.currentCompany].filter(Boolean).join(" · ") || "No current role on record"} · saved {formatDate(a.createdAt)} · interest:{" "}
+                      {a.interest.replace("_", " ")} · permission: {permissionText(a).toLowerCase()}
+                      {seq ? ` · ${seq.channel === "whatsapp" ? "WhatsApp" : "email"} outreach ${seq.status}` : ""}
                     </div>
                   </div>
-                  <Badge tone={REVIEW_STATUS_TONE[st]}>{REVIEW_STATUS_LABEL[st]}</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge tone={REVIEW_STATUS_TONE[st]}>{REVIEW_STATUS_LABEL[st]}</Badge>
+                    <Link href={outreachHref(a.id)!} className="rounded-lg border border-line-strong px-2.5 py-1 text-[12.5px] font-medium hover:bg-sunken">
+                      Outreach
+                    </Link>
+                  </div>
                 </div>
               );
             })}
@@ -284,35 +404,23 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
         <details className="mb-6 rounded-xl border border-line bg-surface p-4 text-[13px]">
           <summary className="cursor-pointer font-medium">Search history ({allRuns.length})</summary>
           <ul className="mt-2 space-y-1">
-            {strategies.map((st) =>
-              st.runs.map((r) => {
-                const f = parseFilters(st.filtersJson);
-                return (
-                  <li key={r.id} className="flex flex-wrap gap-x-2">
-                    <Link href={`/roles/${role.id}/discover?run=${r.id}#results`} className={r.id === currentRun?.id ? "font-medium text-ink" : "text-muted hover:text-ink"}>
-                      v{st.version} · {r.createdAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {sourceLabel(r.source)}
-                    </Link>
-                    <span className="text-faint">
-                      {r.status === "completed" ? `${r.resultCount} results${r.excludedCount ? ` · ${r.excludedCount} set aside` : ""}` : r.status === "setup_required" ? "source not connected" : "failed"}
-                    </span>
-                    <span className="truncate text-faint">
-                      ·{" "}
-                      {(Object.keys(FILTER_LABEL) as (keyof SearchFilters)[])
-                        .filter((k) => f[k].length)
-                        .map((k) => `${FILTER_LABEL[k]}: ${f[k].join(", ")}`)
-                        .join(" · ")}
-                    </span>
-                  </li>
-                );
-              }),
-            )}
+            {allRuns.map((r) => (
+              <li key={r.id} className="flex flex-wrap gap-x-2">
+                <Link href={`/roles/${role.id}/discover?run=${r.id}#results`} className={r.id === currentRun?.id ? "font-medium text-ink" : "text-muted hover:text-ink"}>
+                  v{r.strategyVersion} · {r.createdAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {r.source.split("+").map(sourceLabel).join(", ")}
+                </Link>
+                {r.isDemo && <Badge tone="warn">Demo</Badge>}
+                <span className="text-faint">{r.status === "completed" ? `${r.resultCount} people${r.excludedCount ? ` · ${r.excludedCount} set aside` : ""}` : r.status === "setup_required" ? "source not connected" : "failed"}</span>
+                {r.query && <code className="truncate font-mono text-[11.5px] text-faint">{r.query}</code>}
+              </li>
+            ))}
           </ul>
         </details>
       )}
 
-      <details className="mb-6 rounded-xl border border-line bg-surface p-4 text-[13px]" open={!!draft}>
-        <summary className="cursor-pointer font-medium">Ideal Candidate Profile {approvedIcp ? `· v${approvedIcp.version} approved` : draft ? "· draft to review" : "· optional"}</summary>
-        <p className="mt-1 text-[12.5px] text-muted">Who to look for, built from the approved criteria and JD. Once approved, use “Fill from Ideal Candidate Profile” in the search form.</p>
+      <details className="mb-6 rounded-xl border border-line bg-surface p-4 text-[13px]" open={!!draftIcp}>
+        <summary className="cursor-pointer font-medium">Ideal Candidate Profile {approvedIcp ? `· v${approvedIcp.version} approved` : draftIcp ? "· draft to review" : "· optional"}</summary>
+        <p className="mt-1 text-[12.5px] text-muted">Who to look for, built from the approved criteria and JD. Optional — Discover searches use the setup fields above.</p>
         <div className="mt-3">
           {approvedCriteria === 0 ? (
             <p className="text-muted">
@@ -322,15 +430,15 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
               </Link>
               .
             </p>
-          ) : draft ? (
+          ) : draftIcp ? (
             <>
               <div className="mb-3 flex items-center gap-3 text-[12.5px] text-muted">
-                <span>Draft v{draft.version}</span>
+                <span>Draft v{draftIcp.version}</span>
                 <span className="ml-auto">
                   <GenerateIcpButton roleId={role.id} aiConfigured={ai.configured} label="Regenerate draft" />
                 </span>
               </div>
-              <IcpDraftEditor icp={toView(draft)} roleCriteriaVersion={role.criteriaVersion} />
+              <IcpDraftEditor icp={toView(draftIcp)} roleCriteriaVersion={role.criteriaVersion} />
             </>
           ) : approvedIcp ? (
             <>
@@ -345,11 +453,11 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
         </div>
       </details>
 
-      {latest && (
+      {strategies[0] && (
         <details className="mb-6 rounded-xl border border-line bg-surface p-4 text-[13px]">
           <summary className="cursor-pointer font-medium">Import an authorized export</summary>
           <div className="mt-3">
-            <ImportExportForm strategyId={latest.id} version={latest.version} />
+            <ImportExportForm strategyId={strategies[0].id} version={strategies[0].version} />
           </div>
         </details>
       )}

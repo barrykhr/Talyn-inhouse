@@ -195,6 +195,29 @@ predictive validity.
 - Not built (out of scope): Signals, monitoring, availability or "ready to switch" predictions,
   and new automated outreach.
 
+## Discover workflow
+
+- `DiscoveryBrief` (one per role): role name, alternative titles, required/preferred skills,
+  min/max years, location, work arrangement, exclusions, Boolean query (+ `booleanEdited`,
+  `booleanFieldsKey` to flag a stale hand-edited query) and per-field provenance
+  (`from_jd` with verified quote / `inferred` / `not_stated` / `edited` / `manual`). Suggested by
+  `src/lib/discovery/extract.ts` (AI with quote verification, or a no-AI parser); Boolean built by
+  the pure `buildBoolean` in `src/lib/discovery/brief.ts` (also used live in the browser).
+- `saveBriefAndSearch` saves the reviewed fields, creates a `SearchStrategy` version and runs each
+  selected connector independently. Results are merged across sources (`src/lib/sourcing/merge.ts`,
+  strong identifiers or name+company only) into `SourcedProfile` rows with `sourcesJson` (every
+  source link + retrieval date). `SearchRun.sourcesJson` records per-source ok/error/setup status;
+  `isDemo` marks sample-data runs. Failed sources are reported, never back-filled.
+- Experience is evidence, not a filter: `experienceSignal` uses dated experience entries or a
+  stated "N years of experience"; otherwise "not established".
+- Outreach: `OutreachSequence.channel` (email | whatsapp). `draftSequence` drafts a first message
+  + 2–3 follow-ups from `personalizationFacts` (recruiter-confirmed facts and the quoted Discover
+  evidence). `activateSequence` is the send approval and is gated per channel; with a provider
+  connected the first message is sent immediately (`sendDueMessages`), follow-ups by the cron.
+  `Candidate.whatsappPermission*` is a recorded, channel-specific opt-in; `Application.interest*`
+  is what the candidate said (recruiter-recorded or "declined" from an outcome) — kept apart from
+  role fit. Replies (webhooks or recruiter), declines, opt-outs and pauses stop follow-ups.
+
 ## Extensibility (later phases, not implemented)
 
 - Interview recording/intelligence, a hiring-manager portal and advanced analytics are out of

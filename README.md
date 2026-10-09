@@ -118,7 +118,7 @@ No output is ever presented as coming from a model unless it did.
 ## Keyboard
 
 - **⌘K / Ctrl+K** — search roles and candidates, or jump anywhere
-- **G then R / G then C** — go to roles / candidates
+- **G then R / G then C / G then D / G then Q** — go to roles / candidates / Discover / queue
 - Tabs support arrow keys; dialogs close with **Esc**
 
 ## Manual walkthrough
@@ -164,6 +164,39 @@ No output is ever presented as coming from a model unless it did.
 9. **Role → Export CSV** includes stage, decision, criteria version, score, coverage, AI
    recommendation, its review status and the final recommendation.
 
+## Discover (outbound sourcing)
+
+**Discover** in the left navigation lists every role's search, the sources this workspace can
+use, and **New search**.
+
+1. **Set up** — upload a JD (PDF/DOCX) or enter the role details. From a JD, Talyn suggests the
+   role name, required and preferred skills, minimum/maximum years, location, work arrangement,
+   alternative titles and a Boolean query. Each field is labeled *From JD* (with the quote),
+   *Suggested — not found word-for-word*, *Not stated in the JD* (left empty, never guessed) or
+   *Edited by you*. The JD stays viewable and replaceable; replacing it re-suggests only the fields
+   you haven't edited.
+2. **Boolean query** — generated live from the fields (titles OR-ed; required skills and location
+   AND-ed; exclusions NOT-ed). Edit it freely; after you edit it, Talyn flags when the fields change
+   and offers **Regenerate from fields**. Preferred skills and years are shown as evidence, never
+   used to hide people.
+3. **Sources** — tick any connected sources (*Talyn rediscovery* is always available; an external
+   provider once its credentials are set). **Demo mode** is a separate choice that searches
+   fictional sample people; demo runs and cards are labeled everywhere and can't be contacted.
+   Each source runs independently: a failing provider is reported with its error and nothing is
+   substituted.
+4. **Results** — one card per person (merged across sources by Talyn record, email, LinkedIn URL
+   or name + company — never name alone), with every source link and retrieval date, a plain
+   "why they appeared", skills backed by quotes, and what's uncertain or unavailable. *Role fit
+   evidence*, *Expressed interest* and *Permission to contact* are separate fields. **Open
+   evidence**, **Save to role**, **Dismiss**.
+5. **Outreach** — after saving, open **Outreach**: choose email or WhatsApp (availability depends
+   on contact details, recorded permission and connected providers), draft a first message plus
+   2–3 follow-ups with editable delays (AI when configured, from the role and the evidence shown
+   only), then edit, regenerate, preview, approve, activate, pause or cancel. Nothing is sent until
+   you activate. WhatsApp needs a recorded opt-in and a connected WhatsApp provider; follow-ups
+   stop on a reply, decline, opt-out or pause. Expressed interest is only what the candidate told
+   you — never inferred.
+
 ## Role workspace: Applicants · Discover · Shortlist
 
 Each role has three people tabs, kept deliberately separate:
@@ -173,12 +206,7 @@ Each role has three people tabs, kept deliberately separate:
   filters; Board and Ranked views. Each row shows evidence *found / uncertain / missing* from the
   latest assessment (not a score) and **Shortlist · Hold · Reject**. Reject asks for a job-related
   reason. None of these moves the pipeline stage, and none is ever chosen by AI.
-- **Discover** (outbound) — people a recruiter finds. Enter a query plus skills, location,
-  seniority, titles and adjacent titles; pick a source; results are cards with matched quotes,
-  source name and link, date found, and what is *not established by the source*. **View
-  evidence**, **Save to role** (marks the person *Discovered* and adds them to the Shortlist —
-  never to Applicants), **Dismiss**, and **Draft message** (email or WhatsApp text from matched
-  evidence; draft only, nothing is sent from Discover).
+- **Discover** (outbound) — people a recruiter finds; see *Discover* below.
 - **Shortlist** — everyone the recruiter wants to progress, from both workflows, each labeled
   *Applied* or *Discovered*.
 

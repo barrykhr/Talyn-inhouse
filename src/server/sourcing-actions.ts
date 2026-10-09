@@ -2,15 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { AiRequestError, AiUnavailableError, OUTREACH_ENGINE_VERSION, SEARCH_ENGINE_VERSION, aiStatus, draftOutreachWithAi, planSearchWithAi, type SearchPlan } from "@/lib/ai";
-import { EMPLOYMENT_TYPE_LABEL, type EmploymentType } from "@/lib/domain";
-import { OPT_OUT_FOOTER } from "@/lib/outreach/facts";
+import { AiRequestError, AiUnavailableError, SEARCH_ENGINE_VERSION, aiStatus, planSearchWithAi, type SearchPlan } from "@/lib/ai";
 import { audit } from "@/lib/audit";
 import { requireAuth, type AuthContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logError } from "@/lib/log";
 import Papa from "papaparse";
-import { ExternalRecord, connector, profileFromRecord, sourceLabel, type SearchOutcome } from "@/lib/sourcing/connectors";
+import { ExternalRecord, profileFromRecord, sourceLabel, type SearchOutcome } from "@/lib/sourcing/connectors";
 import { EMPTY_FILTERS, parseFilters, parseList, toBoolean, type SearchFilters } from "@/lib/sourcing/filters";
 import { str, type ActionState } from "./form";
 import { attach } from "./pipeline";
@@ -286,112 +284,6 @@ export async function saveProfileToRole(profileId: string): Promise<ActionState>
     ok: true,
     message: alreadyApplicant ? "This person already applied to this role — they stay in Applicants with their application." : "Saved as Discovered and added to the Shortlist. Nothing was assessed or sent.",
   };
-}
-
-/**
- * Discover search: the recruiter's query and filters are saved as a new search version and run
- * on the chosen source. Sample data is labeled as such; nothing runs on a source that isn't connected.
- */
-export async function discoverSearch(roleId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
-  const auth = await requireAuth();
-  const role = await ownRole(auth, roleId);
-  const filters = FilterSchema.parse({
-    ...EMPTY_FILTERS,
-    keywords: parseList(str(fd, "q", 1000)),
-    titles: parseList(str(fd, "f_titles", 3000)),
-    adjacent_titles: parseList(str(fd, "f_adjacent_titles", 3000)),
-    skills_required: parseList(str(fd, "f_skills_required", 3000)),
-    skills_preferred: parseList(str(fd, "f_skills_preferred", 3000)),
-    locations: parseList(str(fd, "f_locations", 1000)),
-    seniority: parseList(str(fd, "f_seniority", 500)),
-    exclusions: parseList(str(fd, "f_exclusions", 1000)),
-  });
-  if (!filters.keywords.length && !filters.titles.length && !filters.adjacent_titles.length && !filters.skills_required.length)
-    return { error: "Add a search query, a job title or a required skill." };
-  const src = connector(str(fd, "source", 40));
-  if (!src) return { error: "Choose a source." };
-  if (!src.configured()) return { error: `${src.label} isn't connected. ${src.setupHint}` };
-  const icp = await approvedIcp(auth.orgId, roleId);
-  const last = await db.searchStrategy.findFirst({ where: { roleId }, orderBy: { version: "desc" } });
-  const strategy = await db.searchStrategy.create({
-    data: {
-      orgId: auth.orgId,
-      roleId,
-      icpId: icp?.id ?? null,
-      icpVersion: icp?.version ?? null,
-      version: (last?.version ?? 0) + 1,
-      request: str(fd, "q", 1000),
-      filtersJson: JSON.stringify(filters),
-      booleanQuery: toBoolean(filters),
-      generator: str(fd, "generator", 200) || "recruiter",
-      createdByName: auth.userName,
-    },
-  });
-  try {
-    const out = await src.search({ orgId: auth.orgId, roleId, filters, booleanQuery: strategy.booleanQuery });
-    const { run, excluded } = await storeRun(auth, strategy, src.key, out);
-    await audit(auth, "discover.searched", { subjectType: "sourcing", subjectId: run.id, roleId, meta: { source: src.key, version: strategy.version, results: run.resultCount, excluded } });
-    return { ok: true, redirectTo: `/roles/${role.id}/discover?run=${run.id}#results` };
-  } catch (err) {
-    logError("discover.search_failed", err, { source: src.key });
-    await db.searchRun.create({ data: { orgId: auth.orgId, roleId, strategyId: strategy.id, source: src.key, status: "failed", error: "The search failed.", createdByName: auth.userName } });
-    revalidatePath(`/roles/${roleId}/discover`);
-    return { error: `${src.label} didn't respond as expected. Your query was saved as search v${strategy.version} — try again.` };
-  }
-}
-
-export type MessageDraft = { channel: "email" | "whatsapp"; subject: string | null; body: string; facts: { label: string; value: string; source: string }[]; generator: string; error?: string };
-
-/**
- * Drafts a first message for a Discover result, from matched role evidence only. Returns text for
- * the recruiter to edit and copy — nothing is saved or sent, and no contact details are used or guessed.
- */
-export async function draftDiscoverMessage(profileId: string, channel: "email" | "whatsapp"): Promise<MessageDraft> {
-  const auth = await requireAuth();
-  const p = await ownProfile(auth.orgId, profileId);
-  const ch = channel === "whatsapp" ? "whatsapp" : "email";
-  if (!p) return { channel: ch, subject: null, body: "", facts: [], generator: "", error: "Profile not found." };
-  const role = await db.role.findFirstOrThrow({ where: { id: p.roleId, orgId: auth.orgId } });
-  const signals = (JSON.parse(p.signalsJson) as { category: string; term: string; matched: boolean; quote: string | null }[]).filter((s) => s.matched && s.quote);
-  const label = sourceLabel(p.source);
-  const facts = [
-    ...(p.currentTitle ? [{ key: "current_title", label: "Current title", value: p.currentTitle, source: label }] : []),
-    ...signals.slice(0, 4).map((s, i) => ({ key: `evidence_${i + 1}`, label: `Mentions ${s.term}`, value: s.quote!, source: label })),
-  ];
-  const firstName = p.displayName.split(/\s+/)[0];
-  const evidenceTerms = signals.slice(0, 2).map((s) => s.term);
-  const org = await db.organization.findUniqueOrThrow({ where: { id: auth.orgId }, select: { name: true } });
-  let subject: string | null = ch === "email" ? `${role.title} at ${org.name}` : null;
-  let body: string;
-  let generator = "template:discover-v1";
-  const ai = aiStatus();
-  if (ai.configured && ch === "email") {
-    try {
-      const d = await draftOutreachWithAi({
-        company: org.name,
-        role: { title: role.title, location: role.location, employmentType: EMPLOYMENT_TYPE_LABEL[role.employmentType as EmploymentType] ?? role.employmentType, highlights: [] },
-        facts: facts.map((f) => ({ key: f.key, label: f.label, value: f.value })),
-        step: 1,
-        previous: null,
-        senderName: auth.userName,
-      });
-      subject = d.subject;
-      body = `${d.body}${OPT_OUT_FOOTER}`;
-      generator = `ai:${ai.provider}:${ai.model}/${OUTREACH_ENGINE_VERSION}`;
-    } catch (err) {
-      if (!(err instanceof AiUnavailableError || err instanceof AiRequestError)) logError("discover.draft_failed", err);
-      body = "";
-    }
-  } else body = "";
-  if (!body) {
-    const why = evidenceTerms.length ? ` Your profile mentions ${evidenceTerms.join(" and ")}, which are relevant to this role.` : "";
-    body =
-      ch === "whatsapp"
-        ? `Hi ${firstName}, I'm ${auth.userName}, a recruiter at ${org.name}. We're hiring a ${role.title}${role.location ? ` (${role.location})` : ""}.${why} Would you be open to a short chat? If not, no problem — just let me know and I won't message again.`
-        : `Hi ${firstName},\n\nI'm ${auth.userName}, a recruiter at ${org.name}. We're hiring a ${role.title}${role.location ? ` in ${role.location}` : ""}.${why}\n\nWould you be open to a short conversation about it?\n\nBest,\n${auth.userName}${OPT_OUT_FOOTER}`;
-  }
-  await audit(auth, "discover.draft", { subjectType: "sourcing", subjectId: profileId, roleId: p.roleId, meta: { channel: ch, generator: generator.split(":")[0] } });
-  return { channel: ch, subject, body, facts: facts.map(({ label, value, source }) => ({ label, value, source })), generator };
 }
 
 /** Removes every fictional sample candidate (and their pipeline records) from this workspace. */

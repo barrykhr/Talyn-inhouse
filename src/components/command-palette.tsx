@@ -9,6 +9,7 @@ type Item = { key: string; label: string; hint: string; href: string; group: str
 
 const COMMANDS: Item[] = [
   { key: "c-queue", label: "Go to queue", hint: "G then Q", href: "/queue", group: "Go to" },
+  { key: "c-discover", label: "Go to Discover", hint: "G then D", href: "/discover", group: "Go to" },
   { key: "c-roles", label: "Go to roles", hint: "G then R", href: "/roles", group: "Go to" },
   { key: "c-cands", label: "Go to candidates", hint: "G then C", href: "/candidates", group: "Go to" },
   { key: "c-newrole", label: "New role from a job description", hint: "", href: "/roles/new", group: "Create" },
@@ -53,9 +54,9 @@ export function CommandPalette() {
       }
       if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey || dialog.current?.open) return;
       if (e.key === "g") g = Date.now();
-      else if (Date.now() - g < 900 && (e.key === "r" || e.key === "c" || e.key === "q")) {
+      else if (Date.now() - g < 900 && (e.key === "r" || e.key === "c" || e.key === "q" || e.key === "d")) {
         g = 0;
-        router.push(e.key === "r" ? "/roles" : e.key === "c" ? "/candidates" : "/queue");
+        router.push(e.key === "r" ? "/roles" : e.key === "c" ? "/candidates" : e.key === "d" ? "/discover" : "/queue");
       }
     };
     const onOpen = () => open();

@@ -12,7 +12,9 @@ import { SAMPLE_PROFILES } from "./sample-profiles";
  * automated access to sites without an authorized data path.
  */
 
-export type Signal = { category: string; term: string; matched: boolean; quote: string | null; page: number | null };
+export type Signal = { category: string; term: string; matched: boolean; quote: string | null; page: number | null; note?: string | null; source?: string };
+export type YearsFilter = { min: number | null; max: number | null };
+export type YearsEstimate = { years: number; basis: string } | null;
 export type FieldFact = { value: string; source: string; asOf: string };
 export type RawProfile = {
   sourceRecordId: string;
@@ -41,12 +43,55 @@ export interface SourcingConnector {
   /** How this source interprets the strategy. Boolean is not assumed to behave the same everywhere. */
   syntaxNote: string;
   renderQuery(filters: SearchFilters, booleanQuery: string): string;
-  search(ctx: { orgId: string; roleId: string; filters: SearchFilters; booleanQuery: string }): Promise<SearchOutcome>;
+  search(ctx: { orgId: string; roleId: string; filters: SearchFilters; booleanQuery: string; years?: YearsFilter }): Promise<SearchOutcome>;
 }
 
 const STALE_MONTHS = 18;
 
+/** A source failure with a message safe to show recruiters (no secrets, no payloads). */
+export class SourceError extends Error {}
+
 /** One signal per search term. Unmatched = not established by this source — never evidence of absence. */
+/**
+ * Experience as evidence, never as a filter: "≈9 years from listed experience" when the source
+ * shows it, otherwise "not established". A number outside the range is shown, not hidden.
+ */
+export function experienceSignal(years: YearsFilter | undefined, est: YearsEstimate): Signal[] {
+  if (!years || (years.min == null && years.max == null)) return [];
+  const term = years.min != null && years.max != null ? `${years.min}–${years.max} years` : years.min != null ? `${years.min}+ years` : `up to ${years.max} years`;
+  if (!est) return [{ category: "experience", term, matched: false, quote: null, page: null, note: "Years of experience not established by this source" }];
+  const ok = (years.min == null || est.years >= years.min) && (years.max == null || est.years <= years.max);
+  return [{ category: "experience", term, matched: ok, quote: est.basis, page: null, note: `≈${est.years} years from the source${ok ? "" : ` — outside ${term}`}` }];
+}
+
+/** Years from dated experience entries (earliest start to latest end, or today). */
+export function yearsFromExperience(exp: { start?: string | null; end?: string | null }[] | null | undefined): YearsEstimate {
+  const ym = (v: string | null | undefined) => {
+    const m = v?.match(/(\d{4})(?:-(\d{1,2}))?/);
+    return m ? Number(m[1]) + (m[2] ? (Number(m[2]) - 1) / 12 : 0) : null;
+  };
+  const starts = (exp ?? []).map((e) => ym(e.start)).filter((x): x is number => x != null);
+  if (!starts.length) return null;
+  const now = new Date().getFullYear() + new Date().getMonth() / 12;
+  const ends = (exp ?? []).map((e) => (!e.end || /present|current|now/i.test(e.end) ? now : ym(e.end))).filter((x): x is number => x != null);
+  const span = Math.max(...ends, Math.min(...starts)) - Math.min(...starts);
+  const first = (exp ?? []).find((e) => ym(e.start) === Math.min(...starts));
+  return { years: Math.max(0, Math.round(span)), basis: `Experience listed from ${first?.start ?? "?"}` };
+}
+
+/** "8 years of experience" stated in the text itself. */
+export function yearsFromText(texts: string[]): YearsEstimate {
+  for (const t of texts) {
+    const m = /(?:^|[^\d])(\d{1,2})\+?\s*(?:years|yrs)(?:'|’)?\s*(?:of\s+)?(?:professional\s+|industry\s+|relevant\s+)?experience/i.exec(t);
+    if (m) {
+      const start = t.lastIndexOf("\n", m.index) + 1;
+      const end = t.indexOf("\n", m.index + 1);
+      return { years: Number(m[1]), basis: t.slice(start, end === -1 ? undefined : end).trim().slice(0, 200) };
+    }
+  }
+  return null;
+}
+
 export function buildSignals(filters: SearchFilters, find: (term: string) => { quote: string; page: number | null } | null): Signal[] {
   const sig = (category: string, term: string): Signal => {
     const hit = find(term);
@@ -103,7 +148,7 @@ const talynRediscovery: SourcingConnector = {
       .filter(Boolean)
       .join(" · ");
   },
-  async search({ orgId, roleId, filters }) {
+  async search({ orgId, roleId, filters, years }) {
     const candidates = await db.candidate.findMany({
       where: { orgId, isSample: false, applications: { none: { roleId } } },
       select: {
@@ -127,10 +172,13 @@ const talynRediscovery: SourcingConnector = {
       const pages = resume ? (JSON.parse(resume.pagesJson) as string[]) : [];
       const profileText = [c.currentTitle, c.currentCompany, c.location, c.candidateSummary].filter(Boolean).join("\n");
       const searchable = [...pages, profileText];
-      const signals = buildSignals(filters, (term) => {
-        const hit = findTerm(searchable, term);
-        return hit ? { quote: hit.quote, page: hit.page && hit.page <= pages.length ? hit.page : null } : null;
-      });
+      const signals = [
+        ...buildSignals(filters, (term) => {
+          const hit = findTerm(searchable, term);
+          return hit ? { quote: hit.quote, page: hit.page && hit.page <= pages.length ? hit.page : null } : null;
+        }),
+        ...experienceSignal(years, yearsFromText(searchable)),
+      ];
       // Only return people with at least one matched core term: a relevance gate, not a judgement.
       if (!isRelevant(signals)) continue;
       const excl = filters.exclusions.find((e) => findTerm(searchable, e));
@@ -189,7 +237,13 @@ export type ExternalRecord = z.infer<typeof ExternalRecord>;
  * Turns a source record into a reviewable profile. Signals are quoted only from text the source
  * returned; contact details are kept only if the source provided them (never inferred).
  */
-export async function profileFromRecord(orgId: string, r: ExternalRecord, filters: SearchFilters, sourceLabel: string, opts: { relevanceGate: boolean; noDuplicateCheck?: boolean }): Promise<RawProfile | null> {
+export async function profileFromRecord(
+  orgId: string,
+  r: ExternalRecord,
+  filters: SearchFilters,
+  sourceLabel: string,
+  opts: { relevanceGate: boolean; noDuplicateCheck?: boolean; years?: YearsFilter },
+): Promise<RawProfile | null> {
   const asOf = r.updatedAt && !Number.isNaN(Date.parse(r.updatedAt)) ? new Date(r.updatedAt).toISOString() : new Date().toISOString();
   const lines = [
     [r.title, r.company].filter(Boolean).join(" at "),
@@ -199,10 +253,13 @@ export async function profileFromRecord(orgId: string, r: ExternalRecord, filter
     r.summary ?? "",
   ].filter((l) => l.trim());
   const text = [lines.join("\n")];
-  const signals = buildSignals(filters, (term) => {
-    const hit = findTerm(text, term);
-    return hit ? { quote: hit.quote, page: null } : null;
-  });
+  const signals = [
+    ...buildSignals(filters, (term) => {
+      const hit = findTerm(text, term);
+      return hit ? { quote: hit.quote, page: null } : null;
+    }),
+    ...experienceSignal(opts.years, yearsFromExperience(r.experience) ?? yearsFromText([r.summary ?? ""])),
+  ];
   if (opts.relevanceGate && !isRelevant(signals)) return null;
   const excl = filters.exclusions.find((e) => findTerm(text, e));
   const ageMonths = r.updatedAt && !Number.isNaN(Date.parse(r.updatedAt)) ? (Date.now() - Date.parse(r.updatedAt)) / (30 * 86400000) : null;
@@ -261,21 +318,21 @@ const externalProvider: SourcingConnector = {
     "Not connected. Choose a licensed talent-data provider (or a job board with an approved API), confirm your organization's licence covers this use, and set SOURCING_PROVIDER_NAME, SOURCING_API_URL and SOURCING_API_KEY. Meanwhile you can import an export from a source you're licensed to use. Talyn will not scrape websites or automate access without an authorized data path.",
   syntaxNote: "Talyn sends the structured filters and the generic Boolean string; the provider decides how to interpret them, so results may not match Boolean semantics exactly.",
   renderQuery: (_f, b) => b,
-  async search({ orgId, filters, booleanQuery }) {
+  async search({ orgId, filters, booleanQuery, years }) {
     const res = await fetch(process.env.SOURCING_API_URL!, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${process.env.SOURCING_API_KEY}` },
-      body: JSON.stringify({ filters, booleanQuery, limit: 100 }),
+      body: JSON.stringify({ filters, booleanQuery, years: years ?? null, limit: 100 }),
       signal: AbortSignal.timeout(60_000),
       cache: "no-store",
     });
-    if (!res.ok) throw new Error(`Sourcing provider responded ${res.status}`);
+    if (!res.ok) throw new SourceError(res.status === 401 || res.status === 403 ? "The provider rejected Talyn's credentials." : res.status === 429 ? "The provider's rate limit was reached. Try again later." : `The provider returned an error (HTTP ${res.status}).`);
     const body = SearchResponse.parse(await res.json());
     const profiles: RawProfile[] = [];
     for (const raw of body.profiles) {
       const rec = ExternalRecord.safeParse(raw);
       if (!rec.success) continue; // malformed records are skipped, not guessed at
-      const p = await profileFromRecord(orgId, rec.data, filters, this.label, { relevanceGate: false });
+      const p = await profileFromRecord(orgId, rec.data, filters, this.label, { relevanceGate: false, years });
       if (p) profiles.push(p);
     }
     return { profiles, estimatedTotal: body.estimatedTotal ?? null, query: booleanQuery };
@@ -298,7 +355,7 @@ const sampleData: SourcingConnector = {
   renderQuery(f, b) {
     return talynRediscovery.renderQuery(f, b);
   },
-  async search({ orgId, filters }) {
+  async search({ orgId, filters, years }) {
     const profiles: RawProfile[] = [];
     for (const sp of SAMPLE_PROFILES) {
       const updatedAt = sp.monthsSinceUpdate == null ? null : new Date(Date.now() - sp.monthsSinceUpdate * 30 * 86400000).toISOString();
@@ -307,7 +364,7 @@ const sampleData: SourcingConnector = {
         { id: sp.id, name: sp.name, title: sp.title, company: sp.company, location: sp.location, skills: sp.skills, summary: sp.summary, experience: sp.experience, updatedAt, url: null, email: null, linkedinUrl: null },
         filters,
         SAMPLE_SOURCE_LABEL,
-        { relevanceGate: true, noDuplicateCheck: true },
+        { relevanceGate: true, noDuplicateCheck: true, years },
       );
       if (p) profiles.push(p);
     }

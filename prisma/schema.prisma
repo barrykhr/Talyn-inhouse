@@ -95,6 +95,7 @@ model Role {
   searches         SearchStrategy[]
   questions        Question[]
   atsStageMaps     AtsStageMap[]
+  discoveryBrief   DiscoveryBrief?
 
   @@index([orgId])
 }
@@ -183,32 +184,37 @@ model Criterion {
 }
 
 model Candidate {
-  id               String           @id @default(cuid())
-  orgId            String
-  fullName         String
-  email            String?
-  phone            String?
-  location         String?
-  linkedinUrl      String?
-  currentTitle     String?
-  currentCompany   String?
-  candidateSummary String? // information provided by the candidate (e.g. application answers)
-  source           String           @default("manual") // manual | csv | cv_upload
-  fieldOriginsJson String           @default("{}") // { fieldName: "cv" | "cv_corrected" | "recruiter" }
-  extractionStatus String? // null | needs_review | reviewed (when a CV extraction awaits review)
-  isSample         Boolean          @default(false) // fictional person from Talyn sample data (demo only)
-  contactOptOut    Boolean          @default(false) // candidate asked not to be contacted: blocks all outreach
-  optOutAt         DateTime?
-  atsExternalId    String? // id in the connected ATS (set by ATS sync)
-  atsSyncedAt      DateTime?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  org              Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  resumes          Resume[]
-  notes            Note[]
-  applications     Application[]
-  extracted        ExtractedField[]
-  atsConflicts     AtsConflict[]
+  id                     String           @id @default(cuid())
+  orgId                  String
+  fullName               String
+  email                  String?
+  phone                  String?
+  location               String?
+  linkedinUrl            String?
+  currentTitle           String?
+  currentCompany         String?
+  candidateSummary       String? // information provided by the candidate (e.g. application answers)
+  source                 String           @default("manual") // manual | csv | cv_upload
+  fieldOriginsJson       String           @default("{}") // { fieldName: "cv" | "cv_corrected" | "recruiter" }
+  extractionStatus       String? // null | needs_review | reviewed (when a CV extraction awaits review)
+  isSample               Boolean          @default(false) // fictional person from Talyn sample data (demo only)
+  contactOptOut          Boolean          @default(false) // candidate asked not to be contacted: blocks all outreach
+  optOutAt               DateTime?
+  atsExternalId          String? // id in the connected ATS (set by ATS sync)
+  atsSyncedAt            DateTime?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  org                    Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  resumes                Resume[]
+  notes                  Note[]
+  applications           Application[]
+  extracted              ExtractedField[]
+  atsConflicts           AtsConflict[]
+  // WhatsApp needs channel-specific, recorded permission before Talyn can send on it.
+  whatsappPermission     String           @default("none") // none | granted | withdrawn
+  whatsappPermissionAt   DateTime?
+  whatsappPermissionNote String? // how it was obtained (recruiter-entered)
+  whatsappPermissionBy   String?
 
   @@index([orgId])
   @@index([orgId, email])
@@ -288,6 +294,11 @@ model Application {
   outreach         OutreachSequence[]
   questions        Question[]
   atsOutbox        AtsOutbox[]
+  // What the candidate has actually said about this role. Never inferred.
+  interest         String             @default("not_expressed") // not_expressed | interested | not_now | declined
+  interestAt       DateTime?
+  interestByName   String?
+  interestNote     String?
 
   @@unique([candidateId, roleId])
   @@index([orgId, roleId])
@@ -484,6 +495,8 @@ model SearchRun {
   createdAt      DateTime         @default(now())
   strategy       SearchStrategy   @relation(fields: [strategyId], references: [id], onDelete: Cascade)
   results        SourcedProfile[]
+  isDemo         Boolean          @default(false) // sample data — never a live search
+  sourcesJson    String           @default("[]") // [{ key, label, status: ok|error|setup_required, count, error }]
 
   @@index([orgId, roleId])
 }
@@ -520,6 +533,7 @@ model SourcedProfile {
   reviewedAt           DateTime?
   createdAt            DateTime  @default(now())
   run                  SearchRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  sourcesJson          String    @default("[]") // every source this person was found in: [{ key, label, url, recordId, retrievedAt }]
 
   @@index([orgId, roleId, status])
   @@index([runId])
@@ -554,6 +568,7 @@ model OutreachSequence {
   application Application       @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   messages    OutreachMessage[]
   events      OutreachEvent[]
+  channel     String            @default("email") // email | whatsapp
 
   @@index([orgId, status])
   @@index([applicationId])
@@ -584,6 +599,7 @@ model OutreachMessage {
   deliveredAt         DateTime? // only when the provider reports delivery
   createdAt           DateTime         @default(now())
   sequence            OutreachSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  toPhone             String? // WhatsApp recipient, set when sent
 
   @@index([orgId, status])
   @@index([sequenceId])
@@ -703,4 +719,36 @@ model AtsOutbox {
 
   @@index([orgId, status])
   @@index([status, nextAttemptAt])
+}
+
+/// The fields a Discover search is built from, per role. Extracted from the JD or entered by a
+/// recruiter, always reviewed and editable. Provenance per field lives in provenanceJson.
+model DiscoveryBrief {
+  id                  String    @id @default(cuid())
+  orgId               String
+  roleId              String    @unique
+  origin              String // jd | manual
+  roleName            String
+  altTitlesJson       String    @default("[]")
+  skillsRequiredJson  String    @default("[]")
+  skillsPreferredJson String    @default("[]")
+  exclusionsJson      String    @default("[]")
+  minYears            Int?
+  maxYears            Int?
+  location            String?
+  workArrangement     String? // onsite | hybrid | remote
+  provenanceJson      String    @default("{}") // { field: { status: from_jd|inferred|not_stated|edited|manual, quote, page, verified, items? } }
+  booleanQuery        String    @default("")
+  booleanEdited       Boolean   @default(false) // recruiter edited the generated query
+  booleanFieldsKey    String? // fields the query was generated from, to flag when it is out of date
+  extractor           String?
+  jdId                String?
+  confirmedAt         DateTime?
+  confirmedByName     String?
+  updatedByName       String    @default("")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  role                Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
 }

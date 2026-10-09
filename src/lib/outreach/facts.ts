@@ -8,7 +8,7 @@ export type PersonalizationFact = { key: string; label: string; value: string; s
  * Facts that may be used to personalize outreach: recruiter-confirmed, corrected or entered
  * profile fields and reviewed CV facts. Contact details and unreviewed extractions are excluded.
  */
-export async function personalizationFacts(orgId: string, candidateId: string): Promise<PersonalizationFact[]> {
+export async function personalizationFacts(orgId: string, candidateId: string, applicationId?: string): Promise<PersonalizationFact[]> {
   const c = await db.candidate.findFirstOrThrow({
     where: { id: candidateId, orgId },
     include: { extracted: { where: { status: { in: ["accepted", "edited"] } }, orderBy: { position: "asc" } } },
@@ -38,6 +38,16 @@ export async function personalizationFacts(orgId: string, candidateId: string): 
     } else if (f.field === "certification" && v && typeof v === "object") {
       add(`cert_${f.id}`, "Certification", (v as Record<string, string>).name, src);
       n++;
+    }
+  }
+  // Evidence shown on the Discover result the recruiter saved: matched, quoted, role-relevant only.
+  if (applicationId) {
+    const app = await db.application.findFirst({ where: { id: applicationId, orgId }, select: { sourcedProfileId: true } });
+    const sp = app?.sourcedProfileId ? await db.sourcedProfile.findFirst({ where: { id: app.sourcedProfileId, orgId }, select: { signalsJson: true, retrievedAt: true } }) : null;
+    if (sp) {
+      const signals = (JSON.parse(sp.signalsJson) as { category: string; term: string; matched: boolean; quote: string | null; source?: string }[]).filter((x) => x.matched && x.quote && x.category !== "experience");
+      for (const [i, x] of signals.slice(0, 5).entries())
+        add(`evidence_${i + 1}`, `Profile mentions ${x.term}`, x.quote, `${x.source ?? "Discover result"} · retrieved ${sp.retrievedAt.toISOString().slice(0, 10)}`);
     }
   }
   return out;

@@ -5,7 +5,8 @@ import { ATS_ENV, atsSetup, getAtsConnector } from "@/lib/ats/connector";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { appUrl, checkEnv, type EnvCheck } from "@/lib/integrations/env";
-import { EMAIL_ENV, emailSetup, getEmailProvider } from "@/lib/outreach/provider";
+import { emailSetup, getEmailProvider } from "@/lib/outreach/provider";
+import { whatsappSetup } from "@/lib/outreach/whatsapp";
 import { CONNECTORS, SOURCING_ENV } from "@/lib/sourcing/connectors";
 import { AtsButtons, EmailButtons, OutboxButtons } from "./buttons";
 
@@ -42,6 +43,7 @@ export default async function IntegrationsPage() {
   const isAdmin = auth.membershipRole === "admin";
   const ai = aiStatus();
   const email = emailSetup();
+  const wa = whatsappSetup();
   const provider = getEmailProvider();
   const ats = atsSetup();
   const atsConn = getAtsConnector();
@@ -99,7 +101,29 @@ export default async function IntegrationsPage() {
               recruiters record these outcomes, and they&apos;re labeled as recruiter-recorded.
             </p>
           </details>
-          {provider && isAdmin && <EmailButtons />}
+          {(provider || wa.ready) && isAdmin && <EmailButtons />}
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <SectionTitle hint="WhatsApp Business Platform (Cloud API). Business-initiated messages use your approved template.">
+          WhatsApp <Status on={wa.ready} />
+        </SectionTitle>
+        <div className="space-y-2 text-[13px] text-ink-2">
+          <p>
+            {wa.ready
+              ? `Talyn sends the approved template “${process.env.WHATSAPP_TEMPLATE_NAME}” only for sequences a recruiter approved and activated, and only to candidates with a recorded WhatsApp opt-in and a phone number with country code.`
+              : "Off. WhatsApp drafts can be prepared, but sending stays disabled. To connect, create an approved message template in your WhatsApp Business account and add:"}
+          </p>
+          <EnvList checks={wa.checks} />
+          <details className="text-[12.5px]">
+            <summary className="cursor-pointer text-muted">Replies and delivery status</summary>
+            <p className="mt-1 text-muted">
+              In your Meta app, set the webhook URL to <code className="font-mono">{base}/api/webhooks/whatsapp</code> with <code className="font-mono">WHATSAPP_VERIFY_TOKEN</code>, and subscribe to{" "}
+              <code className="font-mono">messages</code>. Requests are verified with <code className="font-mono">WHATSAPP_APP_SECRET</code>. A reply stops follow-ups automatically; delivery is
+              marked provider-confirmed.
+            </p>
+          </details>
         </div>
       </Card>
 

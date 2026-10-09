@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { extractCvStep, uploadCv } from "@/server/cv-actions";
+import { suggestBriefStep } from "@/server/discovery-actions";
 import { extractJdStep, mapJdCriteriaStep, uploadJd } from "@/server/jd-actions";
 import { runAssessment } from "@/server/assessment-actions";
 import { StagedProgress, type Stage } from "./staged-progress";
@@ -159,6 +160,99 @@ export function JdUploadFlow({ roleId = null, onCancelHref, manualHref }: { role
         </div>
       )}
     </Card>
+  );
+}
+
+// ---------------------------------------------------------------- JD for Discover
+
+/**
+ * Discover setup from a JD: upload → extract role details → suggest search fields. With roleId it
+ * replaces the role's JD (recruiter-edited fields are kept). Lands on the role's Discover tab to review.
+ */
+export function DiscoverJdFlow({ roleId = null, compact = false }: { roleId?: string | null; compact?: boolean }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [phase, setPhase] = useState<Phase>("pick");
+  const [rid, setRid] = useState<string | null>(roleId);
+  const { stages, set, reset } = useStages([
+    { key: "upload", label: "Uploading", state: "pending" },
+    { key: "extract", label: "Extracting role details", state: "pending", slow: true },
+    { key: "brief", label: "Suggesting search fields", state: "pending", slow: true },
+    { key: "ready", label: "Ready for your review", state: "pending" },
+  ]);
+  const run = async (from: "upload" | "extract" | "brief" = "upload") => {
+    setPhase("running");
+    let id = rid;
+    if (from === "upload") {
+      reset();
+      set("upload", { state: "active", detail: file ? `${file.name} · ${formatSize(file.size)}` : null });
+      const fd = new FormData();
+      fd.set("jd", file!);
+      const r = await uploadJd(roleId, fd).catch(() => ({ error: "Upload failed. Check your connection and try again." }) as const);
+      if (!("ok" in r) || !r.ok || !r.roleId) {
+        set("upload", { state: "failed", detail: r.error ?? null });
+        return setPhase("failed");
+      }
+      id = r.roleId;
+      setRid(id);
+      set("upload", { state: "done" });
+    }
+    if (from !== "brief") {
+      set("extract", { state: "active", detail: "Title, location and requirements, each linked to the JD text" });
+      const r = await extractJdStep(id!).catch(() => ({ error: "The request failed. Try again." }) as const);
+      if (!("ok" in r) || !r.ok) {
+        set("extract", { state: "failed", detail: r.error ?? null });
+        return setPhase("failed");
+      }
+      set("extract", { state: "done", detail: r.notice ?? null });
+    }
+    set("brief", { state: "active", detail: "Skills, experience, location and a Boolean query — only what the JD states" });
+    const b: { ok?: boolean; error?: string; notice?: string | null } = await suggestBriefStep(id!).catch(() => ({ error: "The request failed. Try again." }));
+    if (!b.ok) {
+      set("brief", { state: "failed", detail: b.error ?? null });
+      return setPhase("failed");
+    }
+    set("brief", { state: "done", detail: b.notice ?? "Nothing is searched until you review and confirm the fields" });
+    set("ready", { state: "done" });
+    setPhase("ready");
+    window.location.assign(`/roles/${id}/discover?setup=jd#setup`);
+  };
+  const failedAt = stages.find((s) => s.state === "failed")?.key as "upload" | "extract" | "brief" | undefined;
+  return (
+    <div className={compact ? "space-y-3" : "space-y-4"}>
+      {phase === "pick" ? (
+        <>
+          <FilePicker name="jd" accept=".pdf,.docx" file={file} onFile={setFile} label={roleId ? "Drop a replacement job description" : "Drop a job description here"} />
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[12.5px] text-muted">PDF or DOCX, up to 4 MB. Suggested fields are labeled with where they came from; anything the JD doesn&apos;t say stays empty.</p>
+            <Button variant="primary" className="ml-auto" disabled={!file} onClick={() => run("upload")}>
+              {roleId ? "Replace and re-suggest" : "Upload and extract"}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <StagedProgress stages={stages} />
+          {phase === "failed" && (
+            <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+              {failedAt === "upload" ? (
+                <Button onClick={() => setPhase("pick")}>Choose another file</Button>
+              ) : (
+                <>
+                  <Button variant="primary" onClick={() => run(failedAt)}>
+                    Try again
+                  </Button>
+                  {rid && (
+                    <Link href={`/roles/${rid}/discover#setup`} className={buttonClass("ghost")}>
+                      Fill in the fields myself
+                    </Link>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 

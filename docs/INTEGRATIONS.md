@@ -1,6 +1,6 @@
 # Integrations
 
-Talyn has three built-in, vendor-neutral integrations. **Each is off until its environment
+Talyn has four built-in integrations. **Each is off until its environment
 variables are set** (Vercel → Project → Settings → Environment Variables, then redeploy).
 Settings → Integrations shows which variables are set or missing — never their values — and the
 controls for each integration once it's on.
@@ -8,6 +8,7 @@ controls for each integration once it's on.
 | Integration | Turns on with | Until then |
 | --- | --- | --- |
 | Email sending (SMTP) | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `OUTREACH_FROM_EMAIL`, `OUTREACH_SECRET` | Recruiters send from their own mail client and click **Record as sent**. |
+| WhatsApp (Business Platform / Cloud API) | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TEMPLATE_NAME` (+ optional template language, params, preview, webhook secrets) | WhatsApp drafts can be prepared; sending is disabled. |
 | Sourcing provider | `SOURCING_PROVIDER_NAME`, `SOURCING_API_URL`, `SOURCING_API_KEY` | Talyn rediscovery + **Import an authorized export** (CSV). |
 | ATS | `ATS_NAME`, `ATS_API_URL`, `ATS_API_KEY` (+ `ATS_PUSH_STAGES=true` for write-back), then an admin clicks **Link this workspace** | CSV import/export. |
 
@@ -61,6 +62,27 @@ message ids are ignored. Up to 500 events per request.
 
 ---
 
+## 1b. WhatsApp (WhatsApp Business Platform, Cloud API)
+
+Business-initiated WhatsApp messages must use a template approved in your WhatsApp Business
+account. Talyn therefore sends **your approved template**, filling its body parameters in the
+order given by `WHATSAPP_TEMPLATE_PARAMS` (default `first_name,role_title,company,recruiter_name`;
+add `message` only if your approved template has a free-text field for the drafted text).
+`WHATSAPP_TEMPLATE_PREVIEW` (the template text with `{{1}}`, `{{2}}`…) lets recruiters preview
+exactly what will be sent.
+
+Sending is enabled only when all of these hold: the provider is configured, the recruiter approved
+every message and activated the sequence, the candidate has a phone number with a country code,
+a **recorded WhatsApp opt-in** (who recorded it, when, and how it was obtained), and no opt-out.
+These are re-checked immediately before each send.
+
+Webhook (optional, recommended): set the callback URL to `{APP_URL}/api/webhooks/whatsapp`, the
+verify token to `WHATSAPP_VERIFY_TOKEN`, and subscribe to `messages`. POSTs are verified with
+`WHATSAPP_APP_SECRET` (`X-Hub-Signature-256`). A reply stops follow-ups and creates a task;
+delivery/failure statuses are recorded as provider-confirmed. Message text is not stored.
+
+---
+
 ## 2. Sourcing provider contract
 
 Talyn never scrapes websites or automates logins. Connect a source your organization is licensed
@@ -73,6 +95,7 @@ Authorization: Bearer $SOURCING_API_KEY
 { "filters": { "titles": [], "skills_required": [], "skills_preferred": [], "locations": [],
                "seniority": [], "industries": [], "exclusions": [] },
   "booleanQuery": "(\"Backend Engineer\" OR …) AND …",
+  "years": { "min": 5, "max": null },   // from the reviewed Discover fields; may be null
   "limit": 100 }
 ```
 

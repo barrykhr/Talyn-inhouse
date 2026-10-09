@@ -39,7 +39,7 @@ import { FIELD_LABEL as ATS_FIELD_LABEL, FIELD_OWNERSHIP, getAtsConnector } from
 import { QuestionList } from "@/components/questions";
 import { generateFollowUps } from "@/server/question-actions";
 import { OutreachPanel, type OutreachView } from "./outreach";
-import { SENDING_SETUP_HINT } from "@/lib/outreach/provider";
+import { loadOutreachView } from "@/server/outreach-view";
 import { DeleteCandidateButton, DeleteResumeButton, EditProfile, NoteForm, NoteItem, ResumeUpload } from "./panels";
 
 // AI proposals/assessments run as server actions on this page and can take a while.
@@ -47,6 +47,7 @@ export const maxDuration = 300;
 
 export const metadata = { title: "Candidate" };
 
+const INTEREST_LABEL: Record<string, string> = { not_expressed: "None expressed", interested: "Interested", not_now: "Not now", declined: "Declined" };
 const CANDIDATE_SOURCE_LABEL: Record<string, string> = { manual: "entered by a recruiter", csv: "CSV import", cv_upload: "CV upload", ats: "from the ATS", sample: "sample data" };
 
 export default async function CandidatePage({
@@ -139,51 +140,7 @@ export default async function CandidatePage({
 
   const stale = !!latest && (isStale(latest.criteriaSnapshot, app!.role.criteria) || (latest.criteriaVersion != null && latest.criteriaVersion !== app!.role.criteriaVersion));
   const stageSince = app?.stageEvents[0]?.createdAt ?? app?.createdAt;
-  const [sequences, templates] = app
-    ? await Promise.all([
-        db.outreachSequence.findMany({
-          where: { orgId: auth.orgId, applicationId: app.id },
-          orderBy: { createdAt: "desc" },
-          take: 3,
-          include: { messages: { orderBy: { step: "asc" } }, events: { orderBy: { createdAt: "desc" }, take: 40 } },
-        }),
-        db.outreachTemplate.findMany({ where: { orgId: auth.orgId }, select: { id: true, name: true }, orderBy: { updatedAt: "desc" }, take: 30 }),
-      ])
-    : [[], []];
-  const seq = sequences.find((x) => ["draft", "active", "paused"].includes(x.status)) ?? sequences[0] ?? null;
-  const outreach: OutreachView | null = app
-    ? {
-        applicationId: app.id,
-        email: candidate.email,
-        emailOrigin: candidate.email ? (ORIGIN_LABEL[origins.email ?? (candidate.source === "csv" ? "" : "recruiter")] ?? (candidate.source === "csv" ? "CSV import" : null)) : null,
-        optedOut: candidate.contactOptOut,
-        aiConfigured: ai.configured,
-        sendingHint: SENDING_SETUP_HINT,
-        templates,
-        sequence: seq && {
-          id: seq.id,
-          status: seq.status,
-          stopReason: seq.stopReason,
-          activatedByName: seq.activatedByName,
-          messages: seq.messages.map((m) => ({
-            id: m.id,
-            step: m.step,
-            delayDays: m.delayDays,
-            subject: m.subject,
-            body: m.body,
-            edited: m.subject !== m.draftSubject || m.body !== m.draftBody,
-            personalization: JSON.parse(m.personalizationJson),
-            generator: m.generator,
-            status: m.status,
-            approvedByName: m.approvedByName,
-            dueAt: m.dueAt?.toISOString() ?? null,
-            sentAt: m.sentAt?.toISOString() ?? null,
-            sentVia: m.sentVia,
-          })),
-          events: seq.events.map((e) => ({ id: e.id, type: e.type, actorName: e.actorName, providerConfirmed: e.providerConfirmed, note: e.note, createdAt: e.createdAt.toISOString() })),
-        },
-      }
-    : null;
+  const outreach: OutreachView | null = app ? await loadOutreachView(auth, app.id) : null;
   const fit = app ? roleFit(app.assessments, { criteria: app.role.criteria, criteriaVersion: app.role.criteriaVersion }) : null;
   const readiness = app
     ? stageReadiness({
@@ -636,6 +593,21 @@ export default async function CandidatePage({
           <span className="text-muted">Permission to contact: </span>
           <Badge tone={permission.tone}>{permission.label}</Badge>
           <p className="mt-1 text-ink-2">{permission.text}</p>
+          <p className="mt-1 text-[12px] text-muted">
+            WhatsApp:{" "}
+            {candidate.whatsappPermission === "granted"
+              ? `opt-in recorded${candidate.whatsappPermissionAt ? ` ${formatDate(candidate.whatsappPermissionAt)}` : ""}${candidate.whatsappPermissionBy ? ` by ${candidate.whatsappPermissionBy}` : ""}`
+              : candidate.whatsappPermission === "withdrawn"
+                ? "permission withdrawn"
+                : "no opt-in recorded"}{" "}
+            · record it on the Outreach tab
+          </p>
+        </div>
+        <div className="mt-2 border-t border-line pt-2 text-[12.5px]">
+          <span className="text-muted">Expressed interest in this role: </span>
+          <span className="font-medium">{INTEREST_LABEL[app.interest] ?? app.interest}</span>
+          {app.interestByName && <span className="text-faint"> · recorded by {app.interestByName}</span>}
+          <p className="text-[11.5px] text-faint">Only what the candidate told you — never inferred from profiles or public activity.</p>
         </div>
       </Card>
 
