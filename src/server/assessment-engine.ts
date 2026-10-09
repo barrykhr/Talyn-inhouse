@@ -11,6 +11,7 @@ import { logError } from "@/lib/log";
 import { computeScore, scoreSummaryText, weightsOf } from "@/lib/score";
 import { profileEvidenceText, profileFingerprint } from "@/lib/skills";
 import { sourceLabel } from "@/lib/sourcing/connectors";
+import { recordProfileScore } from "./scoring-store";
 
 type ItemDraft = {
   criterionId: string;
@@ -234,7 +235,7 @@ export async function assessApplication(auth: AuthContext, applicationId: string
   }
   const ai = aiStatus();
 
-  await db.assessment.create({
+  const created = await db.assessment.create({
     data: {
       orgId: auth.orgId,
       applicationId,
@@ -267,6 +268,7 @@ export async function assessApplication(auth: AuthContext, applicationId: string
       },
     },
   });
+  await recordProfileScore(auth, created.id, "assessment");
   if (!opts.batch)
     await audit(auth, "assessment.run", {
       subjectType: "application",

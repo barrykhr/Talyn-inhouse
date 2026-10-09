@@ -7,6 +7,7 @@ import { Card, EmptyState, LinkButton, buttonClass, formatDate } from "@/compone
 import { evidenceCounts } from "@/lib/review-status";
 import { passesSkillFilter, type SkillMatch } from "@/lib/skills";
 import { SkillCount, SkillFilterFields } from "@/components/skill-match";
+import { ProfileScoreChip, type ScoreSnapshot } from "@/components/profile-score";
 import type { AppRow } from "./applicants";
 
 /** Everyone the recruiter shortlisted for this role, from either workflow, with their origin kept visible. */
@@ -17,8 +18,10 @@ export function ShortlistTab({
   skillMatches,
   requiredSkills,
   skillFilter,
+  scores,
 }: {
   roleId: string;
+  scores: Map<string, ScoreSnapshot | null>;
   shortlisted: AppRow[];
   origin: string;
   skillMatches: Map<string, SkillMatch>;
@@ -108,7 +111,10 @@ export function ShortlistTab({
                   </Link>
                   <div>
                     {latest ? (
-                      <EvidenceCounts counts={evidenceCounts(latest.items)} />
+                      <div className="space-y-1">
+                        <ProfileScoreChip s={scores.get(a.id) ?? null} />
+                        <EvidenceCounts counts={evidenceCounts(latest.items)} />
+                      </div>
                     ) : (
                       <span className="text-[12.5px] text-faint">
                         Not assessed —{" "}

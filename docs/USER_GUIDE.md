@@ -84,6 +84,19 @@ _Changing approved skills or criteria marks existing assessments out of date; re
 
 _The threshold describes evidence only. Nobody is hidden, rejected or advanced by it._
 
+### Profile scoring (0–100) and bands
+
+**Where:** Role → Criteria → Scoring (`/roles`)
+
+**Needs:** Works now — no integration needed
+
+1. Approve the role's skills and criteria first — only approved, job-related Required and Preferred items are scored.
+2. Set the band cutoffs and labels (defaults: below 65 “Recommendation to reject”, 65–74 “Recommendation to consider”, 75+ “AI Screen Pass”) and the minimum evidence coverage.
+3. Click “Save as new version”. Bands must rise and can't overlap or leave gaps; other roles aren't affected.
+4. Click “Recalculate scores” to re-score everyone's latest assessment with the current version. Earlier scores stay in each candidate's history.
+
+_Labels are advisory only and never reject, advance or hide anyone. Missing or unverified evidence is unknown, not a failure; too little known evidence shows Insufficient evidence instead of a colour. Criteria naming protected characteristics are refused; career gaps, formatting, writing polish, school prestige or career path need a documented “Job-related reason:”._
+
 ### Reassess candidates
 
 **Where:** Role → Criteria → Reassess candidates (`/roles`)
@@ -126,6 +139,19 @@ _Only people who applied appear here. People found in Discover appear in Discove
 6. Review the AI recommendation (accept, edit or override), suggest follow-up questions, and record your decision in the side panel.
 
 _“No evidence found” means missing evidence, not proof the candidate lacks the skill. The skill count is separate from the criteria score and is never a decision._
+
+### Profile score on a candidate
+
+**Where:** Candidate → side panel → Profile score (`/candidates`)
+
+**Needs:** Works now — no integration needed
+
+1. Read the score and band label, with evidence coverage shown separately.
+2. Open “How this score was calculated” for every criterion's weight, result, credit, points and excerpt count, and the scoring version.
+3. Correct a skill or criterion if the evidence is wrong — the score is re-recorded and the earlier one kept in “Score history”.
+4. If the candidate asks for another way to be assessed, set Alternative assessment to Requested. The screening score is then not shown or used. Don't record why.
+
+_Lists show the same advisory chip next to each applicant, shortlisted and saved Discover person._
 
 ### Profile checks
 
@@ -274,6 +300,19 @@ _Without Google set up, scheduling runs in a labelled demo mode and times are en
 2. See which skills and criteria are corrected most or lack evidence, which evidence recruiters overruled, shortlist and interview rates by band, and assessments that changed after interviews.
 
 _Every rate shows its denominator; under 5 reads Insufficient data. It describes what happened and does not change how Talyn assesses._
+
+### Scoring validation & fairness (admins)
+
+**Where:** Workspace settings → Scoring validation & fairness (`/settings/scoring`)
+
+**Needs:** Works now — no integration needed
+
+1. For each role and scoring version, review score distribution, outcomes by band, correction and insufficient-evidence rates.
+2. Optionally turn on monitoring with self-reported demographic data (requires an attestation), import responses as email,category,value, and compare groups. Groups under 10 are suppressed.
+3. Review any version flagged for a material difference and record what was decided.
+4. Set the alternative-assessment instructions recruiters share with candidates.
+
+_Descriptive statistics only: they can't show a process is fair, valid or compliant. Demographic data never appears in candidate or recruiter views and is never inferred._
 
 ### Team and permissions
 

@@ -153,6 +153,17 @@ export default async function SettingsPage() {
 
       {auth.membershipRole === "admin" && (
         <Card className="p-5">
+          <SectionTitle hint="By role and scoring version: score distributions, outcomes by band, correction and insufficient-evidence rates, optional self-reported group comparisons, flags.">
+            Scoring validation &amp; fairness
+          </SectionTitle>
+          <Link href="/settings/scoring" className={buttonClass("secondary")}>
+            Open monitoring
+          </Link>
+        </Card>
+      )}
+
+      {auth.membershipRole === "admin" && (
+        <Card className="p-5">
           <SectionTitle hint="Access, exports, assessments, decisions, stage changes, outreach and deletions — without candidate personal data.">Audit log</SectionTitle>
           <Link href="/settings/audit" className={buttonClass("secondary")}>
             Open audit log

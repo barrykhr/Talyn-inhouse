@@ -7,10 +7,12 @@ import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { CRITERION_IMPORTANCE, CRITERION_KINDS } from "@/lib/domain";
 import { audit } from "@/lib/audit";
+import { criterionFairnessIssue } from "@/lib/profile-score";
 import { extractCriteriaFromJd } from "@/lib/heuristics";
 import { logError } from "@/lib/log";
 import { str, type ActionState } from "./form";
 import { bumpCriteriaVersion, storeProposedCriteria } from "./facts";
+import { newScoringVersion } from "./scoring-store";
 import { ownCriterion, ownRole } from "./scope";
 
 const CriterionSchema = z
@@ -60,6 +62,8 @@ export async function addCriterion(roleId: string, _prev: ActionState, fd: FormD
   if (!parsed.success) return { error: parsed.error.issues[0]?.message };
   const mapErr = await checkMapping(auth.orgId, roleId, parsed.data.mappedCriterionId);
   if (mapErr) return { error: mapErr };
+  const fair = criterionFairnessIssue(parsed.data.name, parsed.data.description);
+  if (fair) return { error: fair };
   await db.criterion.create({
     data: {
       ...parsed.data,
@@ -84,6 +88,8 @@ export async function updateCriterion(id: string, _prev: ActionState, fd: FormDa
   if (!parsed.success) return { error: parsed.error.issues[0]?.message };
   const mapErr = await checkMapping(auth.orgId, c.roleId, parsed.data.mappedCriterionId, id);
   if (mapErr) return { error: mapErr };
+  const fair = criterionFairnessIssue(parsed.data.name, parsed.data.description);
+  if (fair && (c.status === "approved" || c.status === "proposed")) return { error: fair };
   if (c.kind === "criterion" && parsed.data.kind === "skill") await db.criterion.updateMany({ where: { orgId: auth.orgId, roleId: c.roleId, mappedCriterionId: id }, data: { mappedCriterionId: null } });
   const edited =
     c.origin !== "manual" &&
@@ -98,6 +104,10 @@ export async function setCriterionStatus(id: string, status: "approved" | "rejec
   const auth = await requireAuth();
   const c = await ownCriterion(auth, id);
   const s = z.enum(["approved", "rejected", "proposed"]).parse(status);
+  if (s === "approved") {
+    const fair = criterionFairnessIssue(c.name, c.description);
+    if (fair) return { error: fair };
+  }
   await db.criterion.update({
     where: { id },
     data: {
@@ -113,12 +123,16 @@ export async function setCriterionStatus(id: string, status: "approved" | "rejec
 export async function approveAllProposed(roleId: string) {
   const auth = await requireAuth();
   await ownRole(auth, roleId);
+  // Anything that names a protected characteristic or an undocumented proxy stays for individual review.
+  const pending = await db.criterion.findMany({ where: { roleId, orgId: auth.orgId, status: "proposed" }, select: { id: true, name: true, description: true } });
+  const held = pending.filter((c) => criterionFairnessIssue(c.name, c.description));
   const { count } = await db.criterion.updateMany({
-    where: { roleId, orgId: auth.orgId, status: "proposed" },
+    where: { roleId, orgId: auth.orgId, status: "proposed", id: { notIn: held.map((h) => h.id) } },
     data: { status: "approved", approvedById: auth.userId, approvedAt: new Date() },
   });
   if (count) await bumpCriteriaVersion(roleId, auth, "approved_all");
   revalidatePath(`/roles/${roleId}`);
+  return held.length ? { error: `${count} approved. ${held.length} held back for review: ${held.map((h) => `“${h.name}”`).join(", ")} may refer to a protected characteristic or an undocumented proxy.` } : { ok: true };
 }
 
 export async function deleteCriterion(id: string) {
@@ -222,6 +236,8 @@ export async function updateRubric(roleId: string, _prev: ActionState, fd: FormD
   if (parsed.data.skillThreshold != null && parsed.data.skillThreshold > requiredSkills)
     return { error: `The minimum can't be more than the ${requiredSkills} approved required skill${requiredSkills === 1 ? "" : "s"}.` };
   await db.role.update({ where: { id: roleId }, data: { ...parsed.data, rubricUpdatedBy: auth.userName, rubricUpdatedAt: new Date() } });
+  if (parsed.data.weightRequired !== role.weightRequired || parsed.data.weightPreferred !== role.weightPreferred)
+    await newScoringVersion(auth, roleId, { note: `Weights changed to ${parsed.data.weightRequired}/${parsed.data.weightPreferred}` });
   await audit(auth, "rubric.changed", {
     subjectType: "role",
     subjectId: roleId,

@@ -11,6 +11,7 @@ import { REVIEW_STATUSES, REVIEW_STATUS_LABEL, REVIEW_STATUS_TONE, evidenceCount
 import { computeScore, pct, type Weights } from "@/lib/score";
 import { passesSkillFilter, type SkillMatch } from "@/lib/skills";
 import { SkillCount, SkillFilterFields } from "@/components/skill-match";
+import { ProfileScoreChip, type ScoreSnapshot } from "@/components/profile-score";
 import { isStale, summarize } from "@/lib/summary";
 import { AddExisting } from "./add-existing";
 import { PrioritySelect } from "./priority";
@@ -61,8 +62,10 @@ export function ApplicantsTab({
   skillMatches,
   requiredSkills,
   weights,
+  scores,
 }: {
   roleId: string;
+  scores: Map<string, ScoreSnapshot | null>;
   skillMatches: Map<string, SkillMatch>;
   requiredSkills: number;
   weights: Weights;
@@ -193,7 +196,7 @@ export function ApplicantsTab({
 
           <p className="text-[12.5px] text-muted" aria-live="polite">
             {rows.length} of {applicants.length} applicant{applicants.length === 1 ? "" : "s"}
-            {filtered ? " match" : ""} · Required skills (e.g. 5/6) count only skills with evidence found in the candidate&apos;s own material. Criteria counts are separate. Neither is a score or a decision.
+            {filtered ? " match" : ""} · Required skills (e.g. 5/6) count only skills with evidence found in the candidate&apos;s own material. Profile score labels are advisory. None of these is a decision.
           </p>
 
           {rows.length === 0 ? (
@@ -236,7 +239,10 @@ export function ApplicantsTab({
                         {skillMatches.get(a.id) && <SkillCount m={skillMatches.get(a.id)!} stacked />}
                       </Link>
                       <div className="min-w-0 space-y-0.5">
-                        <Badge tone={REVIEW_STATUS_TONE[status]}>{REVIEW_STATUS_LABEL[status]}</Badge>
+                        <div className="flex flex-wrap gap-1">
+                          <Badge tone={REVIEW_STATUS_TONE[status]}>{REVIEW_STATUS_LABEL[status]}</Badge>
+                          {latest && <ProfileScoreChip s={scores.get(a.id) ?? null} />}
+                        </div>
                         <div>
                           <EvidenceCounts counts={latest ? evidenceCounts(latest.items) : null} />
                           {stale && <span className="ml-2 text-[12px] text-warn">· assessment out of date</span>}

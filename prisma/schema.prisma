@@ -13,18 +13,24 @@ datasource db {
 }
 
 model Organization {
-  id            String       @id @default(cuid())
-  name          String
-  retentionDays Int? // candidates inactive for longer are eligible for deletion; null = keep until deleted
-  atsLinkedAt   DateTime? // set when an admin links this workspace to the configured ATS (one workspace per ATS)
-  atsLinkedBy   String?
-  createdAt     DateTime     @default(now())
-  memberships   Membership[]
-  sessions      Session[]
-  roles         Role[]
-  candidates    Candidate[]
-  atsSyncRuns   AtsSyncRun[]
-  invites       Invite[]
+  id                    String       @id @default(cuid())
+  name                  String
+  retentionDays         Int? // candidates inactive for longer are eligible for deletion; null = keep until deleted
+  atsLinkedAt           DateTime? // set when an admin links this workspace to the configured ATS (one workspace per ATS)
+  atsLinkedBy           String?
+  // How candidates can ask for an alternative assessment; recruiters share it in job ads and outreach.
+  accommodationText     String       @default("")
+  // Aggregate fairness monitoring with self-reported data. Off until an admin attests it is lawful.
+  demographicMonitoring Boolean      @default(false)
+  demographicAttestedBy String?
+  demographicAttestedAt DateTime?
+  createdAt             DateTime     @default(now())
+  memberships           Membership[]
+  sessions              Session[]
+  roles                 Role[]
+  candidates            Candidate[]
+  atsSyncRuns           AtsSyncRun[]
+  invites               Invite[]
 }
 
 model User {
@@ -104,6 +110,7 @@ model Role {
   questions          Question[]
   atsStageMaps       AtsStageMap[]
   discoveryBrief     DiscoveryBrief?
+  scoringVersions    ScoringVersion[]
 
   @@index([orgId])
 }
@@ -195,7 +202,7 @@ model Criterion {
 }
 
 model Candidate {
-  id                     String            @id @default(cuid())
+  id                     String              @id @default(cuid())
   orgId                  String
   fullName               String
   email                  String?
@@ -205,26 +212,27 @@ model Candidate {
   currentTitle           String?
   currentCompany         String?
   candidateSummary       String? // information provided by the candidate (e.g. application answers)
-  source                 String            @default("manual") // manual | csv | cv_upload
-  fieldOriginsJson       String            @default("{}") // { fieldName: "cv" | "cv_corrected" | "recruiter" }
+  source                 String              @default("manual") // manual | csv | cv_upload
+  fieldOriginsJson       String              @default("{}") // { fieldName: "cv" | "cv_corrected" | "recruiter" }
   extractionStatus       String? // null | needs_review | reviewed (when a CV extraction awaits review)
-  isSample               Boolean           @default(false) // fictional person from Talyn sample data (demo only)
-  contactOptOut          Boolean           @default(false) // candidate asked not to be contacted: blocks all outreach
+  isSample               Boolean             @default(false) // fictional person from Talyn sample data (demo only)
+  contactOptOut          Boolean             @default(false) // candidate asked not to be contacted: blocks all outreach
   optOutAt               DateTime?
   atsExternalId          String? // id in the connected ATS (set by ATS sync)
   atsSyncedAt            DateTime?
-  createdAt              DateTime          @default(now())
-  updatedAt              DateTime          @updatedAt
-  org                    Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  org                    Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   resumes                Resume[]
   notes                  Note[]
   applications           Application[]
   extracted              ExtractedField[]
   atsConflicts           AtsConflict[]
-  duplicatesAsA          DuplicateReview[] @relation("DuplicateA")
-  duplicatesAsB          DuplicateReview[] @relation("DuplicateB")
+  duplicatesAsA          DuplicateReview[]   @relation("DuplicateA")
+  duplicatesAsB          DuplicateReview[]   @relation("DuplicateB")
+  demographics           DemographicRecord[]
   // WhatsApp needs channel-specific, recorded permission before Talyn can send on it.
-  whatsappPermission     String            @default("none") // none | granted | withdrawn
+  whatsappPermission     String              @default("none") // none | granted | withdrawn
   whatsappPermissionAt   DateTime?
   whatsappPermissionNote String? // how it was obtained (recruiter-entered)
   whatsappPermissionBy   String?
@@ -315,6 +323,13 @@ model Application {
   interestChannel  String? // how the candidate said it: email | whatsapp | phone | in_person | application | other
   interestSource   String? // where/when, in the recruiter's words (e.g. "reply to email of 3 Oct")
   interviewKit     InterviewKit?
+  profileScores    ProfileScore[]
+  // Alternative assessment route, recorded when a candidate asks for it or the recruiter judges the
+  // screen may not assess them accurately. Never asks for or records the reason (e.g. disability).
+  altRoute         String             @default("none") // none | requested | in_progress | completed
+  altRouteNote     String?
+  altRouteBy       String?
+  altRouteAt       DateTime?
 
   @@unique([candidateId, roleId])
   @@index([orgId, roleId])
@@ -364,6 +379,7 @@ model Assessment {
   application              Application      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   resume                   Resume?          @relation(fields: [resumeId], references: [id], onDelete: SetNull)
   items                    AssessmentItem[]
+  profileScores            ProfileScore[]
 
   @@index([orgId, applicationId])
 }
@@ -1038,4 +1054,77 @@ model InterviewEvent {
 
   @@index([orgId])
   @@index([stageId, status])
+}
+
+/// One version of a role's scoring settings. Every profile score records the version that
+/// produced it; changing settings creates a new version and never rewrites old scores.
+model ScoringVersion {
+  id              String         @id @default(cuid())
+  orgId           String
+  roleId          String
+  version         Int
+  bandsJson       String // [{ key: red|yellow|green, min, label }] ordered, contiguous 0–100
+  weightRequired  Int
+  weightPreferred Int
+  minCoverage     Float          @default(0.6) // below this weighted coverage → Insufficient evidence
+  note            String?
+  createdById     String?
+  createdByName   String
+  createdAt       DateTime       @default(now())
+  flaggedAt       DateTime? // set when monitoring found a material difference
+  flagReason      String?
+  flagReviewedAt  DateTime?
+  flagReviewedBy  String?
+  flagNote        String?
+  role            Role           @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  scores          ProfileScore[]
+
+  @@unique([roleId, version])
+  @@index([orgId])
+}
+
+/// A stored 0–100 profile score for one assessment under one scoring version. Append-only:
+/// corrections and deliberate recalculations add rows; history is never rewritten.
+model ProfileScore {
+  id               String         @id @default(cuid())
+  orgId            String
+  roleId           String
+  applicationId    String
+  assessmentId     String
+  scoringVersionId String
+  score            Int? // null when evidence is insufficient or the alternative route is used
+  coverage         Float
+  status           String // ok | insufficient | alternative
+  band             String? // red | yellow | green
+  bandLabel        String?
+  breakdownJson    String // rows used in the calculation
+  trigger          String // assessment | correction | recalculated
+  createdById      String?
+  createdByName    String
+  createdAt        DateTime       @default(now())
+  assessment       Assessment     @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  application      Application    @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  scoringVersion   ScoringVersion @relation(fields: [scoringVersionId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, roleId])
+  @@index([applicationId, createdAt])
+  @@index([scoringVersionId])
+}
+
+/// Self-reported demographic data for AGGREGATE fairness monitoring only. Kept apart from
+/// candidate records and scoring; visible to admins only, in aggregate, with small groups suppressed.
+model DemographicRecord {
+  id            String    @id @default(cuid())
+  orgId         String
+  candidateId   String
+  category      String // e.g. gender, ethnicity, age_band — as defined by the employer's lawful process
+  value         String
+  source        String    @default("self_reported")
+  collectedAt   DateTime?
+  createdByName String
+  createdAt     DateTime  @default(now())
+  candidate     Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, category])
+  @@index([orgId, category])
 }

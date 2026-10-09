@@ -15,6 +15,7 @@ import { REVIEW_STATUS_LABEL, REVIEW_STATUS_TONE, reviewStatus } from "@/lib/rev
 import { CONNECTORS, isLiveSourceConnected, sourceLabel } from "@/lib/sourcing/connectors";
 import { THRESHOLD_FILTERS, matchForApplication, passesSkillFilter, roleSkillConfig } from "@/lib/skills";
 import { SkillCount, SkillFilterFields } from "@/components/skill-match";
+import { ProfileScoreChip } from "@/components/profile-score";
 import { clearSampleData } from "@/server/sourcing-actions";
 import { loadOutreachView } from "@/server/outreach-view";
 import { ownRole } from "@/server/scope";
@@ -103,8 +104,9 @@ export default async function DiscoverPage({
         assessments: {
           orderBy: { createdAt: "desc" },
           take: 1,
-          select: { status: true, criteriaSnapshot: true, criteriaVersion: true, resumeId: true, profileHash: true, items: { select: { criterionId: true, kind: true, importance: true, result: true, overrideResult: true } } },
+          select: { id: true, status: true, criteriaSnapshot: true, criteriaVersion: true, resumeId: true, profileHash: true, items: { select: { criterionId: true, kind: true, importance: true, result: true, overrideResult: true } } },
         },
+        profileScores: { orderBy: { createdAt: "desc" }, take: 1, include: { scoringVersion: { select: { version: true } } } },
         outreach: { orderBy: { createdAt: "desc" }, take: 1, select: { status: true, channel: true } },
       },
     }),
@@ -169,6 +171,7 @@ export default async function DiscoverPage({
           : "Fictional people · not a live search",
   }));
   const discoveredAll = apps.filter((a) => a.origin === "discovered");
+  const currentScoringVersion = (await db.scoringVersion.findFirst({ where: { orgId: auth.orgId, roleId: id }, orderBy: { version: "desc" }, select: { version: true } }))?.version ?? 1;
   const skillMatches = new Map(discoveredAll.map((a) => [a.id, matchForApplication(a, { config: skillConfig, approved: approvedList, criteriaVersion: role.criteriaVersion })]));
   const discovered = discoveredAll.filter((a) => passesSkillFilter(skillMatches.get(a.id), skillFilter));
   const sampleCount = apps.filter((a) => a.candidate.isSample).length;
@@ -516,6 +519,15 @@ export default async function DiscoverPage({
                     <Link href={`/candidates/${a.candidateId}?role=${role.id}#skills`} className="rounded-md hover:bg-sunken/60" aria-label={`Skill evidence for ${a.candidate.fullName}`}>
                       {skillMatches.get(a.id) && <SkillCount m={skillMatches.get(a.id)!} />}
                     </Link>
+                    {a.assessments[0] && (() => {
+                      const p = a.profileScores[0];
+                      const ok = p && p.assessmentId === a.assessments[0].id;
+                      return (
+                        <ProfileScoreChip
+                          s={ok ? { id: p.id, score: p.score, coverage: p.coverage, status: p.status, band: p.band, bandLabel: p.bandLabel, version: p.scoringVersion.version, currentVersion: currentScoringVersion, createdAt: p.createdAt, createdByName: p.createdByName, trigger: p.trigger } : null}
+                        />
+                      );
+                    })()}
                     <Badge tone={REVIEW_STATUS_TONE[st]}>{REVIEW_STATUS_LABEL[st]}</Badge>
                     <Link href={outreachHref(a.id)!} className="rounded-lg border border-line-strong px-2.5 py-1 text-[12.5px] font-medium hover:bg-sunken">
                       Outreach

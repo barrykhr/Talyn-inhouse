@@ -11,6 +11,7 @@ import { logError } from "@/lib/log";
 import { candidateInfoChanged } from "@/lib/skills";
 import { isStale } from "@/lib/summary";
 import { assessApplication } from "./assessment-engine";
+import { recordProfileScore } from "./scoring-store";
 import { str, type ActionState } from "./form";
 import { ownApplication, ownAssessment, ownAssessmentItem, ownRole } from "./scope";
 
@@ -145,6 +146,8 @@ async function applyCorrection(
       },
     }),
   ]);
+  // A correction is a human change to the evidence, so the score is re-recorded (the earlier one is kept).
+  await recordProfileScore(auth, item.assessmentId, "correction");
   await audit(auth, restoredFromId ? "assessment.correction_restored" : "assessment.corrected", {
     subjectType: "assessment",
     subjectId: item.assessmentId,

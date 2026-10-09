@@ -23,6 +23,9 @@ import { pct } from "@/lib/score";
 import { computeScore, weightsOf } from "@/lib/score";
 import { candidateInfoChanged, roleSkillConfig, skillMatch, THRESHOLD_LABEL } from "@/lib/skills";
 import { SkillCount } from "@/components/skill-match";
+import { ProfileScoreChip, ProfileScoreDetail, type ScoreSnapshot } from "@/components/profile-score";
+import { parseBands, type ProfileRow } from "@/lib/profile-score";
+import { AltRouteControl } from "./alt-route";
 import { roleFit, stageReadiness } from "@/lib/ranking";
 import { parseEvidence } from "@/lib/evidence";
 import { highlight } from "@/lib/highlight";
@@ -157,6 +160,27 @@ export default async function CandidatePage({
         : undefined;
 
   const stale = !!latest && (isStale(latest.criteriaSnapshot, app!.role.criteria) || (latest.criteriaVersion != null && latest.criteriaVersion !== app!.role.criteriaVersion));
+  // Profile score: the latest stored score for the latest assessment, under the version that produced it.
+  const [scoreRows, currentVersion, org] = await Promise.all([
+    app ? db.profileScore.findMany({ where: { orgId: auth.orgId, applicationId: app.id }, orderBy: { createdAt: "desc" }, take: 20, include: { scoringVersion: true } }) : [],
+    app ? db.scoringVersion.findFirst({ where: { orgId: auth.orgId, roleId: app.roleId }, orderBy: { version: "desc" }, select: { version: true } }) : null,
+    db.organization.findUniqueOrThrow({ where: { id: auth.orgId }, select: { accommodationText: true } }),
+  ]);
+  const latestScore = latest ? scoreRows.find((r) => r.assessmentId === latest.id) ?? null : null;
+  const snap = (r: (typeof scoreRows)[number]): ScoreSnapshot => ({
+    id: r.id,
+    score: r.score,
+    coverage: r.coverage,
+    status: r.status,
+    band: r.band,
+    bandLabel: r.bandLabel,
+    version: r.scoringVersion.version,
+    currentVersion: currentVersion?.version ?? r.scoringVersion.version,
+    createdAt: r.createdAt,
+    createdByName: r.createdByName,
+    trigger: r.trigger,
+  });
+  const scoreBreakdown = latestScore ? (JSON.parse(latestScore.breakdownJson) as { rows: ProfileRow[]; reason: string; requiredKnown: number; requiredTotal: number }) : null;
   const infoChanged = !!latest && candidateInfoChanged(latest, { resumeId: candidate.resumes.find((r) => r.isCurrent)?.id ?? null, candidate });
   const skillItems = items.filter((i) => i.kind === "skill");
   const criterionItems = items.filter((i) => i.kind !== "skill");
@@ -937,13 +961,65 @@ export default async function CandidatePage({
         </Card>
       )}
 
-      <Card className="p-4">
-        <div className="mb-3 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Evaluation criteria score</div>
-        {liveScore ? (
-          <ScorePanel score={liveScore} adjusted={summarize(latest!.items).overrides > 0} editHref={`/roles/${app!.roleId}?tab=criteria#rubric`} />
+      <Card className="p-4" data-profile-score>
+        {latestScore && scoreBreakdown ? (
+          <>
+            <ProfileScoreDetail
+              s={snap(latestScore)}
+              rows={scoreBreakdown.rows}
+              reason={scoreBreakdown.reason}
+              bands={parseBands(latestScore.scoringVersion.bandsJson)}
+              weights={{ required: latestScore.scoringVersion.weightRequired, preferred: latestScore.scoringVersion.weightPreferred }}
+              minCoverage={latestScore.scoringVersion.minCoverage}
+              requiredKnown={scoreBreakdown.requiredKnown}
+              requiredTotal={scoreBreakdown.requiredTotal}
+            />
+            <div className="mt-2 flex flex-wrap gap-x-3 text-[12.5px]">
+              <a href="#skills" className="text-brand hover:underline">Review evidence</a>
+              <a href="#skills" className="text-brand hover:underline">Correct an assessment</a>
+              <span className="text-muted">· Need more information? Use “Suggest follow-ups from gaps” or create an information request below.</span>
+            </div>
+            {scoreRows.length > 1 && (
+              <details className="mt-2 text-[12.5px]">
+                <summary className="cursor-pointer text-muted hover:text-ink">Score history ({scoreRows.length})</summary>
+                <ul className="mt-1 space-y-1">
+                  {scoreRows.map((r) => (
+                    <li key={r.id} className="flex flex-wrap items-center gap-2">
+                      <ProfileScoreChip s={snap(r)} />
+                      <span className="text-muted">
+                        v{r.scoringVersion.version} · {r.trigger} · {r.createdByName} · {r.createdAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                        {r.assessmentId !== latest?.id ? " · earlier assessment" : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </>
         ) : (
-          <p className="text-[13px] text-muted">Appears after an assessment, with its calculation and evidence coverage.</p>
+          <p className="text-[13px] text-muted">
+            <span className="mb-1 block text-[11.5px] font-semibold uppercase tracking-wide">Profile score</span>
+            {latest ? "This assessment was made before profile scoring existed. Recalculate scores on the role's Criteria tab to add one." : "Appears after an assessment, with its calculation, weights and evidence coverage."}
+          </p>
         )}
+        {liveScore && (
+          <details className="mt-3 border-t border-line pt-2 text-[12.5px]">
+            <summary className="cursor-pointer text-muted hover:text-ink">Evaluation-criteria alignment (criteria only, used for ranking)</summary>
+            <div className="mt-2">
+              <ScorePanel score={liveScore} adjusted={summarize(latest!.items).overrides > 0} editHref={`/roles/${app!.roleId}?tab=criteria#rubric`} />
+            </div>
+          </details>
+        )}
+        <div className="mt-3 border-t border-line pt-3">
+          <AltRouteControl
+            applicationId={app!.id}
+            status={app!.altRoute}
+            note={app!.altRouteNote}
+            by={app!.altRouteBy}
+            at={app!.altRouteAt?.toISOString() ?? null}
+            accommodationText={org.accommodationText}
+          />
+        </div>
       </Card>
 
       <Card className="p-4" aria-live="polite">

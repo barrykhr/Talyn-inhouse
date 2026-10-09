@@ -23,6 +23,8 @@ import { weightsOf } from "@/lib/score";
 import { LIST_LABEL } from "@/lib/extraction-fields";
 import { RoleReviewForm, UploadJd, type FactView } from "./jd";
 import { AddCriterion, CriterionRow, ProposePanel, ReassessButton, ReviewBanner, RubricForm, type CriterionView } from "./criteria";
+import { RecalculateButton, ScoringForm } from "./scoring";
+import { parseBands } from "@/lib/profile-score";
 import { IMPORTANCE_LABEL } from "@/lib/domain";
 
 // AI proposals/assessments run as server actions on this page and can take a while.
@@ -69,6 +71,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
             include: { items: { select: { criterionName: true, criterionId: true, kind: true, importance: true, result: true, overrideResult: true } } },
           },
           _count: { select: { tasks: { where: { status: "open", type: "gather_info" } } } },
+          profileScores: { orderBy: { createdAt: "desc" }, take: 1, include: { scoringVersion: { select: { version: true } } } },
         },
         orderBy: { updatedAt: "desc" },
       },
@@ -111,6 +114,22 @@ export default async function RolePage({ params, searchParams }: { params: Promi
   const awaitingDecision = active.filter((a) => a.assessments[0] && !a.decision).length;
   // Skill matching: one count per candidate, from the latest assessment, compared live with the rubric.
   const skillConfig = roleSkillConfig(role, role.criteria);
+  const scoringVersions = await db.scoringVersion.findMany({ where: { orgId: auth.orgId, roleId: role.id }, orderBy: { version: "desc" } });
+  const currentScoring = scoringVersions[0] ?? null;
+  const scoreSnaps = new Map(
+    role.applications.map((a) => {
+      const p = a.profileScores[0];
+      // Only a score for the latest assessment is current; an older assessment's score isn't shown as current.
+      const valid = p && a.assessments[0] && p.assessmentId === a.assessments[0].id;
+      return [
+        a.id,
+        valid
+          ? { id: p.id, score: p.score, coverage: p.coverage, status: p.status, band: p.band, bandLabel: p.bandLabel, version: p.scoringVersion.version, currentVersion: currentScoring?.version ?? p.scoringVersion.version, createdAt: p.createdAt, createdByName: p.createdByName, trigger: p.trigger }
+          : null,
+      ] as const;
+    }),
+  );
+  const onOlderVersion = currentScoring ? role.applications.filter((a) => a.assessments[0] && scoreSnaps.get(a.id)?.version !== currentScoring.version).length : 0;
   const skillMatches = new Map(role.applications.map((a) => [a.id, matchForApplication(a, { config: skillConfig, approved, criteriaVersion: role.criteriaVersion })]));
   const notRejected = role.applications.filter((a) => a.stage !== "rejected" && a.decision !== "decline");
   const noMaterial = notRejected.filter((a) => skillMatches.get(a.id)!.noMaterial).length;
@@ -300,6 +319,45 @@ export default async function RolePage({ params, searchParams }: { params: Promi
             </Card>
           </section>
 
+          <section id="scoring" className="scroll-mt-6" aria-labelledby="scoring-h">
+            <SectionTitle hint="This role only. A 0–100 profile score from the approved skills and criteria above and the evidence on file. Labels are advisory — a person always decides.">
+              <span id="scoring-h">Scoring</span>
+            </SectionTitle>
+            <Card className="space-y-4 p-4">
+              <ScoringForm
+                roleId={role.id}
+                bands={parseBands(currentScoring?.bandsJson)}
+                minCoverage={currentScoring?.minCoverage ?? 0.6}
+                canEdit={auth.membershipRole !== "hiring_manager"}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-[12.5px]">
+                <span className="text-muted">
+                  {currentScoring ? `Current: version ${currentScoring.version}, by ${currentScoring.createdByName} on ${formatDate(currentScoring.createdAt)}.` : "Version 1 (defaults) is created with the first score."} Weights come from the
+                  rubric above; changing them also creates a new version. Saving never rewrites earlier scores.
+                </span>
+                {currentScoring && auth.membershipRole !== "hiring_manager" && <RecalculateButton roleId={role.id} version={currentScoring.version} outdated={onOlderVersion} />}
+              </div>
+              {scoringVersions.length > 0 && (
+                <details className="text-[12.5px]">
+                  <summary className="cursor-pointer text-muted hover:text-ink">Version history ({scoringVersions.length})</summary>
+                  <ul className="mt-1.5 space-y-1">
+                    {scoringVersions.map((v) => (
+                      <li key={v.id}>
+                        <span className="font-medium">v{v.version}</span>{" "}
+                        <span className="text-muted">
+                          {formatDate(v.createdAt)} · {v.createdByName} · weights {v.weightRequired}/{v.weightPreferred} · min coverage {Math.round(v.minCoverage * 100)}% ·{" "}
+                          {parseBands(v.bandsJson).map((b) => `${b.label} ≥${b.min}`).join(", ")}
+                          {v.note ? ` · ${v.note}` : ""}
+                        </span>
+                        {v.flaggedAt && !v.flagReviewedAt && <Badge tone="warn" className="ml-1.5">Flagged for review</Badge>}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </Card>
+          </section>
+
           <section aria-labelledby="crit-h">
             <SectionTitle
               hint="Broader evaluation: experience, location, domain knowledge. Required and preferred criteria are weighted; informational ones are shown but never weighted."
@@ -468,6 +526,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
           skillMatches={skillMatches}
           requiredSkills={skillConfig.requiredSkillIds.length}
           weights={weightsOf(role)}
+          scores={scoreSnaps}
         />
       )}
 
@@ -479,6 +538,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
           skillMatches={skillMatches}
           requiredSkills={skillConfig.requiredSkillIds.length}
           skillFilter={skillFilter}
+          scores={scoreSnaps}
         />
       )}
     </>

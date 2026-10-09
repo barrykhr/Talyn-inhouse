@@ -41,7 +41,9 @@
           "name": "Create a role",
           "where": "Roles → New role",
           "href": "/roles/new",
-          "needs": ["ai_optional"],
+          "needs": [
+            "ai_optional"
+          ],
           "steps": [
             "Choose “From a job description” to upload a PDF/DOCX, or “Enter manually”.",
             "Review the details Talyn read from the JD (each shows the excerpt it came from) and save.",
@@ -64,7 +66,9 @@
           "name": "Skills and evaluation criteria",
           "where": "Role → Criteria",
           "href": "/roles",
-          "needs": ["ai_optional"],
+          "needs": [
+            "ai_optional"
+          ],
           "steps": [
             "Click “Extract bullet points” (no AI) or “Propose with AI” to get suggestions from the JD. Suggestions are not used until approved.",
             "Approve, edit, reject or reclassify each suggestion (Skill or Evaluation criterion; Required, Preferred or Informational).",
@@ -88,10 +92,25 @@
           "notes": "The threshold describes evidence only. Nobody is hidden, rejected or advanced by it."
         },
         {
+          "name": "Profile scoring (0–100) and bands",
+          "where": "Role → Criteria → Scoring",
+          "href": "/roles",
+          "needs": [],
+          "steps": [
+            "Approve the role's skills and criteria first — only approved, job-related Required and Preferred items are scored.",
+            "Set the band cutoffs and labels (defaults: below 65 “Recommendation to reject”, 65–74 “Recommendation to consider”, 75+ “AI Screen Pass”) and the minimum evidence coverage.",
+            "Click “Save as new version”. Bands must rise and can't overlap or leave gaps; other roles aren't affected.",
+            "Click “Recalculate scores” to re-score everyone's latest assessment with the current version. Earlier scores stay in each candidate's history."
+          ],
+          "notes": "Labels are advisory only and never reject, advance or hide anyone. Missing or unverified evidence is unknown, not a failure; too little known evidence shows Insufficient evidence instead of a colour. Criteria naming protected characteristics are refused; career gaps, formatting, writing polish, school prestige or career path need a documented “Job-related reason:”."
+        },
+        {
           "name": "Reassess candidates",
           "where": "Role → Criteria → Reassess candidates",
           "href": "/roles",
-          "needs": ["ai_optional"],
+          "needs": [
+            "ai_optional"
+          ],
           "steps": [
             "Click “Reassess candidates (n)” to re-run everyone whose assessment is missing or out of date, or “Reassess all”.",
             "Uses AI when configured; otherwise the labelled keyword check. Rejected candidates are skipped.",
@@ -123,7 +142,9 @@
           "name": "Candidate assessment",
           "where": "Candidate → Assessment tab",
           "href": "/candidates",
-          "needs": ["ai_optional"],
+          "needs": [
+            "ai_optional"
+          ],
           "steps": [
             "Click “Assess with AI” or “Keyword check (no AI)”.",
             "In Skills, open any skill to see the excerpt, where it came from (CV file, candidate information or linked source) and its date.",
@@ -133,6 +154,19 @@
             "Review the AI recommendation (accept, edit or override), suggest follow-up questions, and record your decision in the side panel."
           ],
           "notes": "“No evidence found” means missing evidence, not proof the candidate lacks the skill. The skill count is separate from the criteria score and is never a decision."
+        },
+        {
+          "name": "Profile score on a candidate",
+          "where": "Candidate → side panel → Profile score",
+          "href": "/candidates",
+          "needs": [],
+          "steps": [
+            "Read the score and band label, with evidence coverage shown separately.",
+            "Open “How this score was calculated” for every criterion's weight, result, credit, points and excerpt count, and the scoring version.",
+            "Correct a skill or criterion if the evidence is wrong — the score is re-recorded and the earlier one kept in “Score history”.",
+            "If the candidate asks for another way to be assessed, set Alternative assessment to Requested. The screening score is then not shown or used. Don't record why."
+          ],
+          "notes": "Lists show the same advisory chip next to each applicant, shortlisted and saved Discover person."
         },
         {
           "name": "Profile checks",
@@ -178,7 +212,9 @@
           "name": "Search setup and Boolean",
           "where": "Discover → Start a search, or Role → Discover",
           "href": "/discover",
-          "needs": ["ai_optional"],
+          "needs": [
+            "ai_optional"
+          ],
           "steps": [
             "Upload a JD to suggest the fields, or fill them in: role title, other titles, required and preferred skills, years, location, work arrangement, exclusions.",
             "Check each field's label (from the JD, a suggestion, or not stated) and edit.",
@@ -202,7 +238,9 @@
           "name": "Sources",
           "where": "Role → Discover → Search setup → Sources",
           "href": "/integrations",
-          "needs": ["sourcing"],
+          "needs": [
+            "sourcing"
+          ],
           "steps": [
             "Talyn rediscovery (your existing candidates) always works.",
             "A licensed provider can be searched once its credentials are added (see Integrations).",
@@ -231,7 +269,10 @@
           "name": "Email and WhatsApp sequences",
           "where": "Candidate → Outreach tab (or Outreach from a saved Discover person)",
           "href": "/candidates",
-          "needs": ["email", "whatsapp"],
+          "needs": [
+            "email",
+            "whatsapp"
+          ],
           "steps": [
             "Choose Email or WhatsApp and 2 or 3 follow-ups; draft the sequence.",
             "Check which candidate facts were used and their sources; edit each message and its delay.",
@@ -262,7 +303,9 @@
           "name": "Interview plans, scorecards and debrief",
           "where": "Role → Interviews, or Interviews",
           "href": "/interviews",
-          "needs": ["ai_optional"],
+          "needs": [
+            "ai_optional"
+          ],
           "steps": [
             "Click “Create interview plan” for a shortlisted candidate. The plan is built from the role's approved skills and criteria.",
             "Edit competencies, questions and stages; assign interviewers to each stage; share the plan.",
@@ -275,7 +318,9 @@
           "name": "Scheduling with Google Calendar",
           "where": "Interview plan → Schedule a stage; your connection: account menu → My calendar connection",
           "href": "/integrations#calendar",
-          "needs": ["calendar"],
+          "needs": [
+            "calendar"
+          ],
           "steps": [
             "Each interviewer connects their own Google Calendar (free/busy and the events Talyn creates only).",
             "On a stage, propose times from shared free/busy, review, and create the event with a Meet link.",
@@ -299,6 +344,19 @@
             "See which skills and criteria are corrected most or lack evidence, which evidence recruiters overruled, shortlist and interview rates by band, and assessments that changed after interviews."
           ],
           "notes": "Every rate shows its denominator; under 5 reads Insufficient data. It describes what happened and does not change how Talyn assesses."
+        },
+        {
+          "name": "Scoring validation & fairness (admins)",
+          "where": "Workspace settings → Scoring validation & fairness",
+          "href": "/settings/scoring",
+          "needs": [],
+          "steps": [
+            "For each role and scoring version, review score distribution, outcomes by band, correction and insufficient-evidence rates.",
+            "Optionally turn on monitoring with self-reported demographic data (requires an attestation), import responses as email,category,value, and compare groups. Groups under 10 are suppressed.",
+            "Review any version flagged for a material difference and record what was decided.",
+            "Set the alternative-assessment instructions recruiters share with candidates."
+          ],
+          "notes": "Descriptive statistics only: they can't show a process is fair, valid or compliant. Demographic data never appears in candidate or recruiter views and is never inferred."
         },
         {
           "name": "Team and permissions",
