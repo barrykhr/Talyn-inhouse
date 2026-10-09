@@ -4,8 +4,18 @@
 export type ExtractedCriterion = {
   name: string;
   importance: "essential" | "preferred";
+  kind: "skill" | "criterion";
   sourceText: string;
 };
+
+const SKILLS_HEADING = /\b(skills|tech(nical)? stack|tools|technologies|languages)\b/i;
+
+/** A short bullet naming a tool, technology or competency is a skill; longer requirements stay criteria. */
+export function looksLikeSkill(text: string, underSkillsHeading: boolean) {
+  const words = text.split(/\s+/).filter(Boolean).length;
+  if (/\b(years?|degree|bachelor|master|phd|eligib|authori[sz]ed|located|relocat|travel|visa)\b/i.test(text)) return false;
+  return underSkillsHeading ? words <= 8 : words <= 4;
+}
 
 const PREFERRED_HEADING = /(nice to have|preferred|bonus|plus|desirable|good to have|ideally)/i;
 const REQUIRED_HEADING = /(requirement|qualification|must have|what you('|’)ll need|you have|you bring|skills|experience)/i;
@@ -15,12 +25,14 @@ const BULLET = /^\s*(?:[-*•·▪◦]|\d+[.)])\s+(.+)$/;
 export function extractCriteriaFromJd(description: string): ExtractedCriterion[] {
   const out: ExtractedCriterion[] = [];
   let section: "essential" | "preferred" | "other" = "other";
+  let skillsHeading = false;
   for (const raw of description.split("\n")) {
     const line = raw.trim();
     if (!line) continue;
     const bullet = line.match(BULLET);
     if (!bullet) {
       if (line.length < 80) {
+        skillsHeading = SKILLS_HEADING.test(line);
         if (PREFERRED_HEADING.test(line)) section = "preferred";
         else if (REQUIRED_HEADING.test(line)) section = "essential";
         else section = "other";
@@ -34,6 +46,7 @@ export function extractCriteriaFromJd(description: string): ExtractedCriterion[]
     out.push({
       name: text.length > 90 ? text.slice(0, 87).trimEnd() + "…" : text,
       importance: section === "preferred" || inlinePreferred ? "preferred" : "essential",
+      kind: looksLikeSkill(text, skillsHeading) ? "skill" : "criterion",
       sourceText: line,
     });
     if (out.length >= 15) break;
@@ -78,4 +91,27 @@ export function keywordMatch(keywords: string[], text: string) {
 
 function escapeRe(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** The skill's name plus recruiter-entered aliases, as lowercase search phrases. */
+export function skillTerms(name: string, aliases: string): string[] {
+  return Array.from(
+    new Set(
+      [name, ...aliases.split(",")]
+        .map((t) => t.trim().toLowerCase().replace(/\s+/g, " "))
+        .filter((t) => t.length >= 1 && t.length <= 80),
+    ),
+  );
+}
+
+/** Lines that mention one of the skill's terms as a whole word or phrase. */
+export function findSkillMentions(terms: string[], text: string) {
+  const hits: { snippet: string; term: string }[] = [];
+  for (const s of snippets(text)) {
+    const lower = s.toLowerCase().replace(/\s+/g, " ");
+    const term = terms.find((t) => new RegExp(`(^|[^a-z0-9+#])${escapeRe(t)}($|[^a-z0-9+#])`).test(lower));
+    if (term) hits.push({ snippet: s.length > 240 ? s.slice(0, 240) : s, term });
+    if (hits.length >= 2) break;
+  }
+  return hits;
 }

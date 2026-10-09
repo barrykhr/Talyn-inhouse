@@ -69,6 +69,8 @@ export const AUDIT_LABEL: Record<string, string> = {
   "jd.criteria_drafted": "Drafted criteria from JD",
   "jd.reviewed": "Reviewed JD extraction",
   "criteria.changed": "Changed approved criteria",
+  "rubric.changed": "Changed skill threshold or weights",
+  "assessment.batch": "Reassessed candidates",
   "assessment.run": "Ran assessment",
   "assessment.corrected": "Corrected assessment result",
   "assessment.reviewed": "Marked assessment reviewed",

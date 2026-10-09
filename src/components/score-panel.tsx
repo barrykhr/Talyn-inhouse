@@ -1,14 +1,15 @@
 import { RESULT_LABEL, type AssessmentResult } from "@/lib/domain";
-import { CREDIT, LIMITED_COVERAGE, MIN_COVERAGE, WEIGHTS, pct, type ScoreResult } from "@/lib/score";
+import Link from "next/link";
+import { CREDIT, LIMITED_COVERAGE, MIN_COVERAGE, pct, type ScoreResult } from "@/lib/score";
 import { Badge } from "./ui";
 
 /** Criteria-alignment score with its scale, weights and calculation visible; coverage shown separately. */
-export function ScorePanel({ score, adjusted }: { score: ScoreResult; adjusted: boolean }) {
+export function ScorePanel({ score, adjusted, editHref }: { score: ScoreResult; adjusted: boolean; editHref?: string }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
         <div>
-          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-muted">Criteria alignment</div>
+          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-muted">Evaluation criteria alignment</div>
           {score.score === null ? (
             <div className="mt-0.5 text-[15px] font-semibold text-muted">Withheld</div>
           ) : (
@@ -28,23 +29,32 @@ export function ScorePanel({ score, adjusted }: { score: ScoreResult; adjusted: 
             </span>
           </div>
           <div className="text-[12px] text-muted">
-            {score.essentialAssessable}/{score.essentialTotal} essential criteria assessable
+            {score.essentialAssessable}/{score.essentialTotal} required criteria assessable
           </div>
         </div>
       </div>
       <p className="text-[12.5px] text-ink-2">{score.reason}</p>
       <p className="text-[12px] text-faint">
         Measures alignment with this role&apos;s approved criteria only. It is not a measure of candidate quality, potential or likelihood of hire, and it has not
-        been validated as a predictor. {adjusted && "Includes your corrections."}
+        been validated as a predictor. Skills are counted separately and are not part of this number. {adjusted && "Includes your corrections."}
       </p>
       <details className="text-[12.5px]">
         <summary className="cursor-pointer font-medium text-muted hover:text-ink">How this is calculated</summary>
         <div className="mt-2 space-y-2">
           <p className="text-muted">
-            Weights: essential = {WEIGHTS.essential}, preferred = {WEIGHTS.preferred}. Credit: supported = {CREDIT.supported}, partially supported ={" "}
-            {CREDIT.partially_supported}, inferred = {CREDIT.inferred}. Not stated and conflicting criteria can&apos;t be assessed: they are left out of the score
+            Weights (set for this role): required = {score.weights.essential}, preferred = {score.weights.preferred}; informational criteria and skills are not
+            weighted. Credit: supported = {CREDIT.supported}, partially supported = {CREDIT.partially_supported}, inferred = {CREDIT.inferred}, confirmed not met by a
+            recruiter = {CREDIT.confirmed_absent}. Not stated and conflicting criteria can&apos;t be assessed: they are left out of the score
             (never counted as failed) and lower coverage instead. Score = points ÷ weight of assessable criteria × 100. Withheld below {pct(MIN_COVERAGE)}{" "}
-            coverage or when fewer than half of essential criteria are assessable; flagged as limited below {pct(LIMITED_COVERAGE)}. Method: {score.method}.
+            coverage or when fewer than half of required criteria are assessable; flagged as limited below {pct(LIMITED_COVERAGE)}. Method: {score.method}.
+            {editHref && (
+              <>
+                {" "}
+                <Link href={editHref} className="font-medium text-brand underline-offset-2 hover:underline">
+                  Edit criteria and weights
+                </Link>
+              </>
+            )}
           </p>
           <div className="overflow-x-auto rounded-lg border border-line">
             <table className="w-full text-[12.5px]">

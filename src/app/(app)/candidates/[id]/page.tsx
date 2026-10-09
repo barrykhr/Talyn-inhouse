@@ -19,7 +19,9 @@ import { EvidenceCounts, OriginBadge, SampleBadge } from "@/components/role-work
 import { evidenceCounts } from "@/lib/review-status";
 import { sourceLabel } from "@/lib/sourcing/connectors";
 import { pct } from "@/lib/score";
-import { computeScore } from "@/lib/score";
+import { computeScore, weightsOf } from "@/lib/score";
+import { candidateInfoChanged, roleSkillConfig, skillMatch, THRESHOLD_LABEL } from "@/lib/skills";
+import { SkillCount } from "@/components/skill-match";
 import { roleFit, stageReadiness } from "@/lib/ranking";
 import { parseEvidence } from "@/lib/evidence";
 import { highlight } from "@/lib/highlight";
@@ -30,7 +32,7 @@ import { parseOrigins } from "@/server/resume-store";
 import { ownCandidate } from "@/server/scope";
 import { ActivityList, parseMeta } from "@/components/activity";
 import { AddToRole } from "./add-role";
-import { GeneratorTag, ItemCard, RecommendationPanel, ReviewControls, RunAssessment, StaleNotice, type ItemView } from "./assessment";
+import { GeneratorTag, ItemCard, RecommendationPanel, ReviewControls, RunAssessment, SkillRow, StaleNotice, type ItemView } from "./assessment";
 import { CV_LISTS, CV_SCALARS } from "@/lib/extraction-fields";
 import { CvReviewForm, type CvFact } from "./cv-review";
 import { DecisionForm } from "./decision";
@@ -79,7 +81,7 @@ export default async function CandidatePage({
           stageEvents: { orderBy: { createdAt: "desc" } },
           tasks: { where: { status: "open" }, orderBy: { createdAt: "asc" } },
           questions: { where: { kind: "follow_up" }, orderBy: [{ status: "asc" }, { createdAt: "asc" }] },
-          role: { include: { criteria: { where: { status: "approved" }, select: { id: true, updatedAt: true } }, questions: { where: { kind: "core", status: "approved" } } } },
+          role: { include: { criteria: { where: { status: "approved" }, select: { id: true, updatedAt: true, kind: true, importance: true, status: true } }, questions: { where: { kind: "core", status: "approved" } } } },
           assessments: { orderBy: { createdAt: "desc" }, include: { items: true, resume: { select: { fileName: true } } } },
           interviewKit: { include: { stages: { orderBy: { position: "asc" }, include: { assignments: { select: { id: true, interviewerId: true, interviewerName: true, status: true, submittedAt: true } }, events: { where: { status: "scheduled" }, select: { mode: true, startAt: true, timeZone: true, meetUrl: true } } } } } },
         },
@@ -115,7 +117,7 @@ export default async function CandidatePage({
   const needsReview = candidate.extractionStatus === "needs_review";
   const origins = parseOrigins(candidate.fieldOriginsJson);
   const liveScore = latest
-    ? computeScore(latest.items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult })))
+    ? computeScore(latest.items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult, kind: i.kind })), weightsOf(app?.role))
     : null;
   const recJson = (latest?.recommendationJson ? JSON.parse(latest.recommendationJson) : {}) as {
     rationale?: string;
@@ -144,6 +146,17 @@ export default async function CandidatePage({
         : undefined;
 
   const stale = !!latest && (isStale(latest.criteriaSnapshot, app!.role.criteria) || (latest.criteriaVersion != null && latest.criteriaVersion !== app!.role.criteriaVersion));
+  const infoChanged = !!latest && candidateInfoChanged(latest, { resumeId: candidate.resumes.find((r) => r.isCurrent)?.id ?? null, candidate });
+  const skillItems = items.filter((i) => i.kind === "skill");
+  const criterionItems = items.filter((i) => i.kind !== "skill");
+  const skills = app
+    ? skillMatch({
+        items: latest ? latest.items : null,
+        config: roleSkillConfig(app.role, app.role.criteria),
+        stale: stale || infoChanged,
+        noMaterial: pages.join("").trim() === "" && !candidate.candidateSummary && !candidate.currentTitle && !app.sourcedProfileId,
+      })
+    : null;
   const stageSince = app?.stageEvents[0]?.createdAt ?? app?.createdAt;
   const outreach: OutreachView | null = app ? await loadOutreachView(auth, app.id) : null;
   const fit = app ? roleFit(app.assessments, { criteria: app.role.criteria, criteriaVersion: app.role.criteriaVersion }) : null;
@@ -440,7 +453,7 @@ export default async function CandidatePage({
           key: "compare",
           label: "Compare evidence with role criteria",
           state: disabledReason && !latest ? "blocked" : !latest ? "pending" : stale ? "active" : "done",
-          detail: disabledReason && !latest ? disabledReason : !latest ? "Runs when you press Assess." : stale ? "The role's criteria changed since this ran — re-run to compare against the current set." : `Checked against ${latest.items.length} criteri${latest.items.length === 1 ? "on" : "a"} on ${formatDateTime(latest.createdAt)}.`,
+          detail: disabledReason && !latest ? disabledReason : !latest ? "Runs when you press Assess." : stale ? "The role's criteria changed since this ran — re-run to compare against the current set." : `Checked ${latest.items.filter((i) => i.kind === "skill").length} skills and ${latest.items.filter((i) => i.kind !== "skill").length} evaluation criteria on ${formatDateTime(latest.createdAt)}.`,
           fix: disabledReason && !latest && app.role.criteria.length === 0 ? { label: "Set up criteria", href: `/roles/${app.roleId}?tab=criteria` } : undefined,
         },
         {
@@ -448,7 +461,7 @@ export default async function CandidatePage({
           label: "Explain matches and gaps",
           state: !latest ? "pending" : latest.status === "reviewed" ? "done" : "active",
           detail: ec
-            ? `${ec.found} supported, ${ec.uncertain} uncertain, ${ec.missing} missing — each with the quote it rests on. ${latest!.status === "reviewed" ? `Reviewed by ${latest!.reviewedByName ?? "a recruiter"}.` : "Waiting for a recruiter to review the evidence."}`
+            ? `${skills && skills.evidenced !== null ? `Skills: ${skills.evidenced}/${skills.required} required evidenced. ` : ""}Criteria: ${ec.found} supported, ${ec.uncertain} uncertain, ${ec.missing} missing — each with the excerpt it rests on. ${latest!.status === "reviewed" ? `Reviewed by ${latest!.reviewedByName ?? "a recruiter"}.` : "Waiting for a recruiter to review the evidence."}`
             : undefined,
         },
         {
@@ -469,20 +482,73 @@ export default async function CandidatePage({
         title={app.origin === "discovered" ? "Review for this role" : "Application review"}
         summary="The assistant reads and compares; a recruiter confirms the evidence and makes the decision."
         steps={applicantSteps}
-        controls={latest ? <Provenance kind={app.decision ? "human" : "ai"} who={app.decidedByName} at={app.decidedAt} /> : undefined}
+        controls={latest ? <Provenance kind={app.decision ? "human" : latest.generator === "ai" ? "ai" : "system"} who={app.decidedByName} at={app.decidedAt} /> : undefined}
       />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold tracking-tight">Evidence against {app.role.criteria.length} approved criteria</h2>
-          <p className="mt-0.5 text-[13px] text-muted">From the CV and candidate-provided information. Open any citation to see it in context.</p>
+          <h2 className="text-[15px] font-semibold tracking-tight">Evidence for this role</h2>
+          <p className="mt-0.5 text-[13px] text-muted">
+            Skills and evaluation criteria, checked only against the CV, candidate-provided information and any linked source record. Open any excerpt to see where it came from.
+          </p>
         </div>
         <RunAssessment applicationId={app.id} aiConfigured={ai.configured} hasAssessment={!!latest} disabledReason={disabledReason} />
       </div>
       {!latest ? (
-        <EmptyState title="Not assessed yet" body="Talyn checks each approved criterion against the CV and shows the evidence, what's missing, and what is only inferred. You review and decide." />
+        <EmptyState
+          title={skills?.state === "needs_review" ? "Needs review — nothing to assess" : "Not assessed yet"}
+          body={
+            skills?.state === "needs_review"
+              ? skills.reason
+              : "Talyn checks each approved skill and criterion against the candidate's own material and shows the evidence, what's missing, and what needs your review. You decide."
+          }
+        />
       ) : (
         <>
           {stale && <StaleNotice />}
+          {!stale && infoChanged && (
+            <Notice tone="warn">The candidate&apos;s CV or provided information changed after this assessment. Re-assess to use the current material.</Notice>
+          )}
+          {skillItems.length > 0 && skills && (
+            <Card className="overflow-hidden" id="skills">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-[#fbfaf8] px-4 py-3">
+                <div className="min-w-0">
+                  <h3 className="text-[14px] font-semibold">Skills</h3>
+                  <p className="text-[12px] text-muted">
+                    Counted separately from the evaluation criteria below. Not a score and not a decision.
+                  </p>
+                </div>
+                <SkillCount m={skills} />
+              </div>
+              <div className="border-b border-line px-4 py-2 text-[12.5px]">
+                <p className="text-ink-2">{skills.reason}</p>
+                <p className="mt-0.5 text-[12px] text-muted">
+                  Last run {formatDateTime(latest.createdAt)} · {latest.generator === "ai" ? "AI assessment" : "keyword check (not AI)"} ·{" "}
+                  {stale || infoChanged ? <span className="text-warn">out of date — re-assess to update</span> : "current with the role's skills and the candidate's information"}
+                </p>
+              </div>
+              {(["essential", "preferred"] as const).map((imp) => {
+                const list = skillItems.filter((i) => (imp === "preferred" ? i.importance === "preferred" : i.importance !== "preferred"));
+                if (!list.length) return null;
+                return (
+                  <div key={imp}>
+                    <div className="flex items-center justify-between bg-sunken/50 px-4 py-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-muted">
+                      <span>{imp === "essential" ? "Required skills" : "Preferred skills"}</span>
+                      {imp === "preferred" && skills.preferredEvidenced !== null && (
+                        <span className="normal-case tracking-normal">
+                          {skills.preferredEvidenced}/{skills.preferred} evidenced · informational, not counted toward the threshold
+                        </span>
+                      )}
+                    </div>
+                    <div className="divide-y divide-line">
+                      {list.map((i) => (
+                        <SkillRow key={i.id} item={i} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </Card>
+          )}
           <Card className="overflow-hidden">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-[#fbfaf8] px-4 py-3">
               <GeneratorTag generator={latest.generator} model={latest.model} />
@@ -492,11 +558,13 @@ export default async function CandidatePage({
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2.5">
+              <span className="text-[13px] font-semibold">Evaluation criteria</span>
               <EvidenceCounts counts={evidenceCounts(latest.items)} />
               <SummaryLine summary={summarize(latest.items)} />
             </div>
             <div className="divide-y divide-line">
-              {items.map((i) => (
+              {criterionItems.length === 0 && <p className="px-4 py-3 text-[13px] text-muted">No evaluation criteria were part of this assessment.</p>}
+              {criterionItems.map((i) => (
                 <ItemCard key={i.id} item={i} />
               ))}
             </div>
@@ -735,10 +803,27 @@ export default async function CandidatePage({
         </div>
       </Card>
 
+      {skills && skills.state !== "no_skills" && (
+        <Card className="p-4">
+          <div className="mb-2 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Required skills</div>
+          <SkillCount m={skills} />
+          <p className="mt-2 text-[12.5px] text-ink-2">{skills.reason}</p>
+          <p className="mt-1.5 text-[12px] text-faint">
+            {skills.threshold != null
+              ? `Threshold: at least ${skills.threshold} of ${skills.required} required skills with evidence found${skills.partialCredit ? " (partial evidence counts)" : ""}. `
+              : "No minimum is set for this role. "}
+            “{THRESHOLD_LABEL.meets}” describes the evidence only — it isn&apos;t a qualification or a decision, and nobody is hidden or rejected by it.{" "}
+            <Link href={`/roles/${app!.roleId}?tab=criteria#rubric`} className="underline-offset-2 hover:underline">
+              Edit skills and threshold
+            </Link>
+          </p>
+        </Card>
+      )}
+
       <Card className="p-4">
-        <div className="mb-3 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Score</div>
+        <div className="mb-3 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Evaluation criteria score</div>
         {liveScore ? (
-          <ScorePanel score={liveScore} adjusted={summarize(latest!.items).overrides > 0} />
+          <ScorePanel score={liveScore} adjusted={summarize(latest!.items).overrides > 0} editHref={`/roles/${app!.roleId}?tab=criteria#rubric`} />
         ) : (
           <p className="text-[13px] text-muted">Appears after an assessment, with its calculation and evidence coverage.</p>
         )}

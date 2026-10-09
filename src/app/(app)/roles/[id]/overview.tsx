@@ -3,8 +3,10 @@ import { Badge, Card, LinkButton, SectionTitle, formatDateTime } from "@/compone
 import type { StatusItem } from "@/components/status-line";
 import { AUDIT_LABEL } from "@/lib/audit";
 import { db } from "@/lib/db";
+import { THRESHOLD_LABEL, type RoleSkillConfig, type SkillMatch } from "@/lib/skills";
 
-type Crit = { id: string; name: string; importance: string; status: string };
+type Crit = { id: string; name: string; importance: string; status: string; kind: string };
+type SkillSummary = { config: RoleSkillConfig; matches: { match: SkillMatch; isSample: boolean; origin: string }[] };
 
 /**
  * Role overview: what this role is looking for, the next work on it, who's involved, and what
@@ -15,11 +17,13 @@ export async function RoleOverview({
   role,
   criteria,
   next,
+  skills,
 }: {
   orgId: string;
   role: { id: string; createdById: string | null; createdAt: Date };
   criteria: Crit[];
   next: StatusItem[];
+  skills: SkillSummary;
 }) {
   const [owner, kits, activity, discoverToReview, unscheduled] = await Promise.all([
     role.createdById ? db.user.findUnique({ where: { id: role.createdById }, select: { name: true } }) : null,
@@ -32,8 +36,14 @@ export async function RoleOverview({
     db.interviewStage.count({ where: { kit: { orgId, roleId: role.id, status: "shared" }, scheduledAt: null, assignments: { some: {} }, events: { none: { status: "scheduled" } } } }),
   ]);
 
-  const approved = criteria.filter((c) => c.status === "approved");
+  const approved = criteria.filter((c) => c.status === "approved" && c.kind !== "skill");
+  const approvedSkills = criteria.filter((c) => c.status === "approved" && c.kind === "skill");
   const proposed = criteria.filter((c) => c.status === "proposed");
+  // Skill-matching summary from real (non-sample) candidates only.
+  const real = skills.matches.filter((m) => !m.isSample);
+  const sampleCount = skills.matches.length - real.length;
+  const assessedCurrent = real.filter((m) => m.match.evidenced !== null && !m.match.stale).length;
+  const byState = (st: string) => real.filter((m) => m.match.state === st).length;
   const work: StatusItem[] = [...next];
   if (discoverToReview) work.push({ tone: "attention", text: `${discoverToReview} discovery result${discoverToReview === 1 ? "" : "s"} to save or dismiss`, href: `/roles/${role.id}/discover#results`, action: "Review" });
   if (unscheduled) work.push({ tone: "attention", text: `${unscheduled} interview stage${unscheduled === 1 ? "" : "s"} not scheduled`, href: `/roles/${role.id}/interviews`, action: "Schedule" });
@@ -73,33 +83,109 @@ export async function RoleOverview({
           )}
         </section>
 
+        <section aria-labelledby="skillsum-h">
+          <SectionTitle
+            hint="Evidence-based matches against the recruiter-set skill threshold — not hiring decisions. No one is hidden, rejected or advanced by them."
+            action={<LinkButton href={`/roles/${role.id}?tab=criteria#rubric`} size="sm">Edit skills & threshold</LinkButton>}
+          >
+            <span id="skillsum-h">Skill matching</span>
+          </SectionTitle>
+          <Card className="p-4 text-[13.5px]">
+            {skills.config.requiredSkillIds.length === 0 ? (
+              <p className="text-muted">
+                No required skills approved yet.{" "}
+                <Link href={`/roles/${role.id}?tab=criteria`} className="font-medium text-brand hover:underline">
+                  Add skills
+                </Link>
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <p>
+                  {skills.config.threshold != null ? (
+                    <>
+                      Threshold: at least <strong>{skills.config.threshold}</strong> of {skills.config.requiredSkillIds.length} required skills with evidence found
+                      {skills.config.partialCredit ? " (partial evidence counts)" : ""}.
+                    </>
+                  ) : (
+                    <>No minimum set — counts are shown without a threshold.</>
+                  )}{" "}
+                  {skills.config.preferredSkillIds.length > 0 && <span className="text-muted">{skills.config.preferredSkillIds.length} preferred skill{skills.config.preferredSkillIds.length === 1 ? "" : "s"} shown separately.</span>}
+                </p>
+                {real.length === 0 ? (
+                  <p className="text-muted">No real candidates in this role yet{sampleCount ? ` (${sampleCount} fictional sample ${sampleCount === 1 ? "person is" : "people are"} excluded)` : ""}.</p>
+                ) : (
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-4">
+                    <div>
+                      <dt className="text-[12px] text-muted">Assessed and current</dt>
+                      <dd className="font-semibold tabular-nums">
+                        {assessedCurrent} <span className="font-normal text-muted">of {real.length}</span>
+                      </dd>
+                    </div>
+                    {skills.config.threshold != null && (
+                      <>
+                        <div>
+                          <dt className="text-[12px] text-muted">{THRESHOLD_LABEL.meets}</dt>
+                          <dd className="font-semibold tabular-nums">
+                            {byState("meets")}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-[12px] text-muted">{THRESHOLD_LABEL.below}</dt>
+                          <dd className="font-semibold tabular-nums">
+                            {byState("below")}
+                          </dd>
+                        </div>
+                      </>
+                    )}
+                    <div>
+                      <dt className="text-[12px] text-muted">Needs review or not assessed</dt>
+                      <dd className="font-semibold tabular-nums">{byState("needs_review") + byState("not_assessed")}</dd>
+                    </div>
+                  </dl>
+                )}
+                <p className="text-[12px] text-faint">
+                  Counts cover applied and discovered candidates who aren&apos;t rejected{sampleCount ? `; ${sampleCount} fictional sample ${sampleCount === 1 ? "person is" : "people are"} excluded` : ""}. Filters on Applicants
+                  and Shortlist use the same statuses.
+                </p>
+              </div>
+            )}
+          </Card>
+        </section>
+
         <section aria-labelledby="crit-h">
           <SectionTitle
             hint="What applicants and discovered people are compared against. Proposed criteria aren't used until approved."
             action={<LinkButton href={`/roles/${role.id}?tab=criteria`} size="sm">Edit criteria</LinkButton>}
           >
-            <span id="crit-h">Criteria</span>
+            <span id="crit-h">Skills and criteria</span>
           </SectionTitle>
-          {approved.length === 0 ? (
+          {approved.length === 0 && approvedSkills.length === 0 ? (
             <Card className="px-4 py-3 text-[13.5px] text-muted">
-              No approved criteria yet{proposed.length ? ` — ${proposed.length} proposed and waiting for review` : ""}.{" "}
+              No approved skills or criteria yet{proposed.length ? ` — ${proposed.length} proposed and waiting for review` : ""}.{" "}
               <Link href={`/roles/${role.id}?tab=criteria`} className="font-medium text-brand hover:underline">
                 {proposed.length ? "Review proposals" : "Set up criteria"}
               </Link>
             </Card>
           ) : (
             <Card className="grid gap-4 p-4 sm:grid-cols-2">
-              {(["essential", "preferred"] as const).map((imp) => {
-                const list = approved.filter((c) => c.importance === imp);
+              {(
+                [
+                  ["Required skills", approvedSkills.filter((c) => c.importance !== "preferred")],
+                  ["Preferred skills", approvedSkills.filter((c) => c.importance === "preferred")],
+                  ["Required criteria", approved.filter((c) => c.importance === "essential")],
+                  ["Preferred & informational criteria", approved.filter((c) => c.importance !== "essential")],
+                ] as const
+              ).map(([label, list]) => {
                 return (
-                  <div key={imp}>
-                    <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted">{imp === "essential" ? "Essential" : "Preferred"}</div>
+                  <div key={label}>
+                    <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted">{label}</div>
                     {list.length ? (
                       <ul className="space-y-1 text-[13.5px]">
                         {list.map((c) => (
                           <li key={c.id} className="flex gap-2">
                             <span aria-hidden className="text-faint">–</span>
                             {c.name}
+                            {c.importance === "informational" && <span className="text-[12px] text-muted">(informational)</span>}
                           </li>
                         ))}
                       </ul>

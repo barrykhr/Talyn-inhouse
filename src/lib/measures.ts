@@ -23,7 +23,7 @@ export async function computeMeasures(orgId: string): Promise<Measure[]> {
     db.icp.findMany({ where: { orgId, approvedAt: { not: null } }, select: { roleId: true, approvedAt: true } }),
     db.sourcedProfile.findMany({ where: { orgId, status: { not: "excluded" } }, select: { source: true, status: true, roleId: true, reviewedAt: true, duplicateCandidateId: true, evidenceStatus: true, feedback: true, savedApplicationId: true } }),
     db.assessmentItem.count({ where: { assessment: { orgId } } }),
-    db.assessment.findMany({ where: { orgId }, orderBy: { createdAt: "desc" }, distinct: ["applicationId"], select: { items: { select: { criterionName: true, importance: true, result: true, overrideResult: true } } }, take: 2000 }),
+    db.assessment.findMany({ where: { orgId }, orderBy: { createdAt: "desc" }, distinct: ["applicationId"], select: { items: { select: { criterionName: true, importance: true, result: true, overrideResult: true, kind: true } } }, take: 2000 }),
     db.outreachMessage.findMany({ where: { orgId }, select: { status: true, body: true, draftBody: true, subject: true, draftSubject: true, approvedAt: true, sentAt: true, sequenceId: true } }),
     db.task.findMany({ where: { orgId }, select: { status: true, createdAt: true, resolvedAt: true } }),
     buildQueue(orgId),
@@ -55,7 +55,7 @@ export async function computeMeasures(orgId: string): Promise<Measure[]> {
     bySource.set(p.source, b);
   }
   const unranked = latestAssessments.filter(
-    (a) => computeScore(a.items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult }))).score === null,
+    (a) => computeScore(a.items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult, kind: i.kind }))).score === null,
   ).length;
 
   const drafted = messages.length;

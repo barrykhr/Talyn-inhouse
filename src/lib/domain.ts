@@ -42,6 +42,11 @@ export const STAGE_LABEL: Record<Stage, string> = {
 };
 
 export const IMPORTANCE = ["essential", "preferred"] as const;
+/** Evaluation criteria may also be informational: shown and assessed, never weighted. */
+export const CRITERION_IMPORTANCE = ["essential", "preferred", "informational"] as const;
+export const IMPORTANCE_LABEL: Record<string, string> = { essential: "Required", preferred: "Preferred", informational: "Informational" };
+export const CRITERION_KINDS = ["skill", "criterion"] as const;
+export type CriterionKind = (typeof CRITERION_KINDS)[number];
 export type Importance = (typeof IMPORTANCE)[number];
 
 export const CRITERION_STATUSES = ["proposed", "approved", "rejected"] as const;
@@ -53,7 +58,9 @@ export const CRITERION_ORIGIN_LABEL: Record<string, string> = {
   extracted: "Extracted from JD (no AI)",
 };
 
-export const RESULTS = ["supported", "partially_supported", "inferred", "conflicting", "not_stated"] as const;
+export const RESULTS = ["supported", "partially_supported", "inferred", "conflicting", "not_stated", "confirmed_absent"] as const;
+/** What the assessment engine (AI or keyword check) may return. "confirmed_absent" is recruiter-only. */
+export const ENGINE_RESULTS = ["supported", "partially_supported", "inferred", "conflicting", "not_stated"] as const;
 export type AssessmentResult = (typeof RESULTS)[number];
 export const RESULT_LABEL: Record<AssessmentResult, string> = {
   supported: "Supported",
@@ -61,6 +68,7 @@ export const RESULT_LABEL: Record<AssessmentResult, string> = {
   inferred: "Inferred",
   conflicting: "Conflicting evidence",
   not_stated: "Not stated",
+  confirmed_absent: "Confirmed not met (recruiter)",
 };
 export const RESULT_HELP: Record<AssessmentResult, string> = {
   supported: "Directly and fully stated in the CV or candidate-provided information.",
@@ -68,6 +76,7 @@ export const RESULT_HELP: Record<AssessmentResult, string> = {
   inferred: "Not stated outright; a reasonable reading of related evidence. Verify.",
   conflicting: "The material contradicts itself on this criterion. Clarify with the candidate.",
   not_stated: "No evidence found. This is missing information, not proof the candidate lacks it.",
+  confirmed_absent: "A recruiter confirmed this is not met (for example, with the candidate). Only a recruiter can set this.",
 };
 
 export const RECOMMENDATIONS = ["advance_to_review", "gather_more_info", "insufficient_evidence"] as const;
@@ -115,6 +124,7 @@ export const EVIDENCE_TIER: Record<AssessmentResult, EvidenceTier> = {
   inferred: "uncertain",
   conflicting: "uncertain",
   not_stated: "missing",
+  confirmed_absent: "missing",
 };
 export const EVIDENCE_TIER_LABEL: Record<EvidenceTier, string> = { found: "Evidence found", uncertain: "Uncertain", missing: "Missing" };
 
@@ -144,12 +154,19 @@ export const GENERATOR_LABEL: Record<string, string> = {
   manual: "Manual assessment",
 };
 
-export type EvidenceSource = "resume" | "profile";
+export type EvidenceSource = "resume" | "profile" | "source";
 export type Evidence = {
   quote: string;
+  /** resume = the CV on file; profile = candidate-provided information; source = the linked Discover source record. */
   source: EvidenceSource;
   page?: number | null;
   section?: string | null;
+  /** Where the evidence came from, e.g. the CV file name or the source name. */
+  origin?: string | null;
+  /** ISO date the material was added or retrieved. */
+  date?: string | null;
+  /** Link to the source record, for linked source evidence. */
+  url?: string | null;
   /** True when the quote was found verbatim (whitespace/case-insensitive) in the source text. */
   verified: boolean;
 };

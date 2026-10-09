@@ -28,6 +28,7 @@ export type CriterionDraft = {
   name: string;
   description: string;
   importance: "essential" | "preferred";
+  kind?: "skill" | "criterion";
   sourceText: string | null;
   sourcePage: number | null;
   sourceSection: string | null;
@@ -93,6 +94,7 @@ export async function draftJdCriteria(title: string, pages: string[]): Promise<E
         name: c.name,
         description: "",
         importance: c.importance,
+        kind: c.kind,
         sourceText: c.sourceText,
         sourcePage: loc.sourcePage,
         sourceSection: loc.sourceSection,
@@ -108,6 +110,7 @@ export async function draftJdCriteria(title: string, pages: string[]): Promise<E
           name: c.name.slice(0, 200),
           description: c.description.slice(0, 2000),
           importance: c.importance,
+          kind: c.kind,
           sourceText: loc.verified ? loc.sourceQuote : null, // keep citations only if they exist in the JD
           sourcePage: loc.sourcePage,
           sourceSection: loc.sourceSection,

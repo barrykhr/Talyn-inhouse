@@ -18,9 +18,12 @@ import { ApplicantsTab } from "./applicants";
 import { ShortlistTab } from "./shortlist";
 import { RoleOverview } from "./overview";
 import { RoleTabs } from "@/components/role-workspace";
+import { THRESHOLD_FILTERS, matchForApplication, roleSkillConfig } from "@/lib/skills";
+import { weightsOf } from "@/lib/score";
 import { LIST_LABEL } from "@/lib/extraction-fields";
 import { RoleReviewForm, UploadJd, type FactView } from "./jd";
-import { AddCriterion, CriterionRow, ProposePanel, ReviewBanner, type CriterionView } from "./criteria";
+import { AddCriterion, CriterionRow, ProposePanel, ReassessButton, ReviewBanner, RubricForm, type CriterionView } from "./criteria";
+import { IMPORTANCE_LABEL } from "@/lib/domain";
 
 // AI proposals/assessments run as server actions on this page and can take a while.
 export const maxDuration = 300;
@@ -29,10 +32,14 @@ export const metadata = { title: "Role" };
 
 type Tab = "overview" | "applicants" | "shortlist" | "criteria" | "description";
 
-export default async function RolePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; notice?: string; saved?: string; view?: string; sort?: string; stage?: string; q?: string; review?: string; origin?: string }> }) {
+export default async function RolePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; notice?: string; saved?: string; view?: string; sort?: string; stage?: string; q?: string; review?: string; origin?: string; skills?: string; minskills?: string }> }) {
   const auth = await requireAuth();
   const { id } = await params;
-  const { tab: tabParam, notice, saved, view: viewParam, sort = "", stage: stageFilter = "", q = "", review = "", origin = "" } = await searchParams;
+  const { tab: tabParam, notice, saved, view: viewParam, sort = "", stage: stageFilter = "", q = "", review = "", origin = "", skills: skillsParam = "", minskills: minParam = "" } = await searchParams;
+  const skillFilter = {
+    skills: (THRESHOLD_FILTERS as readonly string[]).includes(skillsParam) ? skillsParam : "",
+    minskills: /^\d{1,2}$/.test(minParam) ? minParam : "",
+  };
   const view = viewParam === "board" ? "board" : viewParam === "ranked" || viewParam === "list_ranked" ? "ranked" : "list";
   await ownRole(auth, id);
 
@@ -42,12 +49,24 @@ export default async function RolePage({ params, searchParams }: { params: Promi
       criteria: { orderBy: [{ priority: "asc" }, { position: "asc" }] },
       applications: {
         include: {
-          candidate: { select: { id: true, fullName: true, currentTitle: true, currentCompany: true, extractionStatus: true, isSample: true, _count: { select: { resumes: true } } } },
+          candidate: {
+            select: {
+              id: true,
+              fullName: true,
+              currentTitle: true,
+              currentCompany: true,
+              candidateSummary: true,
+              extractionStatus: true,
+              isSample: true,
+              resumes: { where: { isCurrent: true }, select: { id: true }, take: 1 },
+              _count: { select: { resumes: true } },
+            },
+          },
           stageEvents: { orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true } },
           assessments: {
             orderBy: { createdAt: "desc" },
             take: 2,
-            include: { items: { select: { criterionName: true, importance: true, result: true, overrideResult: true } } },
+            include: { items: { select: { criterionName: true, criterionId: true, kind: true, importance: true, result: true, overrideResult: true } } },
           },
           _count: { select: { tasks: { where: { status: "open", type: "gather_info" } } } },
         },
@@ -90,12 +109,22 @@ export default async function RolePage({ params, searchParams }: { params: Promi
   const unassessed = active.filter((a) => a.assessments.length === 0).length;
   const outdated = active.filter((a) => a.assessments[0] && isStale(a.assessments[0].criteriaSnapshot, approved)).length;
   const awaitingDecision = active.filter((a) => a.assessments[0] && !a.decision).length;
+  // Skill matching: one count per candidate, from the latest assessment, compared live with the rubric.
+  const skillConfig = roleSkillConfig(role, role.criteria);
+  const skillMatches = new Map(role.applications.map((a) => [a.id, matchForApplication(a, { config: skillConfig, approved, criteriaVersion: role.criteriaVersion })]));
+  const notRejected = role.applications.filter((a) => a.stage !== "rejected" && a.decision !== "decline");
+  const noMaterial = notRejected.filter((a) => skillMatches.get(a.id)!.noMaterial).length;
+  const reassessable = notRejected.filter((a) => {
+    const m = skillMatches.get(a.id)!;
+    if (m.noMaterial) return false; // nothing to assess until a CV or profile is added
+    return !a.assessments[0] || m.stale || m.unassessed > 0 || isStale(a.assessments[0].criteriaSnapshot, approved);
+  }).length;
   const status: StatusItem[] = [];
   if (needsReview) status.push({ tone: "attention", text: "Details extracted from the JD need your review", href: `/roles/${role.id}?tab=description`, action: "Review" });
-  if (proposed.length) status.push({ tone: "ai", text: `${proposed.length} proposed criteria awaiting approval`, href: `/roles/${role.id}?tab=criteria`, action: "Review" });
+  if (proposed.length) status.push({ tone: "ai", text: `${proposed.length} suggested skill${proposed.length === 1 ? "" : "s"} or criteria awaiting approval`, href: `/roles/${role.id}?tab=criteria`, action: "Review" });
   if (!approved.length && !proposed.length) status.push({ tone: "neutral", text: "No criteria yet", href: `/roles/${role.id}?tab=criteria`, action: "Set up criteria" });
   if (approved.length && unassessed) status.push({ tone: "neutral", text: `${unassessed} candidate${unassessed > 1 ? "s" : ""} not yet assessed` });
-  if (outdated) status.push({ tone: "attention", text: `${outdated} assessment${outdated > 1 ? "s" : ""} out of date after criteria changes` });
+  if (outdated) status.push({ tone: "attention", text: `${outdated} assessment${outdated > 1 ? "s" : ""} out of date after skill or criteria changes`, href: `/roles/${role.id}?tab=criteria#reassess`, action: "Reassess" });
   if (awaitingDecision) status.push({ tone: "attention", text: `${awaitingDecision} assessed candidate${awaitingDecision > 1 ? "s" : ""} awaiting your decision`, href: `/roles/${role.id}?tab=applicants`, action: "Review" });
   if (!status.length && role.applications.length) status.push({ tone: "ok", text: `Up to date · ${active.length} active in pipeline` });
   const reviewedFacts = facts.filter((f) => f.status !== "pending" && f.field in LIST_LABEL);
@@ -133,6 +162,10 @@ export default async function RolePage({ params, searchParams }: { params: Promi
       : null;
 
   const toView = (c: (typeof role.criteria)[number]): CriterionView => ({ ...c, approvedAt: c.approvedAt?.toISOString() ?? null });
+  const approvedSkills = approved.filter((c) => c.kind === "skill");
+  const approvedCriteria = approved.filter((c) => c.kind !== "skill");
+  const criterionOptions = role.criteria.filter((c) => c.kind === "criterion" && c.status !== "rejected").map((c) => ({ id: c.id, name: c.name }));
+  const nameOf = (id: string | null) => (id ? (role.criteria.find((c) => c.id === id)?.name ?? null) : null);
   const ai = aiStatus();
 
   return (
@@ -187,43 +220,131 @@ export default async function RolePage({ params, searchParams }: { params: Promi
         <RoleOverview
           orgId={auth.orgId}
           role={{ id: role.id, createdById: role.createdById, createdAt: role.createdAt }}
-          criteria={role.criteria.map((c) => ({ id: c.id, name: c.name, importance: c.importance, status: c.status }))}
+          criteria={role.criteria.map((c) => ({ id: c.id, name: c.name, importance: c.importance, status: c.status, kind: c.kind }))}
           next={status}
+          skills={{
+            config: skillConfig,
+            matches: notRejected.map((a) => ({ match: skillMatches.get(a.id)!, isSample: a.candidate.isSample, origin: a.origin })),
+          }}
         />
       )}
 
       {tab === "criteria" && (
-        <div className="space-y-5">
+        <div className="space-y-6">
           {proposed.length > 0 && <ReviewBanner roleId={role.id} count={proposed.length} />}
           <ProposePanel roleId={role.id} aiConfigured={ai.configured} hasDescription={role.description.trim().length >= 40} hasCriteria={role.criteria.length > 0} />
 
           {proposed.length > 0 && (
             <section>
-              <SectionTitle hint="Not used in assessments until approved.">Awaiting your review</SectionTitle>
-              <Card className="divide-y divide-line overflow-hidden">{proposed.map((c) => <CriterionRow key={c.id} c={toView(c)} />)}</Card>
+              <SectionTitle hint="Suggested from the job description. Not used to assess anyone until you approve them.">Suggestions to review</SectionTitle>
+              <Card className="divide-y divide-line overflow-hidden">
+                {proposed.map((c) => (
+                  <CriterionRow key={c.id} c={toView(c)} options={criterionOptions} mappedName={nameOf(c.mappedCriterionId)} />
+                ))}
+              </Card>
             </section>
           )}
 
-          <section>
-            <SectionTitle hint="These are used when assessing candidates for this role." action={<AddCriterion roleId={role.id} />}>
-              Active criteria
+          <section aria-labelledby="skills-h">
+            <SectionTitle
+              hint="Single named skills. Each candidate gets Evidence found, Partial evidence, No evidence found or Needs recruiter review per skill, from their own material only."
+              action={<AddCriterion roleId={role.id} kind="skill" options={criterionOptions} />}
+            >
+              <span id="skills-h">Skills</span>
             </SectionTitle>
-            {approved.length === 0 ? (
-              <EmptyState title="No active criteria" body="Add criteria manually, or draft them from the job description and approve the ones that fit." />
+            {approvedSkills.length === 0 ? (
+              <EmptyState title="No skills yet" body="Add the skills this role needs, or suggest them from the job description and approve the ones that fit." />
             ) : (
               <div className="space-y-4">
                 {(["essential", "preferred"] as const).map((imp) => {
-                  const list = approved.filter((c) => c.importance === imp);
+                  const list = approvedSkills.filter((c) => (imp === "preferred" ? c.importance === "preferred" : c.importance !== "preferred"));
                   if (!list.length) return null;
                   return (
                     <div key={imp}>
-                      <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted">{imp === "essential" ? "Essential" : "Preferred"} · {list.length}</div>
-                      <Card className="divide-y divide-line overflow-hidden">{list.map((c) => <CriterionRow key={c.id} c={toView(c)} />)}</Card>
+                      <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted">
+                        {imp === "essential" ? "Required skills" : "Preferred skills"} · {list.length}
+                      </div>
+                      <Card className="divide-y divide-line overflow-hidden">
+                        {list.map((c) => (
+                          <CriterionRow key={c.id} c={toView(c)} options={criterionOptions} mappedName={nameOf(c.mappedCriterionId)} />
+                        ))}
+                      </Card>
                     </div>
                   );
                 })}
               </div>
             )}
+          </section>
+
+          <section id="rubric" className="scroll-mt-6" aria-labelledby="rubric-h">
+            <SectionTitle hint="Applied live to every candidate's latest assessment. Changing these doesn't need a reassessment.">
+              <span id="rubric-h">Skill threshold and weights</span>
+            </SectionTitle>
+            <Card className="p-4">
+              <RubricForm
+                roleId={role.id}
+                requiredSkills={skillConfig.requiredSkillIds.length}
+                threshold={role.skillThreshold}
+                partialCredit={role.skillPartialCredit}
+                weightRequired={role.weightRequired}
+                weightPreferred={role.weightPreferred}
+                updatedBy={role.rubricUpdatedBy ? `${role.rubricUpdatedBy}${role.rubricUpdatedAt ? ` on ${formatDate(role.rubricUpdatedAt)}` : ""}` : null}
+              />
+            </Card>
+          </section>
+
+          <section aria-labelledby="crit-h">
+            <SectionTitle
+              hint="Broader evaluation: experience, location, domain knowledge. Required and preferred criteria are weighted; informational ones are shown but never weighted."
+              action={<AddCriterion roleId={role.id} kind="criterion" />}
+            >
+              <span id="crit-h">Evaluation criteria</span>
+            </SectionTitle>
+            {approvedCriteria.length === 0 ? (
+              <EmptyState title="No evaluation criteria" body="Add criteria manually, or suggest them from the job description and approve the ones that fit." />
+            ) : (
+              <div className="space-y-4">
+                {(["essential", "preferred", "informational"] as const).map((imp) => {
+                  const list = approvedCriteria.filter((c) => c.importance === imp);
+                  if (!list.length) return null;
+                  return (
+                    <div key={imp}>
+                      <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted">
+                        {IMPORTANCE_LABEL[imp]} · {list.length}
+                      </div>
+                      <Card className="divide-y divide-line overflow-hidden">
+                        {list.map((c) => {
+                          const mapped = approvedSkills.filter((sk) => sk.mappedCriterionId === c.id);
+                          return (
+                            <div key={c.id}>
+                              <CriterionRow c={toView(c)} />
+                              {mapped.length > 0 && <p className="-mt-2 px-4 pb-2.5 text-[12px] text-muted">Supported by skills: {mapped.map((m) => m.name).join(", ")}</p>}
+                            </div>
+                          );
+                        })}
+                      </Card>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <section id="reassess" className="scroll-mt-6" aria-labelledby="reassess-h">
+            <SectionTitle hint="Runs only when you ask. Uses AI when configured, otherwise the labeled keyword check. Rejected candidates are skipped; decisions and stages never change.">
+              <span id="reassess-h">Reassess candidates</span>
+            </SectionTitle>
+            <Card className="flex flex-wrap items-center justify-between gap-3 p-4 text-[13px]">
+              <span className="text-ink-2">
+                {approved.length === 0
+                  ? "Approve skills or criteria first."
+                  : reassessable
+                    ? `${reassessable} of ${notRejected.length} candidate${notRejected.length === 1 ? "" : "s"} ${reassessable === 1 ? "is" : "are"} not assessed or assessed against older skills, criteria or candidate information.`
+                    : `All ${notRejected.length - noMaterial} active candidate${notRejected.length - noMaterial === 1 ? "" : "s"} with material are assessed against the current skills and criteria.`}
+                {noMaterial > 0 && ` ${noMaterial} need${noMaterial === 1 ? "s" : ""} review — no CV, profile or source text to assess yet.`}
+              </span>
+              {approved.length > 0 && <ReassessButton roleId={role.id} outdated={reassessable} total={notRejected.length} aiConfigured={ai.configured} />}
+            </Card>
           </section>
 
           {approved.length > 0 && (
@@ -266,7 +387,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
           )}
           {needsReview && proposed.length > 0 && (
             <p className="text-[13px] text-muted">
-              {proposed.length} criteria were also proposed from this JD — <Link className="font-medium text-ink underline" href={`/roles/${role.id}?tab=criteria`}>review them on the Criteria tab</Link>.
+              {proposed.length} skills and criteria were also suggested from this JD — <Link className="font-medium text-ink underline" href={`/roles/${role.id}?tab=criteria`}>review them on the Criteria tab</Link>.
             </p>
           )}
 
@@ -333,14 +454,26 @@ export default async function RolePage({ params, searchParams }: { params: Promi
           roleId={role.id}
           applicants={applicants}
           matchingIds={matchingIds}
-          filters={{ q: term, stage: stageFilter, review, view, sort }}
+          filters={{ q: term, stage: stageFilter, review, view, sort, ...skillFilter }}
           approved={approved}
           criteriaVersion={role.criteriaVersion}
           others={others}
+          skillMatches={skillMatches}
+          requiredSkills={skillConfig.requiredSkillIds.length}
+          weights={weightsOf(role)}
         />
       )}
 
-      {tab === "shortlist" && <ShortlistTab roleId={role.id} shortlisted={shortlisted} origin={origin === "applied" || origin === "discovered" ? origin : ""} />}
+      {tab === "shortlist" && (
+        <ShortlistTab
+          roleId={role.id}
+          shortlisted={shortlisted}
+          origin={origin === "applied" || origin === "discovered" ? origin : ""}
+          skillMatches={skillMatches}
+          requiredSkills={skillConfig.requiredSkillIds.length}
+          skillFilter={skillFilter}
+        />
+      )}
     </>
   );
 }

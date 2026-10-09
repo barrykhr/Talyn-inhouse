@@ -4,7 +4,7 @@ import { AgentRun, type AgentStep } from "@/components/agent-run";
 import { ModeBanner, OriginBadge, RoleTabs, SampleBadge } from "@/components/role-workspace";
 import { RoleStatusBadge } from "@/components/status";
 import { DiscoverJdFlow } from "@/components/upload-flows";
-import { Badge, Breadcrumbs, Card, EmptyState, LinkButton, Notice, PageHeader, SectionTitle, formatDate } from "@/components/ui";
+import { Badge, Breadcrumbs, Card, EmptyState, LinkButton, Notice, PageHeader, SectionTitle, buttonClass, formatDate } from "@/components/ui";
 import { aiStatus } from "@/lib/ai";
 import { getAtsConnector } from "@/lib/ats/connector";
 import { requireAuth } from "@/lib/auth";
@@ -13,6 +13,8 @@ import { EMPTY_BRIEF } from "@/lib/discovery/brief";
 import { briefFields, briefProvenance } from "@/lib/discovery/store";
 import { REVIEW_STATUS_LABEL, REVIEW_STATUS_TONE, reviewStatus } from "@/lib/review-status";
 import { CONNECTORS, isLiveSourceConnected, sourceLabel } from "@/lib/sourcing/connectors";
+import { THRESHOLD_FILTERS, matchForApplication, passesSkillFilter, roleSkillConfig } from "@/lib/skills";
+import { SkillCount, SkillFilterFields } from "@/components/skill-match";
 import { clearSampleData } from "@/server/sourcing-actions";
 import { loadOutreachView } from "@/server/outreach-view";
 import { ownRole } from "@/server/scope";
@@ -55,16 +57,23 @@ const VIEWS = [
 type SourceStatus = { key: string; label: string; status: "ok" | "error" | "setup_required"; count: number; error?: string };
 
 /** Outbound workflow for one role: set up the search, choose sources, review people, reach out. */
-export default async function DiscoverPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ run?: string; view?: string; outreach?: string; setup?: string }> }) {
+export default async function DiscoverPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ run?: string; view?: string; outreach?: string; setup?: string; skills?: string; minskills?: string }>;
+}) {
   const auth = await requireAuth();
   const { id } = await params;
   const role = await ownRole(auth, id);
-  const { run: runParam, view: viewParam = "review", outreach: outreachParam, setup } = await searchParams;
+  const { run: runParam, view: viewParam = "review", outreach: outreachParam, setup, skills: skillsParam = "", minskills: minParam = "" } = await searchParams;
+  const skillFilter = { skills: (THRESHOLD_FILTERS as readonly string[]).includes(skillsParam) ? skillsParam : "", minskills: /^\d{1,2}$/.test(minParam) ? minParam : "" };
   const view = VIEWS.some(([k]) => k === viewParam) ? viewParam : "review";
   const ai = aiStatus();
 
   const [criteria, icps, apps, strategies, rediscoverable, brief, jd] = await Promise.all([
-    db.criterion.findMany({ where: { roleId: id, orgId: auth.orgId }, select: { status: true } }),
+    db.criterion.findMany({ where: { roleId: id, orgId: auth.orgId }, select: { id: true, status: true, kind: true, importance: true, updatedAt: true } }),
     loadIcps(auth.orgId, id),
     db.application.findMany({
       where: { orgId: auth.orgId, roleId: id },
@@ -77,8 +86,24 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
         interest: true,
         createdAt: true,
         candidateId: true,
-        candidate: { select: { fullName: true, currentTitle: true, currentCompany: true, isSample: true, contactOptOut: true, whatsappPermission: true } },
-        assessments: { orderBy: { createdAt: "desc" }, take: 1, select: { status: true } },
+        sourcedProfileId: true,
+        candidate: {
+          select: {
+            fullName: true,
+            currentTitle: true,
+            currentCompany: true,
+            candidateSummary: true,
+            isSample: true,
+            contactOptOut: true,
+            whatsappPermission: true,
+            resumes: { where: { isCurrent: true }, select: { id: true }, take: 1 },
+          },
+        },
+        assessments: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { status: true, criteriaSnapshot: true, criteriaVersion: true, resumeId: true, profileHash: true, items: { select: { criterionId: true, kind: true, importance: true, result: true, overrideResult: true } } },
+        },
         outreach: { orderBy: { createdAt: "desc" }, take: 1, select: { status: true, channel: true } },
       },
     }),
@@ -88,6 +113,8 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
     db.jobDescription.findFirst({ where: { roleId: id, orgId: auth.orgId, isCurrent: true }, select: { id: true, fileName: true, createdAt: true, pagesJson: true } }),
   ]);
   const approvedCriteria = criteria.filter((c) => c.status === "approved").length;
+  const skillConfig = roleSkillConfig(role, criteria);
+  const approvedList = criteria.filter((c) => c.status === "approved");
   const proposedCriteria = criteria.filter((c) => c.status === "proposed").length;
   const draftIcp = icps.find((i) => i.status === "draft");
   const approvedIcp = icps.find((i) => i.status === "approved");
@@ -140,7 +167,9 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
             : "Add the provider's credentials to search it"
           : "Fictional people · not a live search",
   }));
-  const discovered = apps.filter((a) => a.origin === "discovered");
+  const discoveredAll = apps.filter((a) => a.origin === "discovered");
+  const skillMatches = new Map(discoveredAll.map((a) => [a.id, matchForApplication(a, { config: skillConfig, approved: approvedList, criteriaVersion: role.criteriaVersion })]));
+  const discovered = discoveredAll.filter((a) => passesSkillFilter(skillMatches.get(a.id), skillFilter));
   const sampleCount = apps.filter((a) => a.candidate.isSample).length;
   const outreachApp = outreachParam ? appById.get(outreachParam) : undefined;
   const outreach = outreachApp ? await loadOutreachView(auth, outreachApp.id) : null;
@@ -439,11 +468,24 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
       )}
 
       <section className="mb-8" aria-labelledby="saved-h">
-        <SectionTitle hint="People saved from Discover. Role fit, expressed interest and contact permission are tracked separately.">
+        <SectionTitle hint="People saved from Discover. Required-skill evidence, expressed interest and contact permission are tracked separately. Skill counts use their linked source record and any CV you add.">
           <span id="saved-h">Saved from Discover</span>
         </SectionTitle>
-        {discovered.length === 0 ? (
-          <p className="text-[13px] text-muted">No one saved yet.</p>
+        {discoveredAll.length > 0 && (
+          <form className="mb-2 flex flex-wrap items-center gap-2 text-[13px]" aria-label="Filter saved people by skills">
+            <SkillFilterFields skills={skillFilter.skills} minskills={skillFilter.minskills} required={skillConfig.requiredSkillIds.length} compact />
+            <button className={buttonClass("secondary", "sm")}>Apply</button>
+            {(skillFilter.skills || skillFilter.minskills) && (
+              <Link href={`/roles/${role.id}/discover#saved-h`} className="text-muted hover:text-ink">
+                Clear
+              </Link>
+            )}
+          </form>
+        )}
+        {discoveredAll.length === 0 ? (
+          <p className="text-[13px] text-muted">No one saved yet. Results above aren&apos;t assessed until you save them; then each gets a per-skill evidence check.</p>
+        ) : discovered.length === 0 ? (
+          <p className="text-[13px] text-muted">No saved people match these filters.</p>
         ) : (
           <Card className="divide-y divide-line overflow-hidden">
             {discovered.map((a) => {
@@ -465,7 +507,10 @@ export default async function DiscoverPage({ params, searchParams }: { params: P
                       {seq ? ` · ${seq.channel === "whatsapp" ? "WhatsApp" : "email"} outreach ${seq.status}` : ""}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link href={`/candidates/${a.candidateId}?role=${role.id}#skills`} className="rounded-md hover:bg-sunken/60" aria-label={`Skill evidence for ${a.candidate.fullName}`}>
+                      {skillMatches.get(a.id) && <SkillCount m={skillMatches.get(a.id)!} />}
+                    </Link>
                     <Badge tone={REVIEW_STATUS_TONE[st]}>{REVIEW_STATUS_LABEL[st]}</Badge>
                     <Link href={outreachHref(a.id)!} className="rounded-lg border border-line-strong px-2.5 py-1 text-[12.5px] font-medium hover:bg-sunken">
                       Outreach

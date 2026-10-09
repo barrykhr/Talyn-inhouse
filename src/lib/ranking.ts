@@ -11,7 +11,7 @@
 //
 // Neither ever changes a pipeline stage. Recruiters can sort, filter and override priority.
 
-import { computeScore, pct, type ScoreResult } from "./score";
+import { computeScore, pct, type ScoreResult, type Weights } from "./score";
 import { isStale } from "./summary";
 import { STAGE_LABEL, type Stage } from "./domain";
 
@@ -23,7 +23,7 @@ export type AssessmentLike = {
   status: string;
   recommendation: string | null;
   recommendationStatus: string | null;
-  items: { criterionName: string; importance: string; result: string; overrideResult: string | null }[];
+  items: { criterionName: string; importance: string; result: string; overrideResult: string | null; kind?: string }[];
 };
 
 export type RoleFit = {
@@ -36,17 +36,20 @@ export type RoleFit = {
   criteriaVersion: number | null;
 };
 
-const scoreOf = (a: AssessmentLike): ScoreResult =>
-  computeScore(a.items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult })));
+const scoreOf = (a: AssessmentLike, weights?: Weights): ScoreResult =>
+  computeScore(
+    a.items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult, kind: i.kind })),
+    weights,
+  );
 
-export function roleFit(assessments: AssessmentLike[], current: { criteria: { id: string; updatedAt: Date }[]; criteriaVersion: number }): RoleFit {
+export function roleFit(assessments: AssessmentLike[], current: { criteria: { id: string; updatedAt: Date }[]; criteriaVersion: number; weights?: Weights }): RoleFit {
   const [latest, previous] = assessments;
   if (!latest) return { state: "unranked", score: null, coverage: null, updatedAt: null, reason: "Not assessed yet", change: null, criteriaVersion: null };
-  const s = scoreOf(latest);
+  const s = scoreOf(latest, current.weights);
   const stale = isStale(latest.criteriaSnapshot, current.criteria) || (latest.criteriaVersion != null && latest.criteriaVersion !== current.criteriaVersion);
   let change: string | null = null;
   if (previous) {
-    const p = scoreOf(previous);
+    const p = scoreOf(previous, current.weights);
     if (p.score !== null && s.score !== null && Math.abs(s.score - p.score) >= 10)
       change = `${p.score} → ${s.score} after re-assessment${previous.criteriaVersion !== latest.criteriaVersion ? ` (criteria v${previous.criteriaVersion} → v${latest.criteriaVersion})` : ""}`;
     else if ((p.score === null) !== (s.score === null)) change = s.score === null ? `Was ${p.score}; now withheld for incomplete evidence` : `Was withheld; now ${s.score}`;

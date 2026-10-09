@@ -46,6 +46,7 @@ export async function storeProposedCriteria(orgId: string, roleId: string, draft
       name: d.name,
       description: d.description,
       importance: d.importance,
+      kind: d.kind ?? "criterion",
       origin,
       originalName: d.name,
       originalDescription: d.description,

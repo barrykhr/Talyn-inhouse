@@ -30,9 +30,11 @@ export function reviewStatus(a: { decision: string | null; assessments: { status
 }
 
 /** Counts of evidence found / uncertain / missing in the latest assessment (recruiter corrections applied). */
-export function evidenceCounts(items: { result: string; overrideResult: string | null }[]) {
+export function evidenceCounts(items: { result: string; overrideResult: string | null; kind?: string }[]) {
   const c: Record<EvidenceTier, number> = { found: 0, uncertain: 0, missing: 0 };
+  // Evaluation criteria only — skills have their own count (src/lib/skills.ts).
   for (const i of items) {
+    if (i.kind === "skill") continue;
     const t = EVIDENCE_TIER[(i.overrideResult ?? i.result) as AssessmentResult];
     if (t) c[t]++;
   }

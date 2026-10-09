@@ -135,8 +135,10 @@ export function ActionButton({
   pendingLabel,
   title,
   successMessage,
+  disabled,
 }: {
   action: () => Promise<unknown>;
+  disabled?: boolean;
   /** Shown as a quiet confirmation toast when the action succeeds. */
   successMessage?: string;
   children: ReactNode;
@@ -155,7 +157,7 @@ export function ActionButton({
     if (confirm && !window.confirm(confirm)) return;
     setError(null);
     setPending(true);
-    let res: { error?: string; redirectTo?: string } | undefined;
+    let res: { error?: string; redirectTo?: string; message?: string } | undefined;
     try {
       res = (await action()) as typeof res;
     } catch {
@@ -166,7 +168,8 @@ export function ActionButton({
     if (res && typeof res === "object" && res.error) setError(res.error);
     else {
       router.refresh();
-      if (successMessage) toast({ message: successMessage });
+      const msg = successMessage ?? (res && typeof res === "object" ? res.message : undefined);
+      if (msg) toast({ message: msg });
     }
   };
   return (
@@ -174,7 +177,7 @@ export function ActionButton({
       <button
         type="button"
         title={title}
-        disabled={pending}
+        disabled={pending || disabled}
         aria-busy={pending}
         className={buttonClass(variant, size, className)}
         onClick={run}

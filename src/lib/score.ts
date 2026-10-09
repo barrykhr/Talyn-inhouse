@@ -1,9 +1,11 @@
 // Criteria-alignment score (method "alignment-v1"). Pure and deterministic: computed by
 // Talyn from per-criterion results (with recruiter corrections applied), never by the AI.
 //
-//   weight:  essential = 2, preferred = 1
-//   credit:  supported = 1, partially supported = 0.5, inferred = 0.5
+//   weight:  required (essential) = 2, preferred = 1 by default — editable per role
+//   credit:  supported = 1, partially supported = 0.5, inferred = 0.5, confirmed not met (recruiter) = 0
 //   not assessable: not stated, conflicting  → excluded from the score, reduce coverage
+//   excluded entirely: skills (counted separately as "X/Y required skills evidenced", see
+//   skills.ts) and informational criteria (shown, never weighted)
 //
 //   score    = Σ(weight × credit) / Σ(weight of assessable criteria) × 100
 //   coverage = Σ(weight of assessable criteria) / Σ(weight of all criteria)
@@ -21,12 +23,18 @@ export const CREDIT: Record<string, number | null> = {
   inferred: 0.5,
   conflicting: null,
   not_stated: null,
+  confirmed_absent: 0,
 };
 export const MIN_COVERAGE = 0.6;
 export const LIMITED_COVERAGE = 0.8;
 export const MIN_ESSENTIAL_ASSESSABLE = 0.5;
 
-export type ScoreInput = { name: string; importance: string; result: string; overrideResult?: string | null };
+export type ScoreInput = { name: string; importance: string; result: string; overrideResult?: string | null; kind?: string };
+export type Weights = { essential: number; preferred: number };
+export const weightsOf = (role: { weightRequired?: number | null; weightPreferred?: number | null } | null | undefined): Weights => ({
+  essential: role?.weightRequired ?? WEIGHTS.essential,
+  preferred: role?.weightPreferred ?? WEIGHTS.preferred,
+});
 
 export type ScoreRow = { name: string; importance: string; result: string; weight: number; credit: number | null; points: number | null };
 
@@ -39,12 +47,14 @@ export type ScoreResult = {
   essentialAssessable: number;
   essentialTotal: number;
   reason: string;
+  weights: Weights;
 };
 
-export function computeScore(items: ScoreInput[]): ScoreResult {
+export function computeScore(all: ScoreInput[], weights: Weights = WEIGHTS): ScoreResult {
+  const items = all.filter((i) => i.kind !== "skill" && i.importance !== "informational");
   const rows: ScoreRow[] = items.map((i) => {
     const result = i.overrideResult ?? i.result;
-    const weight = i.importance === "preferred" ? WEIGHTS.preferred : WEIGHTS.essential;
+    const weight = i.importance === "preferred" ? weights.preferred : weights.essential;
     const credit = CREDIT[result] ?? null;
     return { name: i.name, importance: i.importance, result, weight, credit, points: credit === null ? null : weight * credit };
   });
@@ -55,9 +65,10 @@ export function computeScore(items: ScoreInput[]): ScoreResult {
   const essential = rows.filter((r) => r.importance !== "preferred");
   const essentialAssessable = essential.filter((r) => r.credit !== null).length;
   const coverage = totalWeight ? assessedWeight / totalWeight : 0;
+  if (assessedWeight === 0 && rows.length) return { method: SCORE_METHOD, rows, coverage: 0, essentialAssessable, essentialTotal: essential.length, weights, score: null, status: "withheld", reason: "Score withheld: no weighted criterion has assessable evidence." };
 
-  const base = { method: SCORE_METHOD, rows, coverage, essentialAssessable, essentialTotal: essential.length };
-  if (rows.length === 0) return { ...base, score: null, status: "none", reason: "No criteria were assessed." };
+  const base = { method: SCORE_METHOD, rows, coverage, essentialAssessable, essentialTotal: essential.length, weights };
+  if (rows.length === 0) return { ...base, score: null, status: "none", reason: "No weighted evaluation criteria were assessed." };
   if (coverage < MIN_COVERAGE || (essential.length > 0 && essentialAssessable / essential.length < MIN_ESSENTIAL_ASSESSABLE)) {
     return {
       ...base,

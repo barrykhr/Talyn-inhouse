@@ -261,6 +261,35 @@ use, and **New search**.
 - Integrations moved to `/integrations` (old `/settings/integrations` links redirect, keeping the
   `calendar` result parameter).
 
+## Skill matching (evidence-backed)
+
+- **Role setup** (role → *Criteria*): **Skills** (required / preferred, with optional aliases and
+  an optional mapping to an evaluation criterion), **evaluation criteria** (required / preferred /
+  informational) and the **rubric**: a minimum such as "at least 5 of 6 required skills", whether
+  *Partial evidence* counts (off by default), and the required/preferred weights for the criteria
+  alignment. Uploading a JD or pressing *Extract bullet points* / *Propose with AI* suggests skills
+  and criteria with the JD excerpt; suggestions are not used until a recruiter approves them.
+- **Per skill status**, from the candidate's CV, candidate-provided information and — for people
+  saved from Discover — the linked source record only: *Evidence found*, *Partial evidence*,
+  *No evidence found* (missing evidence, never proof of absence), *Needs recruiter review*.
+  Recruiters can correct any status with a required note, including *Confirmed not present*.
+  Every excerpt shows where it came from and its date (CV file and upload date, or source name,
+  retrieval date and link).
+- **Count** = required skills with *Evidence found* (+ *Partial evidence* only when enabled), shown
+  as `5/6 required`. Threshold state: *Meets configured skill threshold*, *Below configured skill
+  threshold*, or *Needs review* (outcome depends on unresolved skills, the assessment is out of
+  date, or there was nothing to assess — then no count is shown). It is computed live
+  (`src/lib/skills.ts`), shown separately from the evaluation-criteria alignment, and never hides,
+  rejects, advances or "qualifies" anyone.
+- **Where it appears**: Applicants (list, board, ranked), Shortlist, Discover → *Saved from
+  Discover*, the candidate's Assessment tab and side panel, the role Overview (assessed / meets /
+  below / needs review, real candidates only — fictional samples excluded) and the CSV export.
+  Lists filter by threshold status and minimum count.
+- **Refresh**: changing approved skills or criteria marks assessments out of date; a changed CV or
+  candidate-provided information does too. *Reassess candidates* (role → Criteria) re-runs the
+  out-of-date ones (or all) with AI when configured, otherwise with the labeled keyword check.
+  Threshold, partial credit and weights apply immediately without reassessment.
+
 ## Role workspace: Applicants · Discover · Shortlist
 
 Each role has three people tabs, kept deliberately separate:

@@ -2,202 +2,89 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { ASSESSMENT_ENGINE_VERSION, AiRequestError, AiUnavailableError, aiStatus, assessWithAi, recommendWithAi } from "@/lib/ai";
+import { aiStatus } from "@/lib/ai";
 import { audit } from "@/lib/audit";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { RECOMMENDATIONS, RESULTS, type Evidence } from "@/lib/domain";
-import { locateQuote, type SourceDoc } from "@/lib/evidence";
-import { redactContact } from "@/lib/extraction";
-import { keywordMatch, keywordsFor } from "@/lib/heuristics";
-import { computeScore, scoreSummaryText } from "@/lib/score";
+import { RECOMMENDATIONS, RESULTS } from "@/lib/domain";
 import { logError } from "@/lib/log";
+import { candidateInfoChanged } from "@/lib/skills";
+import { isStale } from "@/lib/summary";
+import { assessApplication } from "./assessment-engine";
 import { str, type ActionState } from "./form";
-import { ownApplication, ownAssessment, ownAssessmentItem } from "./scope";
-
-/** Candidate-provided information that may be used as evidence (never recruiter notes). */
-function profileText(c: { currentTitle: string | null; currentCompany: string | null; candidateSummary: string | null }) {
-  return [
-    c.currentTitle ? `Current title: ${c.currentTitle}` : "",
-    c.currentCompany ? `Current company: ${c.currentCompany}` : "",
-    c.candidateSummary ?? "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-type ItemDraft = {
-  criterionId: string;
-  criterionName: string;
-  importance: string;
-  result: string;
-  evidence: Evidence[];
-  explanation: string;
-  missingInfo: string;
-  confidence: string | null;
-};
+import { ownApplication, ownAssessment, ownAssessmentItem, ownRole } from "./scope";
 
 export async function runAssessment(applicationId: string, mode: "ai" | "keyword"): Promise<ActionState> {
   const auth = await requireAuth();
   const app = await ownApplication(auth, applicationId);
-  const [role, candidate, criteria, resume] = await Promise.all([
-    db.role.findFirstOrThrow({ where: { id: app.roleId, orgId: auth.orgId } }),
-    db.candidate.findFirstOrThrow({ where: { id: app.candidateId, orgId: auth.orgId } }),
-    db.criterion.findMany({
-      where: { roleId: app.roleId, orgId: auth.orgId, status: "approved" },
-      orderBy: [{ importance: "asc" }, { priority: "asc" }, { position: "asc" }],
-    }),
-    db.resume.findFirst({ where: { candidateId: app.candidateId, orgId: auth.orgId, isCurrent: true } }),
-  ]);
-
-  if (criteria.length === 0) return { error: "This role has no approved criteria yet. Approve criteria on the role page first." };
-  const doc: SourceDoc = { resumePages: resume ? (JSON.parse(resume.pagesJson) as string[]) : [], profileText: profileText(candidate) };
-  if (!doc.resumePages.join("").trim() && !doc.profileText.trim())
-    return { error: "Add a resume or candidate-provided information before assessing." };
-
-  let drafts: ItemDraft[];
-  if (mode === "ai") {
-    try {
-      const resumeText = redactContact(doc.resumePages.map((p, i) => (doc.resumePages.length > 1 ? `[Page ${i + 1}]\n${p}` : p)).join("\n\n"));
-      const items = await assessWithAi({
-        roleTitle: role.title,
-        criteria: criteria.map((c) => ({ id: c.id, name: c.name, description: c.description, importance: c.importance })),
-        resumeText,
-        profileText: redactContact(doc.profileText),
-      });
-      const byId = new Map(items.map((i) => [i.criterion_id, i]));
-      drafts = criteria.map((c) => {
-        const it = byId.get(c.id);
-        if (!it)
-          return {
-            criterionId: c.id,
-            criterionName: c.name,
-            importance: c.importance,
-            result: "not_stated",
-            evidence: [],
-            explanation: "The AI did not return an assessment for this criterion.",
-            missingInfo: "Review manually.",
-            confidence: "low",
-          };
-        const evidence = it.evidence.filter((e) => e.quote.trim()).map((e) => locateQuote(doc, e.quote, e.source));
-        let result = it.result as string;
-        let confidence = it.confidence as string;
-        let explanation = it.explanation;
-        // A "supported" or "partially supported" claim must rest on at least one quote that exists in the material.
-        if ((result === "supported" || result === "partially_supported") && !evidence.some((e) => e.verified)) {
-          const was = result === "supported" ? "supported" : "partially supported";
-          result = "inferred";
-          confidence = "low";
-          explanation = `${explanation} [Talyn: the quoted evidence could not be found verbatim in the candidate's material, so this was downgraded from "${was}" to "inferred". Verify before relying on it.]`;
-        }
-        return { criterionId: c.id, criterionName: c.name, importance: c.importance, result, evidence, explanation, missingInfo: it.missing_info, confidence };
-      });
-    } catch (err) {
-      if (err instanceof AiUnavailableError || err instanceof AiRequestError) return { error: err.message };
-      logError("assessment.ai_failed", err, { applicationId });
-      return { error: "The assessment could not be completed. Please try again." };
-    }
-  } else {
-    const allText = [...doc.resumePages, doc.profileText].join("\n");
-    drafts = criteria.map((c) => {
-      const kws = keywordsFor(c.name, c.description);
-      const hits = keywordMatch(kws, allText);
-      if (hits.length === 0)
-        return {
-          criterionId: c.id,
-          criterionName: c.name,
-          importance: c.importance,
-          result: "not_stated",
-          evidence: [],
-          explanation: `No lines matched the keywords: ${kws.join(", ") || "(none)"}.`,
-          missingInfo: "Keyword checks miss synonyms and context. Read the resume or ask the candidate.",
-          confidence: null,
-        };
-      return {
-        criterionId: c.id,
-        criterionName: c.name,
-        importance: c.importance,
-        // Keyword overlap is never treated as proof; a recruiter must confirm.
-        result: "inferred",
-        evidence: hits.map((h) => locateQuote(doc, h.snippet, "resume")),
-        explanation: `Keyword match on: ${Array.from(new Set(hits.flatMap((h) => h.matched))).join(", ")}. Check the context — a keyword match does not confirm the criterion.`,
-        missingInfo: "",
-        confidence: "low",
-      };
-    });
-  }
-
-  // Score is computed by Talyn (deterministic), then the AI is asked for a recommendation
-  // that is shown AFTER the score and evidence. A recommendation failure never loses the assessment.
-  const score = computeScore(drafts.map((d) => ({ name: d.criterionName, importance: d.importance, result: d.result })));
-  let recommendation: string | null = null;
-  let recommendationJson: Record<string, unknown> | null = null;
-  if (mode === "ai") {
-    try {
-      const rec = await recommendWithAi({
-        roleTitle: role.title,
-        items: drafts.map((d) => ({ name: d.criterionName, importance: d.importance, result: d.result, explanation: d.explanation, missingInfo: d.missingInfo })),
-        scoreSummary: scoreSummaryText(score),
-      });
-      recommendation = rec.recommendation;
-      let adjustedNote: string | null = null;
-      // Guardrail: never suggest advancing when Talyn has withheld the score for lack of evidence.
-      if (rec.recommendation === "advance_to_review" && score.status === "withheld") {
-        recommendation = "gather_more_info";
-        adjustedNote = "The AI suggested advancing, but Talyn changed this to “Gather more information” because the score is withheld for incomplete evidence.";
-      }
-      recommendationJson = { rationale: rec.rationale, criteriaCited: rec.criteria_cited, questions: rec.questions, adjustedNote };
-    } catch (err) {
-      if (!(err instanceof AiRequestError)) logError("assessment.recommend_failed", err, { applicationId });
-      recommendationJson = { unavailable: `The recommendation couldn't be generated${err instanceof AiRequestError ? ` (${err.message})` : ""}. The assessment and score are unaffected.` };
-    }
-  } else {
-    recommendationJson = { unavailable: "Recommendations are only generated with AI assessments." };
-  }
-  const ai = aiStatus();
-
-  await db.assessment.create({
-    data: {
-      orgId: auth.orgId,
-      applicationId,
-      resumeId: resume?.id ?? null,
-      generator: mode,
-      model: mode === "ai" ? `${ai.provider}:${ai.model}` : null,
-      criteriaSnapshot: JSON.stringify(criteria.map((c) => ({ id: c.id, updatedAt: c.updatedAt.toISOString() }))),
-      criteriaVersion: role.criteriaVersion,
-      engineVersion: mode === "ai" ? ASSESSMENT_ENGINE_VERSION : "keyword-v1 + alignment-v1",
-      parserVersion: resume?.parserVersion ?? null,
-      scoreJson: JSON.stringify(score),
-      recommendation,
-      recommendationJson: recommendationJson ? JSON.stringify(recommendationJson) : null,
-      recommendationStatus: recommendation ? "pending" : null,
-      createdById: auth.userId,
-      items: {
-        create: drafts.map((d) => ({
-          criterionId: d.criterionId,
-          criterionName: d.criterionName,
-          importance: d.importance,
-          result: d.result,
-          evidenceJson: JSON.stringify(d.evidence),
-          explanation: d.explanation,
-          missingInfo: d.missingInfo,
-          confidence: d.confidence,
-        })),
-      },
-    },
-  });
-  await audit(auth, "assessment.run", {
-    subjectType: "application",
-    subjectId: applicationId,
-    candidateId: app.candidateId,
-    roleId: app.roleId,
-    applicationId,
-    meta: { generator: mode, model: mode === "ai" ? `${ai.provider}:${ai.model}` : null, criteriaVersion: role.criteriaVersion, score: score.score, coverage: Math.round(score.coverage * 100) },
-  });
+  const out = await assessApplication(auth, applicationId, mode);
+  if (!out.ok) return { error: out.reason === "no_material" ? "Add a CV or candidate-provided information before assessing." : out.error };
   // Moving "new" candidates into review is NOT automatic: the recruiter decides pipeline moves.
   revalidatePath(`/candidates/${app.candidateId}`);
   revalidatePath(`/roles/${app.roleId}`);
   return { ok: true };
+}
+
+/**
+ * Recruiter-started "Reassess candidates" for a role: every applied, discovered and shortlisted
+ * person whose assessment is missing or out of date (or everyone, with scope "all"). Uses AI when
+ * configured, otherwise the labeled keyword check. Rejected candidates are skipped. Never changes
+ * a stage, decision or visibility.
+ */
+export async function reassessRole(roleId: string, scope: "outdated" | "all" = "outdated"): Promise<ActionState> {
+  const auth = await requireAuth();
+  const role = await ownRole(auth, roleId);
+  const criteria = await db.criterion.findMany({ where: { orgId: auth.orgId, roleId, status: "approved" }, select: { id: true, updatedAt: true } });
+  if (!criteria.length) return { error: "Approve at least one skill or criterion first." };
+  const apps = await db.application.findMany({
+    // NULL-safe: "not decline" alone would also drop everyone without a decision yet.
+    where: { orgId: auth.orgId, roleId, stage: { not: "rejected" }, OR: [{ decision: null }, { decision: { not: "decline" } }] },
+    select: {
+      id: true,
+      candidate: { select: { currentTitle: true, currentCompany: true, candidateSummary: true, resumes: { where: { isCurrent: true }, select: { id: true }, take: 1 } } },
+      assessments: { orderBy: { createdAt: "desc" }, take: 1, select: { criteriaSnapshot: true, criteriaVersion: true, resumeId: true, profileHash: true } },
+    },
+  });
+  const todo = apps.filter((a) => {
+    if (scope === "all") return true;
+    const latest = a.assessments[0];
+    if (!latest) return true;
+    if (isStale(latest.criteriaSnapshot, criteria) || (latest.criteriaVersion != null && latest.criteriaVersion !== role.criteriaVersion)) return true;
+    return candidateInfoChanged(latest, { resumeId: a.candidate.resumes[0]?.id ?? null, candidate: a.candidate });
+  });
+  if (!todo.length) return { ok: true, message: "Every candidate's assessment is already current." };
+
+  const mode = aiStatus().configured ? "ai" : "keyword";
+  const started = Date.now();
+  const budgetMs = 240_000; // stay inside the page's 300 s limit; the rest can be run again
+  const results: Awaited<ReturnType<typeof assessApplication>>[] = [];
+  const concurrency = mode === "ai" ? 3 : 8;
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, todo.length) }, async () => {
+      while (next < todo.length && Date.now() - started < budgetMs) {
+        const a = todo[next++];
+        try {
+          results.push(await assessApplication(auth, a.id, mode, { batch: true }));
+        } catch (err) {
+          logError("assessment.batch_item_failed", err, { applicationId: a.id });
+          results.push({ ok: false, error: "failed", reason: "failed" });
+        }
+      }
+    }),
+  );
+  const done = results.filter((r) => r.ok).length;
+  const noMaterial = results.filter((r) => !r.ok && r.reason === "no_material").length;
+  const failed = results.filter((r) => !r.ok && r.reason !== "no_material").length;
+  const remaining = todo.length - results.length;
+  await audit(auth, "assessment.batch", { subjectType: "role", subjectId: roleId, roleId, meta: { scope, generator: mode, assessed: done, noMaterial, failed, remaining } });
+  revalidatePath(`/roles/${roleId}`);
+  revalidatePath(`/roles/${roleId}/discover`);
+  const parts = [`${done} candidate${done === 1 ? "" : "s"} reassessed${mode === "keyword" ? " with the keyword check (AI is off)" : ""}`];
+  if (noMaterial) parts.push(`${noMaterial} need review — no CV, profile or source text to assess`);
+  if (failed) parts.push(`${failed} failed — try again`);
+  if (remaining) parts.push(`${remaining} not reached yet — run Reassess again`);
+  return failed && !done ? { error: parts.join(" · ") } : { ok: true, message: parts.join(" · ") + "." };
 }
 
 export async function overrideItem(itemId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -215,7 +102,10 @@ export async function overrideItem(itemId: string, _prev: ActionState, fd: FormD
   }
   const app = await db.application.findFirst({ where: { id: item.assessment.applicationId, orgId: auth.orgId } });
   await audit(auth, "assessment.corrected", { subjectType: "assessment", subjectId: item.assessmentId, candidateId: app?.candidateId, roleId: app?.roleId, applicationId: app?.id, meta: { result: result || "cleared" } });
-  if (app) revalidatePath(`/candidates/${app.candidateId}`);
+  if (app) {
+    revalidatePath(`/candidates/${app.candidateId}`);
+    revalidatePath(`/roles/${app.roleId}`);
+  }
   return { ok: true };
 }
 

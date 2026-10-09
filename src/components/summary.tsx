@@ -15,7 +15,7 @@ export function SummaryLine({ summary, compact = false }: { summary: Summary; co
     );
   return (
     <span className="inline-flex flex-wrap gap-x-3 gap-y-0.5 text-[12.5px]">
-      {part("Essential", summary.essential)}
+      {part("Required", summary.essential)}
       {part("Preferred", summary.preferred)}
     </span>
   );

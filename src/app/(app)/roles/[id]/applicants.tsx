@@ -8,13 +8,15 @@ import { AiMark, Badge, Card, EmptyState, LinkButton, buttonClass, formatDate } 
 import { GENERATOR_LABEL, RECOMMENDATION_LABEL, STAGES, STAGE_LABEL, type Recommendation, type Stage } from "@/lib/domain";
 import { compareFit, roleFit, stageReadiness } from "@/lib/ranking";
 import { REVIEW_STATUSES, REVIEW_STATUS_LABEL, REVIEW_STATUS_TONE, evidenceCounts, reviewStatus } from "@/lib/review-status";
-import { computeScore, pct } from "@/lib/score";
+import { computeScore, pct, type Weights } from "@/lib/score";
+import { passesSkillFilter, type SkillMatch } from "@/lib/skills";
+import { SkillCount, SkillFilterFields } from "@/components/skill-match";
 import { isStale, summarize } from "@/lib/summary";
 import { AddExisting } from "./add-existing";
 import { PrioritySelect } from "./priority";
 
 type Criteria = Parameters<typeof roleFit>[1]["criteria"];
-type ItemLite = { criterionName: string; importance: string; result: string; overrideResult: string | null };
+type ItemLite = { criterionName: string; criterionId: string | null; kind: string; importance: string; result: string; overrideResult: string | null };
 export type AppRow = {
   id: string;
   candidateId: string;
@@ -28,13 +30,24 @@ export type AppRow = {
   origin: string;
   originDetail: string | null;
   createdAt: Date;
-  candidate: { id: string; fullName: string; currentTitle: string | null; currentCompany: string | null; extractionStatus: string | null; isSample: boolean; _count: { resumes: number } };
+  sourcedProfileId: string | null;
+  candidate: {
+    id: string;
+    fullName: string;
+    currentTitle: string | null;
+    currentCompany: string | null;
+    candidateSummary: string | null;
+    extractionStatus: string | null;
+    isSample: boolean;
+    resumes: { id: string }[];
+    _count: { resumes: number };
+  };
   stageEvents: { createdAt: Date }[];
-  assessments: { id: string; status: string; generator: string; criteriaSnapshot: string; finalRecommendation: string | null; recommendation: string | null; recommendationStatus: string | null; createdAt: Date; criteriaVersion: number | null; items: ItemLite[] }[];
+  assessments: { id: string; status: string; generator: string; criteriaSnapshot: string; resumeId: string | null; profileHash: string | null; finalRecommendation: string | null; recommendation: string | null; recommendationStatus: string | null; createdAt: Date; criteriaVersion: number | null; items: ItemLite[] }[];
   _count: { tasks: number };
 };
 
-export type ApplicantFilters = { q: string; stage: string; review: string; view: "list" | "board" | "ranked"; sort: string };
+export type ApplicantFilters = { q: string; stage: string; review: string; view: "list" | "board" | "ranked"; sort: string; skills: string; minskills: string };
 
 /** Inbound workflow: people who applied to this role. Discovered people never appear here. */
 export function ApplicantsTab({
@@ -45,8 +58,14 @@ export function ApplicantsTab({
   approved,
   criteriaVersion,
   others,
+  skillMatches,
+  requiredSkills,
+  weights,
 }: {
   roleId: string;
+  skillMatches: Map<string, SkillMatch>;
+  requiredSkills: number;
+  weights: Weights;
   applicants: AppRow[];
   matchingIds: Set<string> | null; // candidate ids matching the text search, or null when there's no search
   filters: ApplicantFilters;
@@ -54,14 +73,17 @@ export function ApplicantsTab({
   criteriaVersion: number;
   others: { id: string; fullName: string; currentTitle: string | null }[];
 }) {
-  const { q, stage, review, view, sort } = filters;
-  const rows = applicants
+  const { q, stage, review, view, sort, skills, minskills } = filters;
+  const skillFiltered = applicants.filter((a) => passesSkillFilter(skillMatches.get(a.id), filters));
+  const rows = skillFiltered
     .map((a) => ({ a, status: reviewStatus(a), latest: a.assessments[0] ?? null }))
     .filter(({ a, status }) => (!matchingIds || matchingIds.has(a.candidateId)) && (!stage || a.stage === stage) && (!review || status === review))
     .sort((x, y) =>
-      sort === "name" ? x.a.candidate.fullName.localeCompare(y.a.candidate.fullName) : sort === "oldest" ? x.a.createdAt.getTime() - y.a.createdAt.getTime() : y.a.createdAt.getTime() - x.a.createdAt.getTime(),
+      sort === "skills"
+        ? (skillMatches.get(y.a.id)?.evidenced ?? -1) - (skillMatches.get(x.a.id)?.evidenced ?? -1) || y.a.createdAt.getTime() - x.a.createdAt.getTime()
+        : sort === "name" ? x.a.candidate.fullName.localeCompare(y.a.candidate.fullName) : sort === "oldest" ? x.a.createdAt.getTime() - y.a.createdAt.getTime() : y.a.createdAt.getTime() - x.a.createdAt.getTime(),
     );
-  const filtered = !!(q || stage || review);
+  const filtered = !!(q || stage || review || skills || minskills);
   const base = `/roles/${roleId}?tab=applicants`;
 
   return (
@@ -112,9 +134,9 @@ export function ApplicantsTab({
           }
         />
       ) : view === "board" ? (
-        <Board roleId={roleId} applicants={applicants} approved={approved} />
+        <Board roleId={roleId} applicants={skillFiltered} approved={approved} skillMatches={skillMatches} weights={weights} />
       ) : view === "ranked" ? (
-        <Ranked roleId={roleId} applicants={applicants} approved={approved} criteriaVersion={criteriaVersion} sort={sort} stageFilter={stage} />
+        <Ranked roleId={roleId} applicants={skillFiltered} approved={approved} criteriaVersion={criteriaVersion} sort={sort} stageFilter={stage} skillMatches={skillMatches} weights={weights} />
       ) : (
         <>
           <form role="search" aria-label="Filter applicants" className="flex flex-wrap items-end gap-2 rounded-xl border border-line bg-surface p-3 text-[13px]">
@@ -151,12 +173,14 @@ export function ApplicantsTab({
                 ))}
               </select>
             </label>
+            <SkillFilterFields skills={skills} minskills={minskills} required={requiredSkills} />
             <label className="flex flex-col gap-1">
               <span className="font-medium text-ink-2">Sort</span>
               <select name="sort" defaultValue={sort} className="h-9 rounded-lg border border-line-strong bg-surface px-2">
                 <option value="recent">Newest applications</option>
                 <option value="oldest">Oldest applications</option>
                 <option value="name">Name</option>
+                {requiredSkills > 0 && <option value="skills">Most required skills evidenced</option>}
               </select>
             </label>
             <button className={buttonClass("secondary", "md")}>Apply</button>
@@ -169,25 +193,26 @@ export function ApplicantsTab({
 
           <p className="text-[12.5px] text-muted" aria-live="polite">
             {rows.length} of {applicants.length} applicant{applicants.length === 1 ? "" : "s"}
-            {filtered ? " match" : ""} · Evidence counts come from the latest assessment against the approved criteria — they are not a score.
+            {filtered ? " match" : ""} · Required skills (e.g. 5/6) count only skills with evidence found in the candidate&apos;s own material. Criteria counts are separate. Neither is a score or a decision.
           </p>
 
           {rows.length === 0 ? (
             <EmptyState title="No applicants match these filters" body="Try a different name or skill, or clear the filters." action={<LinkButton href={base}>Clear filters</LinkButton>} />
           ) : (
             <Card className="overflow-hidden">
-              <div className="hidden grid-cols-[minmax(0,1.5fr)_110px_150px_minmax(0,1fr)_auto] gap-4 border-b border-line bg-[#fbfaf8] px-4 py-2 text-[11.5px] font-semibold uppercase tracking-wide text-faint lg:grid">
+              <div className="hidden grid-cols-[minmax(0,1.4fr)_100px_150px_150px_minmax(0,1fr)_auto] gap-4 border-b border-line bg-[#fbfaf8] px-4 py-2 text-[11.5px] font-semibold uppercase tracking-wide text-faint lg:grid">
                 <span>Applicant</span>
                 <span>Applied</span>
                 <span>Stage</span>
-                <span>Review · evidence</span>
+                <span>Required skills</span>
+                <span>Review · criteria evidence</span>
                 <span className="text-right">Your decision</span>
               </div>
               <ul className="divide-y divide-line">
                 {rows.map(({ a, status, latest }) => {
                   const stale = latest ? isStale(latest.criteriaSnapshot, approved) : false;
                   return (
-                    <li key={a.id} className="grid gap-x-4 gap-y-2 px-4 py-3 lg:grid-cols-[minmax(0,1.5fr)_110px_150px_minmax(0,1fr)_auto] lg:items-center">
+                    <li key={a.id} className="grid gap-x-4 gap-y-2 px-4 py-3 lg:grid-cols-[minmax(0,1.4fr)_100px_150px_150px_minmax(0,1fr)_auto] lg:items-center">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <Link href={`/candidates/${a.candidate.id}?role=${roleId}`} className="font-medium hover:underline">
@@ -207,6 +232,9 @@ export function ApplicantsTab({
                         </time>
                       </div>
                       <StageSelect applicationId={a.id} stage={a.stage} />
+                      <Link href={`/candidates/${a.candidate.id}?role=${roleId}#skills`} className="rounded-md hover:bg-sunken/60" aria-label={`Skill evidence for ${a.candidate.fullName}`}>
+                        {skillMatches.get(a.id) && <SkillCount m={skillMatches.get(a.id)!} stacked />}
+                      </Link>
                       <div className="min-w-0 space-y-0.5">
                         <Badge tone={REVIEW_STATUS_TONE[status]}>{REVIEW_STATUS_LABEL[status]}</Badge>
                         <div>
@@ -229,7 +257,19 @@ export function ApplicantsTab({
   );
 }
 
-function Board({ roleId, applicants, approved }: { roleId: string; applicants: AppRow[]; approved: { id: string; updatedAt: Date }[] }) {
+function Board({
+  roleId,
+  applicants,
+  approved,
+  skillMatches,
+  weights,
+}: {
+  roleId: string;
+  applicants: AppRow[];
+  approved: { id: string; updatedAt: Date }[];
+  skillMatches: Map<string, SkillMatch>;
+  weights: Weights;
+}) {
   return (
     <div className="-mx-4 overflow-x-auto px-4 pb-2 md:mx-0 md:px-0">
       <div className="flex min-w-max gap-3">
@@ -255,9 +295,10 @@ function Board({ roleId, applicants, approved }: { roleId: string; applicants: A
                         <div className="truncate text-[12.5px] text-muted">{[a.candidate.currentTitle, a.candidate.currentCompany].filter(Boolean).join(" · ")}</div>
                       )}
                       <div className="mt-2 space-y-1">
+                        {skillMatches.get(a.id) && <SkillCount m={skillMatches.get(a.id)!} className="text-[12px]" />}
                         {asmt ? (
                           <>
-                            <ScoreChip items={asmt.items} />
+                            <ScoreChip items={asmt.items} weights={weights} />
                             <SummaryLine summary={summarize(asmt.items)} compact />
                             {(asmt.finalRecommendation ?? asmt.recommendation) && (
                               <div className="flex items-center gap-1 text-[11.5px] text-ink-2">
@@ -304,6 +345,8 @@ function Ranked({
   criteriaVersion,
   sort,
   stageFilter,
+  skillMatches,
+  weights,
 }: {
   roleId: string;
   applicants: AppRow[];
@@ -311,10 +354,12 @@ function Ranked({
   criteriaVersion: number;
   sort: string;
   stageFilter: string;
+  skillMatches: Map<string, SkillMatch>;
+  weights: Weights;
 }) {
   // Ranking (see src/lib/ranking.ts): role fit across the role; readiness only within a stage.
   const ranked = applicants.map((a) => {
-    const fit = roleFit(a.assessments, { criteria: approved, criteriaVersion });
+    const fit = roleFit(a.assessments, { criteria: approved, criteriaVersion, weights });
     const latestA = a.assessments[0] ?? null;
     const readiness = stageReadiness({
       stage: a.stage,
@@ -378,8 +423,8 @@ function Ranked({
       </form>
       <Card className="overflow-hidden">
         <div className="border-b border-line bg-[#fbfaf8] px-4 py-2 text-[12px] text-muted">
-          <strong className="font-medium text-ink-2">Role fit</strong> = criteria-alignment score of the latest assessment: how much of the approved criteria the CV evidence supports, weighted
-          essential over preferred. It is not a measure of candidate quality or likelihood of success, and it is unranked when evidence is insufficient or criteria changed. Open a candidate for
+          <strong className="font-medium text-ink-2">Role fit</strong> = evaluation-criteria alignment of the latest assessment: how much of the approved criteria the evidence supports, weighted
+          required {weights.essential} : preferred {weights.preferred}. The required-skill count is shown separately and is not part of it. It is not a measure of candidate quality or likelihood of success, and it is unranked when evidence is insufficient or criteria changed. Open a candidate for
           the per-criterion evidence. <strong className="font-medium text-ink-2">Readiness</strong> = checklist for the next decision, compared only within the same stage. Neither moves or decides
           anything.
         </div>
@@ -416,6 +461,7 @@ function Ranked({
                   </div>
                 )}
                 {a.assessments[0] && <EvidenceCounts counts={evidenceCounts(a.assessments[0].items)} className="mt-0.5" />}
+                {skillMatches.get(a.id) && <SkillCount m={skillMatches.get(a.id)!} className="mt-1" />}
                 {fit.change && <div className="text-[11.5px] text-ink-2">Changed: {fit.change}</div>}
               </div>
               <div className="text-[12.5px]">
@@ -463,8 +509,8 @@ export function timeInStage(since: Date) {
   return days < 60 ? `${days}d` : `${Math.floor(days / 30)}mo`;
 }
 
-function ScoreChip({ items }: { items: ItemLite[] }) {
-  const s = computeScore(items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult })));
+function ScoreChip({ items, weights }: { items: ItemLite[]; weights: Weights }) {
+  const s = computeScore(items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult, kind: i.kind })), weights);
   return (
     <div className="text-[12px]" title="Criteria-alignment score (alignment-v1) and weighted evidence coverage. Not a measure of candidate quality. Open the candidate for per-criterion evidence.">
       {s.score === null ? (
@@ -472,7 +518,7 @@ function ScoreChip({ items }: { items: ItemLite[] }) {
       ) : (
         <span>
           <span className="font-semibold tabular-nums">{s.score}</span>
-          <span className="text-faint">/100 alignment</span>
+          <span className="text-faint">/100 criteria alignment</span>
           <span className="text-muted"> · coverage {pct(s.coverage)}</span>
         </span>
       )}

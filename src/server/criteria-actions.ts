@@ -5,28 +5,46 @@ import { z } from "zod";
 import { AiRequestError, AiUnavailableError, proposeCriteriaWithAi } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { IMPORTANCE } from "@/lib/domain";
+import { CRITERION_IMPORTANCE, CRITERION_KINDS } from "@/lib/domain";
+import { audit } from "@/lib/audit";
 import { extractCriteriaFromJd } from "@/lib/heuristics";
 import { logError } from "@/lib/log";
 import { str, type ActionState } from "./form";
 import { bumpCriteriaVersion, storeProposedCriteria } from "./facts";
 import { ownCriterion, ownRole } from "./scope";
 
-const CriterionSchema = z.object({
-  name: z.string().min(1, "Name is required").max(200),
-  description: z.string().max(2000),
-  importance: z.enum(IMPORTANCE),
-  priority: z.number().int().min(1).max(10).nullable(),
-});
+const CriterionSchema = z
+  .object({
+    name: z.string().min(1, "Name is required").max(200),
+    description: z.string().max(2000),
+    kind: z.enum(CRITERION_KINDS),
+    importance: z.enum(CRITERION_IMPORTANCE),
+    priority: z.number().int().min(1).max(10).nullable(),
+    aliases: z.string().max(500),
+    mappedCriterionId: z.string().nullable(),
+  })
+  .refine((c) => c.kind === "criterion" || c.importance !== "informational", { message: "Skills are required or preferred." });
 
 function parseCriterion(fd: FormData) {
   const p = str(fd, "priority");
+  const kind = str(fd, "kind") || "criterion";
   return CriterionSchema.safeParse({
     name: str(fd, "name", 200),
     description: str(fd, "description", 2000),
+    kind,
     importance: str(fd, "importance") || "essential",
     priority: p ? Number(p) : null,
+    aliases: kind === "skill" ? str(fd, "aliases", 500) : "",
+    mappedCriterionId: kind === "skill" ? str(fd, "mappedCriterionId") || null : null,
   });
+}
+
+/** A skill may only map to an evaluation criterion of the same role. */
+async function checkMapping(orgId: string, roleId: string, mappedCriterionId: string | null, selfId?: string) {
+  if (!mappedCriterionId) return null;
+  if (mappedCriterionId === selfId) return "A skill can't map to itself.";
+  const target = await db.criterion.findFirst({ where: { id: mappedCriterionId, orgId, roleId, kind: "criterion" }, select: { id: true } });
+  return target ? null : "Choose an evaluation criterion from this role.";
 }
 
 async function nextPosition(roleId: string) {
@@ -40,6 +58,8 @@ export async function addCriterion(roleId: string, _prev: ActionState, fd: FormD
   await ownRole(auth, roleId);
   const parsed = parseCriterion(fd);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message };
+  const mapErr = await checkMapping(auth.orgId, roleId, parsed.data.mappedCriterionId);
+  if (mapErr) return { error: mapErr };
   await db.criterion.create({
     data: {
       ...parsed.data,
@@ -62,6 +82,9 @@ export async function updateCriterion(id: string, _prev: ActionState, fd: FormDa
   const c = await ownCriterion(auth, id);
   const parsed = parseCriterion(fd);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message };
+  const mapErr = await checkMapping(auth.orgId, c.roleId, parsed.data.mappedCriterionId, id);
+  if (mapErr) return { error: mapErr };
+  if (c.kind === "criterion" && parsed.data.kind === "skill") await db.criterion.updateMany({ where: { orgId: auth.orgId, roleId: c.roleId, mappedCriterionId: id }, data: { mappedCriterionId: null } });
   const edited =
     c.origin !== "manual" &&
     (parsed.data.name !== (c.originalName ?? c.name) || parsed.data.description !== (c.originalDescription ?? c.description));
@@ -102,6 +125,7 @@ export async function deleteCriterion(id: string) {
   const auth = await requireAuth();
   const c = await ownCriterion(auth, id);
   await db.criterion.delete({ where: { id } });
+  await db.criterion.updateMany({ where: { orgId: auth.orgId, roleId: c.roleId, mappedCriterionId: id }, data: { mappedCriterionId: null } });
   if (c.status === "approved") await bumpCriteriaVersion(c.roleId, auth, "deleted");
   revalidatePath(`/roles/${c.roleId}`);
 }
@@ -116,7 +140,7 @@ export async function proposeCriteria(roleId: string, mode: "ai" | "extract"): P
   const role = await ownRole(auth, roleId);
   if (role.description.trim().length < 40) return { error: "Add a job description (at least a few lines) first." };
 
-  type Draft = { name: string; description: string; importance: string; sourceText: string | null; rationale: string | null };
+  type Draft = { name: string; description: string; importance: string; kind: "skill" | "criterion"; sourceText: string | null; rationale: string | null };
   let drafts: Draft[] = [];
   if (mode === "ai") {
     try {
@@ -128,6 +152,7 @@ export async function proposeCriteria(roleId: string, mode: "ai" | "extract"): P
           name: p.name.slice(0, 200),
           description: p.description.slice(0, 2000),
           importance: p.importance,
+          kind: p.kind,
           sourceText: inJd ? p.source_quote : null,
           rationale: p.rationale || null,
         };
@@ -142,6 +167,7 @@ export async function proposeCriteria(roleId: string, mode: "ai" | "extract"): P
       name: e.name,
       description: "",
       importance: e.importance,
+      kind: e.kind,
       sourceText: e.sourceText,
       rationale: "Bullet point from a requirements section of the job description.",
     }));
@@ -156,6 +182,7 @@ export async function proposeCriteria(roleId: string, mode: "ai" | "extract"): P
       name: d.name,
       description: d.description,
       importance: d.importance === "preferred" ? "preferred" : "essential",
+      kind: d.kind,
       sourceText: d.sourceText,
       sourcePage: null,
       sourceSection: null,
@@ -164,5 +191,48 @@ export async function proposeCriteria(roleId: string, mode: "ai" | "extract"): P
     mode === "ai" ? "ai" : "extracted",
   );
   revalidatePath(`/roles/${roleId}`);
-  return { ok: true, message: `${drafts.length} criteria proposed. Review each one before it is used.` };
+  const skills = drafts.filter((d) => d.kind === "skill").length;
+  return { ok: true, message: `${skills} skill${skills === 1 ? "" : "s"} and ${drafts.length - skills} criteri${drafts.length - skills === 1 ? "on" : "a"} suggested from the JD. Review each one before it is used.` };
+}
+
+/**
+ * The role's skill-matching rubric: minimum required skills, whether partial evidence counts,
+ * and the evaluation-criteria weights. Applied live to every candidate's latest assessment —
+ * no reassessment needed, and never used to reject, hide or advance anyone.
+ */
+export async function updateRubric(roleId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
+  const auth = await requireAuth();
+  const role = await ownRole(auth, roleId);
+  const t = str(fd, "skillThreshold");
+  const requiredSkills = await db.criterion.count({ where: { orgId: auth.orgId, roleId, kind: "skill", status: "approved", importance: { not: "preferred" } } });
+  const parsed = z
+    .object({
+      skillThreshold: z.number().int().min(1, "The minimum must be at least 1.").max(50).nullable(),
+      skillPartialCredit: z.boolean(),
+      weightRequired: z.number().int().min(1, "Weights are whole numbers from 1 to 10.").max(10, "Weights are whole numbers from 1 to 10."),
+      weightPreferred: z.number().int().min(1, "Weights are whole numbers from 1 to 10.").max(10, "Weights are whole numbers from 1 to 10."),
+    })
+    .safeParse({
+      skillThreshold: t ? Number(t) : null,
+      skillPartialCredit: fd.get("skillPartialCredit") === "on",
+      weightRequired: Number(str(fd, "weightRequired") || role.weightRequired),
+      weightPreferred: Number(str(fd, "weightPreferred") || role.weightPreferred),
+    });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message };
+  if (parsed.data.skillThreshold != null && parsed.data.skillThreshold > requiredSkills)
+    return { error: `The minimum can't be more than the ${requiredSkills} approved required skill${requiredSkills === 1 ? "" : "s"}.` };
+  await db.role.update({ where: { id: roleId }, data: { ...parsed.data, rubricUpdatedBy: auth.userName, rubricUpdatedAt: new Date() } });
+  await audit(auth, "rubric.changed", {
+    subjectType: "role",
+    subjectId: roleId,
+    roleId,
+    meta: {
+      skillThreshold: parsed.data.skillThreshold,
+      partialCredit: parsed.data.skillPartialCredit,
+      weights: `${parsed.data.weightRequired}/${parsed.data.weightPreferred}`,
+      previous: `threshold ${role.skillThreshold ?? "none"} · partial ${role.skillPartialCredit ? "on" : "off"} · weights ${role.weightRequired}/${role.weightPreferred}`,
+    },
+  });
+  revalidatePath(`/roles/${roleId}`);
+  return { ok: true, message: "Rubric saved. Counts and threshold status update for every candidate right away." };
 }

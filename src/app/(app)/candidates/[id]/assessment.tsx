@@ -6,6 +6,9 @@ import { ActionForm, ActionButton, FormMessage, Spinner, SubmitButton, useServer
 import { AiMark, Badge, Button, Field, Notice, Select, Textarea } from "@/components/ui";
 import { EVIDENCE_TIER, EVIDENCE_TIER_LABEL, RECOMMENDATIONS, RECOMMENDATION_LABEL, RESULT_HELP, RESULT_LABEL, RESULTS, type AssessmentResult, type Evidence, type Recommendation } from "@/lib/domain";
 import { useSourceViewer } from "@/components/source-viewer";
+import { SkillStatusBadge } from "@/components/skill-match";
+import { evidenceOriginLabel } from "@/lib/evidence";
+import { SKILL_STATUS_LABEL, SKILL_STATUS_RESULT, skillStatus } from "@/lib/skills";
 import { StagedProgress } from "@/components/staged-progress";
 import { useToast } from "@/components/toast";
 import { markReviewed, overrideItem, reviewRecommendation, runAssessment } from "@/server/assessment-actions";
@@ -16,6 +19,7 @@ export type ItemView = {
   id: string;
   criterionName: string;
   importance: string;
+  kind: string;
   result: string;
   evidence: Evidence[];
   explanation: string;
@@ -145,12 +149,24 @@ export function RunAssessment({ applicationId, aiConfigured, hasAssessment, disa
 
 function CitationButton({ evidence: e }: { evidence: Evidence }) {
   const openSource = useSourceViewer();
-  const label = `${e.source === "resume" ? "CV" : "Candidate-provided info"}${e.page ? ` · p.${e.page}` : ""}${e.section && e.source === "resume" ? ` · ${e.section}` : ""}`;
+  const label = evidenceOriginLabel(e);
+  if (e.source === "source")
+    return e.url ? (
+      <a href={e.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline-offset-2 hover:text-ink hover:underline" title="Open the source record">
+        {label}
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+          <path d="M3.5 2h4.5v4.5M8 2L3 7" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+        </svg>
+      </a>
+    ) : (
+      <span>{label}</span>
+    );
+  const src = e.source;
   if (!openSource || !e.verified) return <span>{label}</span>;
   return (
     <button
       type="button"
-      onClick={() => openSource({ source: e.source, page: e.page, quote: e.quote, label })}
+      onClick={() => openSource({ source: src, page: e.page, quote: e.quote, label })}
       className="inline-flex items-center gap-1 rounded underline-offset-2 hover:text-ink hover:underline"
       title="Open the source with this passage highlighted"
     >
@@ -171,7 +187,7 @@ export function ItemCard({ item }: { item: ItemView }) {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="font-medium">{item.criterionName}</span>
-            <span className="text-[12px] text-muted">{item.importance === "essential" ? "Essential" : "Preferred"}</span>
+            <span className="text-[12px] text-muted">{item.importance === "essential" ? "Required" : item.importance === "preferred" ? "Preferred" : "Informational · not weighted"}</span>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -426,4 +442,112 @@ export function GeneratorTag({ generator, model }: { generator: string; model: s
 
 export function StaleNotice() {
   return <Notice tone="warn">The role&apos;s approved criteria changed after this assessment was created. Re-run it to assess against the current criteria.</Notice>;
+}
+
+// ---------------------------------------------------------------- Skills
+
+/** One required or preferred skill: status, the excerpts behind it, and the recruiter's correction. */
+export function SkillRow({ item }: { item: ItemView }) {
+  const [open, setOpen] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
+  const status = skillStatus(item.overrideResult ?? item.result);
+  const original = skillStatus(item.result);
+  return (
+    <div className="px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden className={clsx("shrink-0 text-faint transition-transform", open && "rotate-90")}>
+            <path d="M3.5 2l3 3-3 3" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+          </svg>
+          <span className="font-medium">{item.criterionName}</span>
+          <span className="truncate text-[12px] text-muted">
+            {item.evidence.length ? `${item.evidence.length} excerpt${item.evidence.length === 1 ? "" : "s"}` : "no excerpt"}
+          </span>
+        </button>
+        {item.overrideResult && original !== status && <SkillStatusBadge status={original} struck />}
+        <SkillStatusBadge status={status} />
+        {item.overrideResult && <span className="text-[11.5px] text-muted">corrected by {item.overriddenBy}</span>}
+      </div>
+      {open && (
+        <div className="motion-fade mt-2 space-y-2 pl-4">
+          {item.evidence.length === 0 ? (
+            <p className="text-[12.5px] text-muted">
+              No excerpt in the CV, candidate-provided information or linked source mentions this skill. That is missing evidence — not proof the candidate lacks it.
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {item.evidence.map((e, i) => (
+                <li key={i} className={clsx("rounded-lg border-l-2 bg-[#fbfaf7] px-3 py-1.5", e.verified ? "border-ok" : "border-warn")}>
+                  <p className="quote text-[13px] text-ink">“{e.quote}”</p>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-muted">
+                    <CitationButton evidence={e} />
+                    {e.verified ? <span className="text-ok">✓ excerpt found in the source</span> : <span className="text-warn">⚠ excerpt not found verbatim — check the source</span>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {item.explanation && <p className="text-[12.5px] text-ink-2">{item.explanation}</p>}
+          {item.missingInfo && <p className="text-[12.5px] text-muted">{item.missingInfo}</p>}
+          {item.overrideResult && item.overrideNote && (
+            <p className="rounded-md bg-sunken px-2.5 py-1.5 text-[12.5px]">
+              <span className="font-medium">Recruiter note · {item.overriddenBy}:</span> {item.overrideNote}
+            </p>
+          )}
+          {correcting ? (
+            <SkillCorrectionForm item={item} onDone={() => setCorrecting(false)} />
+          ) : (
+            <button type="button" onClick={() => setCorrecting(true)} className="text-[12.5px] font-medium text-muted underline-offset-2 hover:text-ink hover:underline">
+              {item.overrideResult ? "Change correction" : "Correct this status"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SkillCorrectionForm({ item, onDone }: { item: ItemView; onDone: () => void }) {
+  const [state, action, actionPending] = useServerForm(overrideItem.bind(null, item.id));
+  const toast = useToast();
+  useEffect(() => {
+    if (state?.ok) {
+      toast({ message: "Skill status corrected" });
+      onDone();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+  return (
+    <ActionForm action={action} pending={actionPending} className="grid gap-3 rounded-lg border border-line bg-[#fbfaf7] p-3 sm:grid-cols-[200px_1fr]">
+      <Field label="Status">
+        <Select name="overrideResult" defaultValue={item.overrideResult ?? ""}>
+          <option value="">Keep original ({SKILL_STATUS_LABEL[skillStatus(item.result)]})</option>
+          {Object.entries(SKILL_STATUS_RESULT).map(([st, r]) => (
+            <option key={r} value={r}>
+              {SKILL_STATUS_LABEL[st as keyof typeof SKILL_STATUS_RESULT]}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Note" hint="What you checked — e.g. the project in the CV, or what the candidate told you. Required.">
+        <Textarea name="overrideNote" rows={2} defaultValue={item.overrideNote ?? ""} maxLength={2000} />
+      </Field>
+      <div className="flex items-center gap-2 sm:col-span-2">
+        <FormMessage state={state?.ok ? undefined : state} />
+        <div className="ml-auto flex gap-2">
+          <Button type="button" size="sm" variant="ghost" onClick={onDone}>
+            Cancel
+          </Button>
+          <SubmitButton size="sm" pendingLabel="Saving…">
+            Save
+          </SubmitButton>
+        </div>
+      </div>
+    </ActionForm>
+  );
 }

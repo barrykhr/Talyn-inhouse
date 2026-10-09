@@ -3,13 +3,29 @@ import Link from "next/link";
 import { EvidenceCounts, ModeBanner, OriginBadge, SampleBadge } from "@/components/role-workspace";
 import { ReviewActions } from "@/components/review-actions";
 import { StageSelect } from "@/components/stage-select";
-import { Card, EmptyState, LinkButton, formatDate } from "@/components/ui";
+import { Card, EmptyState, LinkButton, buttonClass, formatDate } from "@/components/ui";
 import { evidenceCounts } from "@/lib/review-status";
+import { passesSkillFilter, type SkillMatch } from "@/lib/skills";
+import { SkillCount, SkillFilterFields } from "@/components/skill-match";
 import type { AppRow } from "./applicants";
 
 /** Everyone the recruiter shortlisted for this role, from either workflow, with their origin kept visible. */
-export function ShortlistTab({ roleId, shortlisted, origin }: { roleId: string; shortlisted: AppRow[]; origin: string }) {
-  const rows = shortlisted.filter((a) => !origin || a.origin === origin).sort((x, y) => (y.decidedAt?.getTime() ?? 0) - (x.decidedAt?.getTime() ?? 0));
+export function ShortlistTab({
+  roleId,
+  shortlisted,
+  origin,
+  skillMatches,
+  requiredSkills,
+  skillFilter,
+}: {
+  roleId: string;
+  shortlisted: AppRow[];
+  origin: string;
+  skillMatches: Map<string, SkillMatch>;
+  requiredSkills: number;
+  skillFilter: { skills: string; minskills: string };
+}) {
+  const rows = shortlisted.filter((a) => (!origin || a.origin === origin) && passesSkillFilter(skillMatches.get(a.id), skillFilter)).sort((x, y) => (y.decidedAt?.getTime() ?? 0) - (x.decidedAt?.getTime() ?? 0));
   const n = (o: string) => shortlisted.filter((a) => a.origin === o).length;
   return (
     <div className="space-y-4">
@@ -36,6 +52,20 @@ export function ShortlistTab({ roleId, shortlisted, origin }: { roleId: string; 
         ))}
       </nav>
 
+      {shortlisted.length > 0 && (
+        <form className="flex flex-wrap items-center gap-2 text-[13px]" aria-label="Filter shortlist by skills">
+          <input type="hidden" name="tab" value="shortlist" />
+          {origin && <input type="hidden" name="origin" value={origin} />}
+          <SkillFilterFields skills={skillFilter.skills} minskills={skillFilter.minskills} required={requiredSkills} compact />
+          <button className={buttonClass("secondary", "sm")}>Apply</button>
+          {(skillFilter.skills || skillFilter.minskills) && (
+            <Link href={`/roles/${roleId}?tab=shortlist${origin ? `&origin=${origin}` : ""}`} className="text-muted hover:text-ink">
+              Clear
+            </Link>
+          )}
+        </form>
+      )}
+
       {shortlisted.length === 0 ? (
         <EmptyState
           title="No one shortlisted yet"
@@ -48,14 +78,14 @@ export function ShortlistTab({ roleId, shortlisted, origin }: { roleId: string; 
           }
         />
       ) : rows.length === 0 ? (
-        <EmptyState title={`No ${origin === "applied" ? "applicants" : "discovered people"} on the shortlist`} action={<LinkButton href={`/roles/${roleId}?tab=shortlist`}>Show all</LinkButton>} />
+        <EmptyState title="No one on the shortlist matches these filters" action={<LinkButton href={`/roles/${roleId}?tab=shortlist`}>Show all</LinkButton>} />
       ) : (
         <Card className="overflow-hidden">
           <ul className="divide-y divide-line">
             {rows.map((a) => {
               const latest = a.assessments[0];
               return (
-                <li key={a.id} className={`${a.decidedAt && Date.now() - a.decidedAt.getTime() < 60_000 ? "motion-flash " : ""}grid gap-x-4 gap-y-2 px-4 py-3 lg:grid-cols-[minmax(0,1.5fr)_150px_minmax(0,1fr)_auto] lg:items-center`}>
+                <li key={a.id} className={`${a.decidedAt && Date.now() - a.decidedAt.getTime() < 60_000 ? "motion-flash " : ""}grid gap-x-4 gap-y-2 px-4 py-3 lg:grid-cols-[minmax(0,1.4fr)_150px_150px_minmax(0,1fr)_auto] lg:items-center`}>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Link href={`/candidates/${a.candidate.id}?role=${roleId}`} className="font-medium hover:underline">
@@ -73,6 +103,9 @@ export function ShortlistTab({ roleId, shortlisted, origin }: { roleId: string; 
                     </div>
                   </div>
                   <StageSelect applicationId={a.id} stage={a.stage} />
+                  <Link href={`/candidates/${a.candidate.id}?role=${roleId}#skills`} className="rounded-md hover:bg-sunken/60" aria-label={`Skill evidence for ${a.candidate.fullName}`}>
+                    {skillMatches.get(a.id) && <SkillCount m={skillMatches.get(a.id)!} stacked />}
+                  </Link>
                   <div>
                     {latest ? (
                       <EvidenceCounts counts={evidenceCounts(latest.items)} />

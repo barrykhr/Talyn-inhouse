@@ -193,6 +193,25 @@ predictive validity.
   not when browsing history), a one-time highlight for a new shortlist entry, panel/dialog
   transitions. All disabled under `prefers-reduced-motion`.
 
+## Skill matching
+
+- `Criterion.kind` is `skill` or `criterion`; `importance` is `essential` (shown as Required),
+  `preferred` or — criteria only — `informational`. Skills may carry `aliases` and a
+  `mappedCriterionId`. The role holds the rubric: `skillThreshold`, `skillPartialCredit`,
+  `weightRequired`, `weightPreferred` (+ who changed it; audited as `rubric.changed`).
+- One assessment covers both: `AssessmentItem.kind` snapshots the type. The engine
+  (`src/server/assessment-engine.ts`) uses the CV, candidate-provided information and the linked
+  `SourcedProfile` (fields and quoted signals, never contact details). Evidence records its
+  source, origin, date and URL; AI quotes that can't be found verbatim are downgraded to "needs
+  review". The keyword fallback marks a skill *Evidence found* only on a whole-word mention of its
+  name or an alias; ambiguous short names (≤2 characters) go to review.
+- `src/lib/skills.ts` maps results to skill statuses, counts, applies the threshold and decides
+  staleness (criteria snapshot/version, current CV id, and a fingerprint of the candidate-provided
+  text stored as `Assessment.profileHash`). `computeScore` excludes skills and informational
+  criteria and takes the role's weights.
+- `reassessRole` (recruiter action) runs the engine over non-rejected applications with bounded
+  concurrency and a time budget; AI recommendations are skipped in batch runs.
+
 ## Role workspace (Applicants · Discover · Shortlist)
 
 - `Application.origin` is `applied` or `discovered` (+ `originDetail`, `sourcedProfileId`). It is set

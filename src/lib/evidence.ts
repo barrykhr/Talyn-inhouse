@@ -2,9 +2,15 @@
 // Pure functions — no server-only dependencies.
 import type { Evidence, EvidenceSource } from "./domain";
 
+export type SourceMeta = { origin: string | null; date: string | null; url?: string | null };
 export type SourceDoc = {
   resumePages: string[];
   profileText: string;
+  /** Text of a linked source record (e.g. the Discover result this person was saved from). */
+  sourceText?: string;
+  resumeMeta?: SourceMeta;
+  profileMeta?: SourceMeta;
+  sourceMeta?: SourceMeta;
 };
 
 const HEADING_WORDS =
@@ -77,9 +83,24 @@ export function locateQuote(doc: SourceDoc, quote: string, preferred: EvidenceSo
   };
   const tryProfile = (): Evidence | null =>
     fuzzyIndex(doc.profileText, q) >= 0 ? { quote: q, source: "profile", page: null, section: "Candidate-provided information", verified: true } : null;
+  const trySource = (): Evidence | null =>
+    doc.sourceText && fuzzyIndex(doc.sourceText, q) >= 0 ? { quote: q, source: "source", page: null, section: "Linked source record", verified: true } : null;
 
-  const found = preferred === "profile" ? tryProfile() ?? tryResume() : tryResume() ?? tryProfile();
-  return found ?? { quote: q, source: preferred, page: null, section: null, verified: false };
+  const order = preferred === "profile" ? [tryProfile, tryResume, trySource] : preferred === "source" ? [trySource, tryResume, tryProfile] : [tryResume, tryProfile, trySource];
+  let found: Evidence | null = null;
+  for (const f of order) if ((found = f())) break;
+  const e = found ?? { quote: q, source: preferred, page: null, section: null, verified: false };
+  const meta = e.source === "resume" ? doc.resumeMeta : e.source === "profile" ? doc.profileMeta : doc.sourceMeta;
+  return meta ? { ...e, origin: meta.origin, date: meta.date, url: meta.url ?? null } : e;
+}
+
+/** Plain-text label for where a piece of evidence came from, with its date. */
+export function evidenceOriginLabel(e: Evidence) {
+  const where = e.source === "resume" ? `CV${e.origin ? ` (${e.origin})` : ""}` : e.source === "profile" ? "Candidate-provided information" : e.origin ?? "Linked source";
+  const page = e.page ? ` · p.${e.page}` : "";
+  const section = e.section && e.source === "resume" ? ` · ${e.section}` : "";
+  const date = e.date ? ` · ${e.source === "source" ? "retrieved" : "added"} ${new Date(e.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : "";
+  return `${where}${page}${section}${date}`;
 }
 
 export function parseEvidence(json: string): Evidence[] {
