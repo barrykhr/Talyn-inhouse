@@ -183,3 +183,7 @@ kbd {
   background: var(--color-surface);
   color: var(--color-muted);
 }
+
+/* Login: the product line circling the logo. Stops under prefers-reduced-motion (rule above). */
+@keyframes talyn-orbit { to { transform: rotate(360deg); } }
+.motion-orbit { animation: talyn-orbit 36s linear infinite; transform-origin: 50% 50%; }
