@@ -11,13 +11,15 @@ import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { DeleteOrg } from "./delete-org";
 import { TeamCard } from "./team";
+import { RecordingPolicyForm } from "./recording";
+import { transcriptionConfigured } from "@/lib/transcripts/provider";
 
 export const metadata = { title: "Workspace settings" };
 
 export default async function SettingsPage() {
   const auth = await requireAuth();
   const ai = aiStatus();
-  const org = await db.organization.findUniqueOrThrow({ where: { id: auth.orgId }, select: { retentionDays: true } });
+  const org = await db.organization.findUniqueOrThrow({ where: { id: auth.orgId }, select: { retentionDays: true, recordingEnabled: true, recordingPolicy: true, recordingEnabledBy: true, recordingEnabledAt: true } });
   const eligible = org.retentionDays ? (await eligibleForRetention(auth.orgId, org.retentionDays)).length : null;
   const invites = await db.invite.findMany({ where: { orgId: auth.orgId, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" } });
   const [roles, candidates, members] = await Promise.all([
@@ -98,6 +100,29 @@ export default async function SettingsPage() {
         </div>
       </Card>
 
+      <Card id="recording" className="scroll-mt-6 p-5">
+        <SectionTitle hint="Decision support for interviewers. Off until an admin describes how candidates are told and agree.">Interview recording &amp; transcription</SectionTitle>
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
+          {org.recordingEnabled ? <Badge tone="ok">On</Badge> : <Badge>Off</Badge>}
+          {org.recordingEnabled && org.recordingEnabledBy && (
+            <span className="text-muted">
+              Turned on by {org.recordingEnabledBy}
+              {org.recordingEnabledAt ? ` on ${org.recordingEnabledAt.toLocaleDateString()}` : ""}
+            </span>
+          )}
+          <span className="text-muted">
+            · Recording upload: {transcriptionConfigured() ? "transcription provider connected" : "no provider (transcript import only)"} · Summaries &amp; evidence: {ai.configured ? "AI on" : "AI off"}
+          </span>
+        </div>
+        <ul className="mb-3 list-disc space-y-1 pl-5 text-[13px] text-ink-2">
+          <li>Talyn never joins, records or listens to meetings. Interviewers import the transcript their meeting tool produced, or upload a recording when a transcription provider is configured. Audio isn&apos;t kept.</li>
+          <li>Every transcript records who confirmed consent, how and when. Nothing can be added without that confirmation.</li>
+          <li>AI suggestions cite the timestamped passage and must be reviewed by a person. They never rate, submit feedback, or move or decide on a candidate.</li>
+          <li>Transcripts follow the candidate&apos;s retention and are deleted with the candidate or interview plan. They aren&apos;t used to train models.</li>
+        </ul>
+        <RecordingPolicyForm enabled={org.recordingEnabled} policy={org.recordingPolicy} isAdmin={auth.membershipRole === "admin"} />
+      </Card>
+
       <Card id="integrations" className="scroll-mt-6 p-5">
         <SectionTitle hint="What Talyn is connected to. Nothing here sends data anywhere unless it says Connected.">Integrations &amp; data providers</SectionTitle>
         <dl className="space-y-2.5 text-[13px]">
@@ -124,6 +149,16 @@ export default async function SettingsPage() {
               WhatsApp <span className={whatsappConfigured() ? "text-ok" : "text-faint"}>{whatsappConfigured() ? "● Connected" : "○ Not connected"}</span>
             </dt>
             <dd className="text-muted">{whatsappConfigured() ? "Sends approved templates to candidates with a recorded WhatsApp opt-in." : WHATSAPP_SETUP_HINT}</dd>
+          </div>
+          <div>
+            <dt className="font-medium">
+              Interview transcription <span className={transcriptionConfigured() ? "text-ok" : "text-faint"}>{transcriptionConfigured() ? "● Connected" : "○ Not connected"}</span>
+            </dt>
+            <dd className="text-muted">
+              {transcriptionConfigured()
+                ? `OpenAI · ${process.env.TRANSCRIPTION_MODEL || "whisper-1"} — receives interview audio an interviewer uploads after confirming consent; Talyn stores only the timestamped text.`
+                : "Not connected — transcripts can still be imported from the meeting tool. To transcribe uploaded recordings set TRANSCRIPTION_ENABLED=true, TRANSCRIPTION_PROVIDER=openai and OPENAI_API_KEY."}
+            </dd>
           </div>
           <div>
             <dt className="font-medium">

@@ -167,7 +167,8 @@ No output is ever presented as coming from a model unless it did.
 ## Interviews (Phase 3, first slice)
 
 Structured interviews, independent scorecards and a team debrief. Talyn organizes the evidence;
-people decide. No recording, transcription, analytics or behavioral/emotion analysis.
+people decide. No meeting bot, analytics or behavioral/emotion analysis. Transcripts the team
+brings (see **Transcripts** below) are evidence for interviewers, never a verdict.
 
 1. **Team** — admins invite teammates in **Settings → Team** (Recruiter, Hiring manager or
    Admin). Talyn creates a one-time link to copy; it doesn't email it.
@@ -382,3 +383,26 @@ docs/ARCHITECTURE.md        Decisions, data model, security and AI design
 docs/INTEGRATIONS.md        Email, sourcing and ATS setup and API contracts
 docs/ATS_INTEGRATION.md     ATS field ownership, duplicates, conflicts, sync failures
 ```
+
+## Interview transcripts & conversation intelligence
+
+Decision support only: it never rates, submits feedback, or changes a stage or decision.
+
+- **Off until an admin turns it on** in Workspace settings → Interview recording & transcription,
+  with the organisation's written recording and consent process. Without it the plan's
+  **Transcripts** tab shows a setup state; nothing is ever synthesized.
+- **Consent per transcript** — the interviewer confirms the process was followed (method, note);
+  who confirmed and when is stored. Talyn never joins, records or listens to meetings.
+- **Sources** — import the meeting tool's transcript (`.vtt`, `.srt`, timestamped text; works with
+  no provider), or upload a recording (≤24 MB) when transcription is configured:
+  `TRANSCRIPTION_ENABLED=true`, `TRANSCRIPTION_PROVIDER=openai`, `OPENAI_API_KEY`, optional
+  `TRANSCRIPTION_MODEL` (default `whisper-1`). Audio is sent to the provider and not stored.
+- **Review** — speakers are assigned by people (whisper-1 doesn't diarize); every passage can be
+  corrected, keeping the original and who/when.
+- **AI analysis** (when AI is on) — draft summary, criteria discussed / not discussed / unclear,
+  candidate-quote evidence and follow-up questions, each cited to the stage's competencies and
+  timestamped passages. Quotes that don't appear in the cited passages are dropped. Each
+  suggestion is accepted, edited or dismissed by a person; accepted evidence can be copied into the
+  reviewer's own draft scorecard.
+- **Access & retention** — interview team only; interviewers see other stages after submitting
+  their own scorecards. Transcripts are deleted with the candidate/plan and never used for training.

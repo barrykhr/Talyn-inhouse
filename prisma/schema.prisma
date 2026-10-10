@@ -24,6 +24,11 @@ model Organization {
   demographicMonitoring Boolean      @default(false)
   demographicAttestedBy String?
   demographicAttestedAt DateTime?
+  // Interview recording & transcription: off until an admin turns it on with the consent policy.
+  recordingEnabled      Boolean      @default(false)
+  recordingPolicy       String       @default("")
+  recordingEnabledBy    String?
+  recordingEnabledAt    DateTime?
   createdAt             DateTime     @default(now())
   memberships           Membership[]
   sessions              Session[]
@@ -950,6 +955,7 @@ model InterviewStage {
   assignments       InterviewAssignment[]
   scheduling        InterviewScheduling?
   events            InterviewEvent[]
+  recordings        InterviewRecording[]
 
   @@index([kitId])
 }
@@ -1142,4 +1148,80 @@ model DemographicRecord {
 
   @@unique([candidateId, category])
   @@index([orgId, category])
+}
+
+/// A recording or transcript an interviewer brought into Talyn for one interview stage, after the
+/// organisation's consent process. Talyn never records meetings itself and keeps no audio: an
+/// uploaded recording is sent to the configured transcription provider and discarded.
+model InterviewRecording {
+  id            String                @id @default(cuid())
+  orgId         String
+  kitId         String
+  stageId       String
+  source        String // audio_upload | transcript_import
+  fileName      String
+  provider      String // e.g. openai:whisper-1 | import:vtt | import:srt | import:text
+  status        String // transcribing | transcribed | failed | deleted
+  error         String?
+  durationMs    Int?
+  // Consent: who confirmed the organisation's process was followed, how, and when.
+  consentMethod String // e.g. verbal_at_start | written | policy_notice
+  consentNote   String?
+  consentByName String
+  consentById   String?
+  consentAt     DateTime
+  analysisModel String? // AI used for summary/evidence, when run
+  analyzedAt    DateTime?
+  createdByName String
+  createdAt     DateTime              @default(now())
+  stage         InterviewStage        @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  segments      TranscriptSegment[]
+  insights      ConversationInsight[]
+
+  @@index([orgId, kitId])
+}
+
+/// One timestamped passage. Text and speaker can be corrected; the original is kept.
+model TranscriptSegment {
+  id           String             @id @default(cuid())
+  recordingId  String
+  idx          Int
+  startMs      Int
+  endMs        Int
+  speaker      String // label from the source, e.g. "Speaker 1" or a name in the imported file
+  speakerRole  String             @default("unknown") // interviewer | candidate | unknown — set by a reviewer
+  text         String
+  originalText String
+  editedByName String?
+  editedAt     DateTime?
+  speakerSetBy String? // who last set or renamed this passage's speaker (separate from text corrections)
+  speakerSetAt DateTime?
+  recording    InterviewRecording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+
+  @@index([recordingId, idx])
+}
+
+/// An AI suggestion from a transcript, always linked to the passages it rests on. Nothing here is
+/// a rating, a decision or submitted feedback until a person acts on it.
+model ConversationInsight {
+  id                String             @id @default(cuid())
+  recordingId       String
+  kind              String // summary | evidence | coverage | follow_up
+  competencyId      String?
+  competencyName    String?
+  criterionId       String?
+  coverage          String? // discussed | not_discussed | unclear (kind = coverage)
+  text              String
+  quote             String?
+  segmentIdsJson    String             @default("[]")
+  status            String             @default("suggested") // suggested | accepted | edited | dismissed
+  editedText        String?
+  reviewedByName    String?
+  reviewedAt        DateTime?
+  usedInScorecardBy String?
+  usedInScorecardAt DateTime?
+  createdAt         DateTime           @default(now())
+  recording         InterviewRecording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+
+  @@index([recordingId, kind])
 }

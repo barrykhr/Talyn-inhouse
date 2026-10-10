@@ -8,14 +8,14 @@ export type KitHeaderProps = {
   candidate: { id: string; fullName: string; isSample: boolean };
   role: { id: string; title: string };
   status: string;
-  active: "plan" | "scorecard" | "debrief";
+  active: "plan" | "scorecard" | "debrief" | "transcripts";
   myScorecards: { id: string; stage: string; status: string }[];
   decision: string | null;
 };
 
 const DECISION: Record<string, string> = { advance: "Advance", hold: "Hold", decline: "Decline" };
 
-/** Shared header for an interview plan: candidate and role, then Plan · My scorecard · Debrief. */
+/** Shared header for an interview plan: candidate and role, then Plan · My scorecard · Transcripts · Debrief. */
 export function KitHeader({ kitId, candidate, role, status, active, myScorecards, decision }: KitHeaderProps) {
   return (
     <>
@@ -53,6 +53,7 @@ export function KitHeader({ kitId, candidate, role, status, active, myScorecards
         {myScorecards.map((s) => (
           <Tab key={s.id} href={`/interviews/${kitId}/scorecard/${s.id}`} active={active === "scorecard"} label={`My scorecard · ${s.stage}`} hint={s.status === "submitted" ? "submitted" : s.status === "draft" ? "draft" : "to do"} />
         ))}
+        <Tab href={`/interviews/${kitId}/transcripts`} active={active === "transcripts"} label="Transcripts" />
         <Tab href={`/interviews/${kitId}/debrief`} active={active === "debrief"} label="Debrief" />
       </nav>
     </>

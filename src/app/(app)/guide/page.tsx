@@ -3,6 +3,7 @@ import { Badge, Card, PageHeader } from "@/components/ui";
 import guide from "@/content/guide.json";
 import { aiStatus } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { calendarConfigured } from "@/lib/calendar/google";
 import { getEmailProvider } from "@/lib/outreach/provider";
 import { whatsappConfigured } from "@/lib/outreach/whatsapp";
@@ -10,19 +11,21 @@ import { CONNECTORS } from "@/lib/sourcing/connectors";
 
 export const metadata = { title: "Guide" };
 
-type Need = "ai_optional" | "sourcing" | "email" | "whatsapp" | "calendar";
+type Need = "ai_optional" | "sourcing" | "email" | "whatsapp" | "calendar" | "recording";
 
 /** In-product guide: where each feature lives and how to use it, with live setup status. */
 export default async function GuidePage() {
-  await requireAuth();
+  const auth = await requireAuth();
+  const org = await db.organization.findUniqueOrThrow({ where: { id: auth.orgId }, select: { recordingEnabled: true } });
   const ai = aiStatus().configured;
   const on: Record<Exclude<Need, "ai_optional">, boolean> = {
     sourcing: CONNECTORS.some((c) => c.kind === "external" && c.configured()),
     email: !!getEmailProvider(),
     whatsapp: whatsappConfigured(),
     calendar: calendarConfigured(),
+    recording: org.recordingEnabled,
   };
-  const LABEL: Record<string, string> = { sourcing: "Sourcing provider", email: "Email sending", whatsapp: "WhatsApp", calendar: "Google Calendar" };
+  const LABEL: Record<string, string> = { sourcing: "Sourcing provider", email: "Email sending", whatsapp: "WhatsApp", calendar: "Google Calendar", recording: "Recording policy" };
   const badges = (needs: string[]) => {
     const out: { tone: "ok" | "warn" | "neutral"; text: string; title: string }[] = [];
     const hard = needs.filter((n) => n !== "ai_optional") as (keyof typeof on)[];

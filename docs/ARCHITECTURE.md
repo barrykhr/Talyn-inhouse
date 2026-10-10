@@ -271,7 +271,7 @@ predictive validity.
 - Kit drafting (`generateInterviewKitWithAi`) receives only the approved criteria and ignores any
   output for criteria it wasn't given; without AI, template questions and anchors are used.
 - Debrief "agreement" describes the spread of ratings per competency only; nothing is averaged
-  into a verdict. No recording, transcription, analytics or trait inference exists.
+  into a verdict. No analytics or trait inference exists; transcripts are described below.
 
 ## Interview scheduling (Google Calendar)
 
@@ -289,8 +289,28 @@ predictive validity.
   duplicate. Live reschedule/cancel run with the organizer's own authorization.
 - Scheduling status lives on the stage and event; it is never mixed into scorecards or decisions.
 
+## Interview transcripts & conversation intelligence
+
+- `Organization.recordingEnabled/recordingPolicy/recordingEnabledBy/At`: admin switch with the
+  written consent process (`setRecordingPolicy`). Every action re-checks it.
+- `InterviewRecording` (per stage): source (`transcript_import` | `audio_upload`), provider,
+  status (transcribing / transcribed / failed), consent method/note/by/at, analysis model/time.
+  Cascades from `InterviewStage`, so candidate and plan deletion remove it. No audio is stored.
+- `TranscriptSegment`: idx, start/end ms, speaker + role (candidate / interviewer / unknown),
+  text and `originalText` + editor when corrected.
+- `ConversationInsight`: kind (summary | coverage | evidence | follow_up), competency, coverage
+  status, text, candidate quote, cited `segmentIdsJson`; review status (suggested / accepted /
+  edited / dismissed) with reviewer and time; `usedInScorecardBy/At`.
+- `src/lib/transcripts/parse.ts` parses VTT/SRT/timestamped text and refuses text without
+  timestamps; `provider.ts` calls OpenAI transcription (`verbose_json`, segment timestamps).
+- `analyzeTranscriptWithAi` gets the stage's competencies and numbered passages; output must cite
+  passages; quotes not found in the cited passages are discarded; re-analysis replaces only
+  unreviewed suggestions. It never produces ratings or trait/tone judgements.
+- Access (`src/lib/interviews/transcript-access.ts`): leads (admin, recruiter, owner, hiring
+  manager) see all stages; interviewers see their own stage, and others once all their scorecards
+  are submitted. Server actions live in `src/server/transcript-actions.ts`; all are audited.
+
 ## Extensibility (later phases, not implemented)
 
-- Interview recording/intelligence, a hiring-manager portal and advanced analytics are out of
-  scope; interview evidence would attach to `Application` as new evidence sources.
+- A hiring-manager portal, a meeting bot and advanced analytics are out of scope.
 - Auth is isolated behind `src/lib/auth.ts`; resume bytes behind the `ResumeFile` model and `/api/resumes/[id]`.

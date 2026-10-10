@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { appUrl, checkEnv, type EnvCheck } from "@/lib/integrations/env";
 import { emailSetup, getEmailProvider } from "@/lib/outreach/provider";
 import { whatsappSetup } from "@/lib/outreach/whatsapp";
+import { transcriptionConfigured, transcriptionSetup } from "@/lib/transcripts/provider";
 import { CONNECTORS, SOURCING_ENV } from "@/lib/sourcing/connectors";
 import { AtsButtons, EmailButtons, OutboxButtons } from "./buttons";
 
@@ -165,6 +166,24 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
               marked provider-confirmed.
             </p>
           </details>
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <SectionTitle hint="Turns an uploaded interview recording into a timestamped transcript. Talyn never joins or records meetings.">
+          Interview transcription <Status on={transcriptionConfigured()} />
+        </SectionTitle>
+        <div className="space-y-2 text-[13px] text-ink-2">
+          <p>
+            {transcriptionConfigured()
+              ? "On. When an interviewer uploads a recording (after confirming your consent process), Talyn sends the audio to OpenAI for transcription, stores only the timestamped text and discards the audio."
+              : "Off. Interviewers can still import the transcript their meeting tool produces (VTT, SRT or timestamped text) once an admin turns on recording & transcription in Workspace settings. To transcribe uploaded recordings, add:"}
+          </p>
+          <EnvList checks={transcriptionSetup().checks} />
+          <p className="text-[12.5px] text-muted">
+            Set <code className="font-mono">TRANSCRIPTION_ENABLED=true</code> only once your recording and consent policy allows sending interview audio to the provider. Uploads are limited to 24 MB; your hosting plan&apos;s request
+            size limit may be lower, in which case use transcript import. whisper-1 doesn&apos;t identify speakers — reviewers assign them in Talyn.
+          </p>
         </div>
       </Card>
 

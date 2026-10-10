@@ -299,7 +299,22 @@ _Interest shows Unknown until recorded. It is never inferred from profiles, job 
 3. Each interviewer submits their own scorecard. Others' scores stay hidden until they submit.
 4. Open the debrief to see evidence by competency, disagreements and uncovered competencies, then record the team decision.
 
-_No recording or transcription. The decision is always recorded by a person._
+_The decision is always recorded by a person. Transcripts, when added, are evidence for interviewers — see below._
+
+### Interview transcripts and conversation intelligence
+
+**Where:** Interview plan → Transcripts tab; admin switch: Workspace settings → Interview recording & transcription (`/settings#recording`)
+
+**Needs:** Admin must turn on the recording policy; AI optional (transcript review works without it)
+
+1. An admin describes the organisation's recording and consent process in Workspace settings and turns it on. Until then the Transcripts tab shows a setup state.
+2. After the interview, open the plan's Transcripts tab and, under the stage, confirm the candidate was told and agreed (how, plus a note). Nothing can be added without this.
+3. Import the transcript your meeting tool produced (.vtt, .srt or timestamped text), or upload the recording when a transcription provider is connected. Talyn never joins or records meetings and keeps no audio.
+4. Open the transcript: assign each speaker as candidate or interviewer, and correct any passage. The original text is kept and the correction shows who made it and when.
+5. With AI on, click Analyse with AI: you get a draft summary, criteria discussed / not discussed / unclear, evidence suggestions and follow-up questions — each linked to the competency and the timestamped passages it came from.
+6. Accept, edit or dismiss each suggestion. Accepted evidence can be added to your own draft scorecard; you still rate and submit it yourself.
+
+_Decision support only: it never rates, submits feedback, or moves, rejects or decides on a candidate. “Not discussed” means it didn't come up, not that the candidate lacks it. Interviewers see other stages' transcripts only after submitting their own scorecards. Transcripts are deleted with the candidate or plan and aren't used to train models._
 
 ### Scheduling with Google Calendar
 
