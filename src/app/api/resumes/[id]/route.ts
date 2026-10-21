@@ -3,13 +3,17 @@ import { getAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 // Serves an uploaded resume only to members of the organization that owns it.
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await getAuth();
   if (!auth) return new Response("Unauthorized", { status: 401 });
   const { id } = await params;
   const resume = await db.resume.findFirst({ where: { id, orgId: auth.orgId }, include: { file: true } });
   if (!resume) return new Response("Not found", { status: 404 });
 
+  // Only a real open or download is recorded — not a browser or router prefetch.
+  const h = req.headers;
+  const prefetch = h.get("next-router-prefetch") === "1" || /prefetch/i.test(h.get("purpose") ?? "") || /prefetch/i.test(h.get("sec-purpose") ?? "");
+  if (prefetch) return new Response(null, { status: 204, headers: { "Cache-Control": "private, no-store" } });
   await audit(auth, "resume.downloaded", { subjectType: "candidate", subjectId: resume.id, candidateId: resume.candidateId });
   const body = resume.file ? resume.file.data : Buffer.from((JSON.parse(resume.pagesJson) as string[]).join("\n\n"), "utf8");
   const ext = resume.mimeType === "application/pdf" ? "pdf" : resume.mimeType.includes("wordprocessingml") ? "docx" : "txt";

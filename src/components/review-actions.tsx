@@ -10,7 +10,8 @@ import { useToast } from "./toast";
 
 /**
  * Shortlist · Hold · Reject. Equal visual weight so none is suggested; the current decision is
- * pressed. Reject asks for a job-related reason first. The pipeline stage never changes here.
+ * pressed. Reject asks for a job-related reason first and offers, ticked, "Also move to Rejected" —
+ * an explicit choice in the same step. Shortlist and Hold never change the stage here.
  */
 export function ReviewActions({ applicationId, decision, name, compact = false, allowClear = false }: { applicationId: string; decision: string | null; name: string; compact?: boolean; allowClear?: boolean }) {
   const [busy, setBusy] = useState<string | null>(null);
@@ -18,6 +19,7 @@ export function ReviewActions({ applicationId, decision, name, compact = false, 
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
+  const [moveToRejected, setMoveToRejected] = useState(true);
   const router = useRouter();
   const toast = useToast();
   const id = useId();
@@ -84,11 +86,21 @@ export function ReviewActions({ applicationId, decision, name, compact = false, 
             Note {reason === "other" ? "(required)" : "(optional)"}
           </label>
           <textarea id={`${id}-n`} value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={4000} className="mt-1 w-full rounded-md border border-line-strong px-2 py-1 text-[12.5px]" />
+          <label className="mt-2 flex items-center gap-1.5 text-[12.5px]">
+            <input type="checkbox" checked={moveToRejected} onChange={(e) => setMoveToRejected(e.target.checked)} />
+            Also move to the Rejected stage
+          </label>
           <div className="mt-2 flex gap-1.5">
             <button
               type="button"
               disabled={!reason || !!busy}
-              onClick={() => run("decline", () => setDecision(applicationId, "decline", { reason, note }), `${name} rejected — stage unchanged`)}
+              onClick={() =>
+                run(
+                  "decline",
+                  () => setDecision(applicationId, "decline", { reason, note, moveStage: moveToRejected ? "rejected" : undefined }),
+                  moveToRejected ? `${name} rejected and moved to Rejected` : `${name} rejected — stage unchanged`,
+                )
+              }
               className="inline-flex h-7 items-center gap-1 rounded-md bg-ink px-2.5 text-[12.5px] font-medium text-white disabled:opacity-50"
             >
               {busy === "decline" && <Spinner />}

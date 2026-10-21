@@ -202,3 +202,13 @@ export const ICP_ORIGIN_LABEL: Record<string, string> = {
   ai_inferred: "Inferred by AI",
   recruiter: "Added by recruiter",
 };
+
+/**
+ * Stages a recruiter may move to in the same step as recording a decision. Offered on the decision
+ * form as an explicit choice; a decision never moves the stage on its own.
+ */
+export const STAGE_FOR_DECISION: Record<(typeof DECISIONS)[number], readonly Stage[]> = {
+  advance: ["recruiter_screen", "hiring_team_review", "interview"],
+  hold: [],
+  decline: ["rejected"],
+};

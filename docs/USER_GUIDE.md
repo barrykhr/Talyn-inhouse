@@ -132,7 +132,7 @@ _Decisions and stages never change when reassessing._
 2. Switch between List, Board and Ranked views.
 3. Read each person's required-skill count (e.g. 5/6) with Meets / Below / Needs review, and their criteria evidence.
 4. Filter by search, stage, review status, skill threshold and minimum required skills; sort by most required skills evidenced.
-5. Record Shortlist, Hold or Reject (Reject needs a job-related reason).
+5. Record Shortlist, Hold or Reject (Reject needs a job-related reason and offers “Also move to the Rejected stage”, ticked — untick it to keep the stage).
 
 _Only people who applied appear here. People found in Discover appear in Discover and Shortlist, labelled Discovered._
 

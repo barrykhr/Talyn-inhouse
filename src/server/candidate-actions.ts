@@ -3,14 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { audit } from "@/lib/audit";
-import { queueStageChange } from "@/lib/ats/sync";
 import { requireAuth, type AuthContext } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { DECISIONS, STAGES, REJECT_REASONS } from "@/lib/domain";
+import { DECISIONS, REJECT_REASONS, STAGES, STAGE_FOR_DECISION, STAGE_LABEL } from "@/lib/domain";
 import { logError } from "@/lib/log";
 import { DocumentParseError } from "@/lib/documents";
 import { goTo, optStr, str, type ActionState } from "./form";
-import { attach } from "./pipeline";
+import { attach, moveStageAs } from "./pipeline";
 import { extractIntoReview, parseOrigins, prepareResume, saveResume } from "./resume-store";
 import { ownApplication, ownCandidate, ownNote, ownResume, ownRole } from "./scope";
 
@@ -206,15 +205,7 @@ export async function moveStage(applicationId: string, stage: string) {
   const auth = await requireAuth();
   const app = await ownApplication(auth, applicationId);
   const to = z.enum(STAGES).parse(stage);
-  if (to === app.stage) return;
-  await db.$transaction([
-    db.application.update({ where: { id: applicationId }, data: { stage: to } }),
-    db.stageEvent.create({
-      data: { orgId: auth.orgId, applicationId, fromStage: app.stage, toStage: to, actorId: auth.userId, actorName: auth.userName },
-    }),
-  ]);
-  await audit(auth, "stage.changed", { subjectType: "application", subjectId: applicationId, candidateId: app.candidateId, roleId: app.roleId, applicationId, meta: { from: app.stage, to } });
-  await queueStageChange(auth, app, to); // no-op unless an ATS is connected, linked and mapped
+  if (!(await moveStageAs(auth, app, to))) return;
   revalidatePath(`/candidates/${app.candidateId}`);
   revalidatePath(`/roles/${app.roleId}`);
 }
@@ -235,8 +226,11 @@ export async function recordDecision(applicationId: string, _prev: ActionState, 
     data: { decision: decision.data, decisionReason: decision.data === "decline" ? reason : null, decisionNote: note || null, decidedById: auth.userId, decidedByName: auth.userName, decidedAt: new Date() },
   });
   await audit(auth, "decision.recorded", { subjectType: "application", subjectId: applicationId, candidateId: app.candidateId, roleId: app.roleId, applicationId, meta: { decision: decision.data } });
+  // The recruiter can move the stage in the same step; it's a visible choice on the form, never automatic.
+  const moveTo = z.enum(STAGES).safeParse(str(fd, "moveStage"));
+  const moved = moveTo.success && STAGE_FOR_DECISION[decision.data].includes(moveTo.data) ? await moveStageAs(auth, app, moveTo.data) : false;
   revalidatePath(`/candidates/${app.candidateId}`);
   revalidatePath(`/roles/${app.roleId}`);
   revalidatePath(`/roles/${app.roleId}/discover`);
-  return { ok: true, message: "Decision recorded. Move the pipeline stage when you're ready." };
+  return { ok: true, message: moved ? `Decision recorded and moved to ${STAGE_LABEL[moveTo.data!]}.` : "Decision recorded. The pipeline stage is unchanged." };
 }

@@ -51,7 +51,10 @@ export function useServerForm<S extends FormResult>(serverAction: (prev: S, fd: 
     }
     setState(result);
     setPending(false);
-    router.refresh();
+    // Only refresh after a change. A validation error changed nothing on the server, and a page
+    // refresh still loading when the recruiter fixes the field and saves again can leave that
+    // second submit waiting forever.
+    if (!result?.error) router.refresh();
   };
   return [state, submit, pending] as const;
 }

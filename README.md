@@ -157,7 +157,9 @@ No output is ever presented as coming from a model unless it did.
 7. **Recommendation** (after the score) — AI suggests *Advance to the next human review*, *Gather
    more information*, or *Does not currently show enough evidence for the approved criteria*, with
    rationale and questions. **Accept**, **Edit rationale** or **Override** it, then record your
-   **Recruiter decision**. Pipeline stages only ever move when you change them.
+   **Recruiter decision**. Pipeline stages only ever move when you change them — Reject offers
+   "Also move to Rejected" (ticked) and Shortlist offers "Move to Recruiter screen" (unticked) in the
+   same step.
 8. Editing approved criteria flags existing assessments as **out of date** (criteria vN → vM);
    re-run to update. Each assessment records the CV file, parser version, criteria version,
    engine version and model.

@@ -80,7 +80,13 @@ export function AgentRun({
                   <ul className="mt-1 flex flex-wrap gap-1.5 text-[12px]">
                     {s.sources.map((src, j) => (
                       <li key={j} className="rounded-md border border-line px-1.5 py-0.5 text-muted">
-                        {src.href ? (
+                        {src.href?.startsWith("/api/") ? (
+                          // Files open in a new tab with a plain link: <Link> would prefetch them, which
+                          // the file route would record as a download nobody made.
+                          <a href={src.href} target="_blank" rel="noopener" className="hover:text-ink hover:underline">
+                            {src.label}
+                          </a>
+                        ) : src.href ? (
                           <Link href={src.href} className="hover:text-ink hover:underline">
                             {src.label}
                           </Link>

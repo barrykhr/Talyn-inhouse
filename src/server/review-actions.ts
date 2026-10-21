@@ -5,8 +5,9 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { DECISIONS, REJECT_REASONS } from "@/lib/domain";
+import { DECISIONS, REJECT_REASONS, STAGE_FOR_DECISION, type Stage } from "@/lib/domain";
 import type { ActionState } from "./form";
+import { moveStageAs } from "./pipeline";
 import { ownApplication } from "./scope";
 
 const refresh = (app: { candidateId: string; roleId: string }) => {
@@ -20,7 +21,7 @@ const refresh = (app: { candidateId: string; roleId: string }) => {
  * Shortlist / Hold / Reject from a list or card. Always a recruiter action; the pipeline stage
  * is not changed. Reject requires a job-related reason.
  */
-export async function setDecision(applicationId: string, decision: string, input: { reason?: string; note?: string } = {}): Promise<ActionState> {
+export async function setDecision(applicationId: string, decision: string, input: { reason?: string; note?: string; moveStage?: string } = {}): Promise<ActionState> {
   const auth = await requireAuth();
   const app = await ownApplication(auth, applicationId);
   const d = z.enum(DECISIONS).safeParse(decision);
@@ -43,6 +44,9 @@ export async function setDecision(applicationId: string, decision: string, input
     },
   });
   await audit(auth, "decision.recorded", { subjectType: "application", subjectId: applicationId, candidateId: app.candidateId, roleId: app.roleId, applicationId, meta: { decision: d.data, reason } });
+  // Only when the recruiter ticked the move in the same step, and only to a stage that fits the decision.
+  const to = input.moveStage as Stage | undefined;
+  if (to && STAGE_FOR_DECISION[d.data].includes(to)) await moveStageAs(auth, app, to);
   refresh(app);
   return { ok: true };
 }

@@ -1090,7 +1090,7 @@ export default async function CandidatePage({
         <p className="mb-3 text-[12.5px] text-muted">
           {latest && !app.decision ? "The assessment is ready. Choose Shortlist, Hold or Reject — Talyn won't choose for you." : "Recorded separately from the pipeline stage, from how they were found, and from any AI output."}
         </p>
-        <DecisionForm applicationId={app.id} decision={app.decision} note={app.decisionNote} reason={app.decisionReason} />
+        <DecisionForm applicationId={app.id} decision={app.decision} note={app.decisionNote} reason={app.decisionReason} stage={app.stage} />
         {app.decidedAt && (
           <p className="mt-2 text-[12px] text-faint">
             {app.decision ? `${DECISION_LABEL[app.decision as Decision]} · ` : ""}recorded {formatDateTime(app.decidedAt)}
