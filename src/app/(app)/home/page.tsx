@@ -2,6 +2,8 @@ import clsx from "clsx";
 import Link from "next/link";
 import { AUDIT_LABEL } from "@/lib/audit";
 import { Card, EmptyState, LinkButton, PageHeader, formatDateTime } from "@/components/ui";
+import { aiStatus } from "@/lib/ai";
+import { aiHealth } from "@/lib/ai-health";
 import { attention } from "@/lib/attention";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -27,6 +29,8 @@ export default async function HomePage() {
     db.auditEvent.findMany({ where: { orgId: auth.orgId, action: { not: "candidate.viewed" } }, orderBy: { createdAt: "desc" }, take: 8 }),
   ]);
   const sourcing = isLiveSourceConnected();
+  const ai = aiStatus();
+  const health = ai.configured ? await aiHealth(ai.provider) : null;
   const steps: { n: number; title: string; detail: string; state: StepState; href: string; cta: string }[] = [
     { n: 1, title: "Create or import a role", detail: "Upload a job description or enter the details.", state: roles ? "done" : "todo", href: "/roles/new", cta: "New role" },
     {
@@ -125,6 +129,22 @@ export default async function HomePage() {
             ))}
           </Card>
         </section>
+      )}
+
+      {health?.failing && (
+        <div role="alert" className="rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-[13px]">
+          <div className="font-semibold text-danger">AI requests are failing</div>
+          <p className="mt-0.5 text-ink">
+            {health.text} AI assessment and drafting fall back to labelled non-AI methods until it&apos;s fixed.{" "}
+            {auth.membershipRole === "admin" ? (
+              <Link href="/settings#ai" className="font-medium text-brand hover:underline">
+                How to fix it →
+              </Link>
+            ) : (
+              "Let a workspace admin know."
+            )}
+          </p>
+        </div>
       )}
 
       <section aria-labelledby="att-h">

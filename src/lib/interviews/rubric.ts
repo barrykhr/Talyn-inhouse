@@ -59,3 +59,24 @@ export function agreement(ratings: number[]): { kind: "none" | "single" | "align
 
 export const DECISIONS = ["advance", "hold", "decline"] as const;
 export const DECISION_LABEL: Record<(typeof DECISIONS)[number], string> = { advance: "Advance", hold: "Hold", decline: "Decline" };
+
+/** How many competencies a new interview plan starts with; recruiters can add the rest. */
+export const MAX_KIT_COMPETENCIES = 6;
+
+/**
+ * The approved items a new plan starts with, in the role's priority order: required evaluation
+ * criteria first, then required skills not already covered by a chosen criterion, then preferred
+ * items — at most MAX_KIT_COMPETENCIES. Informational items are left out.
+ */
+export function kitCompetencies<T extends { id: string; kind: string; importance: string; mappedCriterionId?: string | null }>(items: T[]): T[] {
+  const pick: T[] = [];
+  const add = (xs: T[]) => {
+    for (const x of xs) if (pick.length < MAX_KIT_COMPETENCIES && !pick.includes(x)) pick.push(x);
+  };
+  const weighted = items.filter((c) => c.importance !== "informational");
+  add(weighted.filter((c) => c.kind !== "skill" && c.importance !== "preferred"));
+  const covered = new Set(pick.map((c) => c.id));
+  add(weighted.filter((c) => c.kind === "skill" && c.importance !== "preferred" && !(c.mappedCriterionId && covered.has(c.mappedCriterionId))));
+  add(weighted.filter((c) => c.importance === "preferred"));
+  return pick.length ? pick : items.slice(0, MAX_KIT_COMPETENCIES);
+}

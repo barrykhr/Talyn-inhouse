@@ -12,6 +12,7 @@ import { pct, scoreAssessment, type Weights } from "@/lib/score";
 import { passesSkillFilter, type SkillMatch } from "@/lib/skills";
 import { SkillCount, SkillFilterFields } from "@/components/skill-match";
 import { ProfileScoreChip, type ScoreSnapshot } from "@/components/profile-score";
+import { BulkCheckbox, BulkDecisions } from "./bulk";
 import { isStale, summarize } from "@/lib/summary";
 import { AddExisting } from "./add-existing";
 import { PrioritySelect } from "./priority";
@@ -202,8 +203,11 @@ export function ApplicantsTab({
           {rows.length === 0 ? (
             <EmptyState title="No applicants match these filters" body="Try a different name or skill, or clear the filters." action={<LinkButton href={base}>Clear filters</LinkButton>} />
           ) : (
+            <>
+            <BulkDecisions />
             <Card className="overflow-hidden">
-              <div className="hidden grid-cols-[minmax(0,1.4fr)_100px_150px_150px_minmax(0,1fr)_auto] gap-4 border-b border-line bg-[#fbfaf8] px-4 py-2 text-[11.5px] font-semibold uppercase tracking-wide text-faint lg:grid">
+              <div className="hidden grid-cols-[16px_minmax(0,1.4fr)_100px_150px_150px_minmax(0,1fr)_auto] gap-4 border-b border-line bg-[#fbfaf8] px-4 py-2 text-[11.5px] font-semibold uppercase tracking-wide text-faint lg:grid">
+                <span />
                 <span>Applicant</span>
                 <span>Applied</span>
                 <span>Stage</span>
@@ -215,7 +219,8 @@ export function ApplicantsTab({
                 {rows.map(({ a, status, latest }) => {
                   const stale = latest ? isStale(latest.criteriaSnapshot, approved) : false;
                   return (
-                    <li key={a.id} className="grid gap-x-4 gap-y-2 px-4 py-3 lg:grid-cols-[minmax(0,1.4fr)_100px_150px_150px_minmax(0,1fr)_auto] lg:items-center">
+                    <li key={a.id} className="grid grid-cols-[16px_minmax(0,1fr)] gap-x-4 gap-y-2 px-4 py-3 lg:grid-cols-[16px_minmax(0,1.4fr)_100px_150px_150px_minmax(0,1fr)_auto] lg:items-center [&>*:nth-child(n+3)]:col-start-2 lg:[&>*:nth-child(n+3)]:col-start-auto">
+                      <BulkCheckbox applicationId={a.id} name={a.candidate.fullName} />
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <Link href={`/candidates/${a.candidate.id}?role=${roleId}`} className="font-medium hover:underline">
@@ -256,6 +261,7 @@ export function ApplicantsTab({
                 })}
               </ul>
             </Card>
+            </>
           )}
         </>
       )}

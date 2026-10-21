@@ -4,6 +4,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
+import { recordAiFailure, recordAiOk, type AiErrorKind } from "./ai-health";
 import { logError } from "./log";
 
 // Two interchangeable providers. AI_PROVIDER picks one explicitly; otherwise whichever
@@ -56,19 +57,35 @@ async function runStructured<T extends z.ZodType>(opts: {
   const { configured, provider, model } = aiStatus();
   if (!configured || !provider) throw new AiUnavailableError();
   try {
-    return provider === "openai" ? await runOpenAi(model, opts) : await runAnthropic(model, opts);
+    const out = provider === "openai" ? await runOpenAi(model, opts) : await runAnthropic(model, opts);
+    await recordAiOk(provider);
+    return out;
   } catch (err) {
     if (err instanceof AiRequestError) throw err;
     logError("ai.request_failed", err, { provider, model });
-    if (err instanceof Anthropic.AuthenticationError || err instanceof OpenAI.AuthenticationError)
-      throw new AiRequestError(`The ${PROVIDER_LABEL[provider]} API key was rejected. Check the key in your environment variables.`);
-    if (err instanceof Anthropic.NotFoundError || err instanceof OpenAI.NotFoundError)
-      throw new AiRequestError(`The model "${model}" isn't available to this API key. Check the model setting.`);
-    if (err instanceof Anthropic.RateLimitError || err instanceof OpenAI.RateLimitError)
-      throw new AiRequestError("The AI service is rate limited or out of credit. Try again shortly, or check your billing.");
-    if (err instanceof Anthropic.APIConnectionError || err instanceof OpenAI.APIConnectionError)
-      throw new AiRequestError("Could not reach the AI service.");
-    throw new AiRequestError("The AI request failed. Please try again.");
+    const label = PROVIDER_LABEL[provider];
+    const msg = err instanceof Error ? err.message : "";
+    const code = (err as { code?: string } | null)?.code ?? "";
+    let kind: AiErrorKind = "other";
+    let text = "The AI request failed. Please try again.";
+    if (err instanceof Anthropic.AuthenticationError || err instanceof OpenAI.AuthenticationError) {
+      kind = "auth";
+      text = `The ${label} API key was rejected. Check the key in your environment variables.`;
+    } else if (err instanceof Anthropic.NotFoundError || err instanceof OpenAI.NotFoundError) {
+      kind = "model";
+      text = `The model "${model}" isn't available to this API key. Check the model setting.`;
+    } else if (code === "insufficient_quota" || /credit|quota|billing/i.test(msg)) {
+      kind = "quota";
+      text = `The ${label} account is out of credit. An admin needs to add credit with ${label}.`;
+    } else if (err instanceof Anthropic.RateLimitError || err instanceof OpenAI.RateLimitError) {
+      kind = "rate_limit";
+      text = "The AI service is rate limiting requests. Try again shortly.";
+    } else if (err instanceof Anthropic.APIConnectionError || err instanceof OpenAI.APIConnectionError) {
+      kind = "connection";
+      text = "Could not reach the AI service.";
+    }
+    await recordAiFailure(provider, kind, text);
+    throw new AiRequestError(text);
   }
 }
 

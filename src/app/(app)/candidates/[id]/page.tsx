@@ -6,6 +6,7 @@ import { ActionButton } from "@/components/client";
 import { AgentRun, Provenance, type AgentStep } from "@/components/agent-run";
 import { StageSelect } from "@/components/stage-select";
 import { ScorePanel } from "@/components/score-panel";
+import { experienceMismatch } from "@/lib/profile-checks";
 import { SourceRef } from "@/components/source-ref";
 import { SourceViewerProvider } from "@/components/source-viewer";
 import { StatusLine, type StatusItem } from "@/components/status-line";
@@ -270,10 +271,22 @@ export default async function CandidatePage({
         url: sp.sourceUrl,
       })),
   );
+  // Statements that disagree within the candidate's own material (e.g. years of experience).
+  const experience = experienceMismatch([
+    { source: resume ? `CV (${resume.fileName})` : "CV", text: pages.join("\n") },
+    { source: "Candidate-provided information", text: candidate.candidateSummary ?? "" },
+  ]);
+  const conflictingItems = (latest?.items ?? []).filter((i) => (i.overrideResult ?? i.result) === "conflicting");
   const openDups = dupReviews.filter((r) => r.status === "open" || r.status === "deferred");
   if (openDups.length) status.push({ tone: "attention", text: `Possible duplicate record${openDups.length === 1 ? "" : "s"} to review`, href: "/candidates/duplicates", action: "Compare" });
   if (conflicts.length) status.push({ tone: "attention", text: `${conflicts.length} detail${conflicts.length === 1 ? "" : "s"} differ between sources`, href: "?view=cv#profile-checks", action: "Review" });
-  const clarifyQuestions = conflicts.map((c) => `Confirm ${c.label.toLowerCase()}: Talyn has “${c.mine}”, ${c.theirsSource} shows “${c.theirs}”.`);
+  if (experience || conflictingItems.length)
+    status.push({ tone: "attention", text: experience ? "Years of experience differ in the candidate's material" : `Conflicting evidence on ${conflictingItems.length} item${conflictingItems.length === 1 ? "" : "s"}`, href: "?view=cv#profile-checks", action: "Review" });
+  const clarifyQuestions = [
+    ...conflicts.map((c) => `Confirm ${c.label.toLowerCase()}: Talyn has “${c.mine}”, ${c.theirsSource} shows “${c.theirs}”.`),
+    ...(experience ? [`Could you confirm your total years of experience? Your ${experience.low.source === experience.high.source ? "material" : "CV and answers"} mention both ${experience.low.years} and ${experience.high.years} years.`] : []),
+    ...conflictingItems.map((i) => `Could you clarify your experience with ${i.criterionName.charAt(0).toLowerCase()}${i.criterionName.slice(1)}? We found statements that don't match.`),
+  ];
   if (atsConflicts.length) status.push({ tone: "attention", text: `${atsConflicts.length} field${atsConflicts.length === 1 ? "" : "s"} differ from the ATS`, href: "#ats-conflicts", action: "Resolve" });
   if (needsReview) status.push({ tone: "attention", text: "Details extracted from the CV are waiting for your review", href: "#cv-review", action: "Review" });
   if (app) {
@@ -352,6 +365,26 @@ export default async function CandidatePage({
                 )
               </span>
             </div>
+          </li>
+        ))}
+        {experience && (
+          <li>
+            <Badge tone="warn">Statements disagree</Badge> <span className="font-medium">Years of experience</span>
+            <div className="mt-0.5 space-y-0.5 text-[12.5px] text-ink-2">
+              {[experience.low, experience.high].map((c, i) => (
+                <div key={i}>
+                  <span className="font-medium tabular-nums">{c.years} years</span> — “{c.quote}” <span className="text-muted">({c.source})</span>
+                </div>
+              ))}
+              <div className="text-muted">Ask the candidate rather than assume either is wrong.</div>
+            </div>
+          </li>
+        )}
+        {conflictingItems.map((i) => (
+          <li key={i.id}>
+            <Badge tone="warn">Conflicting evidence</Badge> <span className="font-medium">{i.criterionName}</span>
+            {i.explanation && <div className="mt-0.5 text-[12.5px] text-ink-2">{i.explanation}</div>}
+            <div className="text-[12px] text-muted">From the latest assessment{latest?.generator === "ai" ? " (AI)" : ""} — check the excerpts on the Assessment tab.</div>
           </li>
         ))}
         {atsConflicts.length > 0 && (

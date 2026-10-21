@@ -3,6 +3,7 @@ import { Badge, Card, PageHeader, SectionTitle, buttonClass } from "@/components
 import { eligibleForRetention } from "@/lib/retention";
 import { RetentionForm } from "./retention";
 import { PROVIDER_LABEL, aiStatus } from "@/lib/ai";
+import { aiHealth } from "@/lib/ai-health";
 import { ATS_SETUP_HINT, getAtsConnector } from "@/lib/ats/connector";
 import { SENDING_SETUP_HINT, getEmailProvider } from "@/lib/outreach/provider";
 import { WHATSAPP_SETUP_HINT, whatsappConfigured } from "@/lib/outreach/whatsapp";
@@ -19,6 +20,7 @@ export const metadata = { title: "Workspace settings" };
 export default async function SettingsPage() {
   const auth = await requireAuth();
   const ai = aiStatus();
+  const health = ai.configured ? await aiHealth(ai.provider) : null;
   const org = await db.organization.findUniqueOrThrow({ where: { id: auth.orgId }, select: { retentionDays: true, recordingEnabled: true, recordingPolicy: true, recordingEnabledBy: true, recordingEnabledAt: true } });
   const eligible = org.retentionDays ? (await eligibleForRetention(auth.orgId, org.retentionDays)).length : null;
   const invites = await db.invite.findMany({ where: { orgId: auth.orgId, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" } });
@@ -73,13 +75,22 @@ export default async function SettingsPage() {
       <Card id="ai" className="scroll-mt-6 p-5">
         <SectionTitle>AI assist</SectionTitle>
         <div className="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
-          {ai.configured ? <Badge tone="ok">On</Badge> : <Badge>Off</Badge>}
+          {health?.failing ? <Badge tone="danger">Failing</Badge> : ai.configured ? <Badge tone="ok">On</Badge> : <Badge>Off</Badge>}
           {ai.configured && ai.provider && (
             <span className="text-muted">
               {PROVIDER_LABEL[ai.provider]} · <span className="font-mono text-[12px]">{ai.model}</span>
             </span>
           )}
         </div>
+        {health?.failing && (
+          <div role="alert" className="mb-3 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-[13px] text-ink">
+            <div className="font-semibold text-danger">AI requests are failing</div>
+            <p className="mt-0.5">{health.help}</p>
+            <p className="mt-1 text-[12px] text-muted">
+              {health.failures} failed request{health.failures === 1 ? "" : "s"} since {health.lastOkAt ? `the last success on ${health.lastOkAt.toLocaleString()}` : "setup"}; latest {health.since?.toLocaleString()}. Until it&apos;s fixed, drafts use labelled templates and AI assessment is unavailable.
+            </p>
+          </div>
+        )}
         <div className="space-y-2 text-[13px] text-ink-2">
           <p>
             AI proposes role criteria from job descriptions and assesses candidates against approved criteria, citing evidence. It never moves, hides or rejects

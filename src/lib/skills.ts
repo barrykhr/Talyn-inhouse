@@ -1,3 +1,4 @@
+import { enoughMaterial } from "./profile-score";
 import { isStale } from "./summary";
 
 // Evidence-backed skill matching. Pure and deterministic — safe on client and server.
@@ -117,6 +118,7 @@ export function skillMatch(input: {
   config: RoleSkillConfig;
   stale: boolean; // assessed against older criteria or older candidate information
   noMaterial: boolean; // no CV, candidate-provided information or linked source text to assess
+  thinMaterial?: boolean; // assessed, but on too little material to judge (e.g. only a title and a line)
 }): SkillMatch {
   const { config } = input;
   const required = config.requiredSkillIds.length;
@@ -166,6 +168,12 @@ export function skillMatch(input: {
   const evidenceWord = config.partialCredit ? "evidence found or partial evidence" : "evidence found";
   const countText = `${counts.evidenced} of ${required} required skills have ${evidenceWord}`;
 
+  if (input.thinMaterial && counts.evidenced < required)
+    return {
+      ...out,
+      state: "needs_review",
+      reason: `${countText}, but there's only a title or a line or two to go on — too little material to judge the threshold. Gather more information; missing evidence isn't a failure.`,
+    };
   if (input.stale)
     return { ...out, state: "needs_review", reason: `${countText}, but the assessment predates changes to the role's skills or the candidate's information. Reassess to update.` };
   if (counts.unassessed)
@@ -228,7 +236,7 @@ export function matchForApplication(
   a: {
     sourcedProfileId: string | null;
     candidate: { currentTitle: string | null; currentCompany: string | null; candidateSummary: string | null; resumes?: { id: string }[] };
-    assessments: { criteriaSnapshot: string; criteriaVersion: number | null; resumeId: string | null; profileHash: string | null; items: SkillItem[] }[];
+    assessments: { criteriaSnapshot: string; criteriaVersion: number | null; resumeId: string | null; profileHash: string | null; materialChars?: number | null; items: SkillItem[] }[];
   },
   ctx: { config: RoleSkillConfig; approved: { id: string; updatedAt: Date }[]; criteriaVersion: number },
 ): SkillMatch {
@@ -240,7 +248,8 @@ export function matchForApplication(
       (latest.criteriaVersion != null && latest.criteriaVersion !== ctx.criteriaVersion) ||
       candidateInfoChanged(latest, { resumeId, candidate: a.candidate }));
   const noMaterial = !resumeId && !a.candidate.candidateSummary && !a.candidate.currentTitle && !a.sourcedProfileId;
-  return skillMatch({ items: latest?.items ?? null, config: ctx.config, stale, noMaterial });
+  const thinMaterial = !!latest && !enoughMaterial(latest, latest.items.map((i) => i.overrideResult ?? i.result));
+  return skillMatch({ items: latest?.items ?? null, config: ctx.config, stale, noMaterial, thinMaterial });
 }
 
 /** Applies the list filters: threshold status and a minimum required-skill count. Filters only narrow a view — they never hide anyone from the role. */

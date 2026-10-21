@@ -1226,3 +1226,14 @@ model ConversationInsight {
 
   @@index([recordingId, kind])
 }
+
+/// Deployment-wide health of the AI provider, so admins see when AI requests are failing.
+model AiHealth {
+  provider        String    @id // openai | anthropic
+  lastOkAt        DateTime?
+  lastErrorAt     DateTime?
+  lastErrorKind   String? // auth | model | quota | rate_limit | connection | other
+  lastErrorText   String?
+  failuresSinceOk Int       @default(0)
+  updatedAt       DateTime  @updatedAt
+}

@@ -3,6 +3,7 @@ import { Card, Notice, PageHeader, SectionTitle, formatDateTime } from "@/compon
 import { CALENDAR_RESULT, CalendarConnection } from "@/components/calendar/connection";
 import { calendarConfigured, calendarSetup } from "@/lib/calendar/google";
 import { PROVIDER_LABEL, aiStatus } from "@/lib/ai";
+import { aiHealth } from "@/lib/ai-health";
 import { ATS_ENV, atsSetup, getAtsConnector } from "@/lib/ats/connector";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -53,6 +54,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   const teamCal = teamConns.map((c) => ({ name: teamUsers.find((u) => u.id === c.userId)?.name ?? "Member", status: c.status }));
   const isAdmin = auth.membershipRole === "admin";
   const ai = aiStatus();
+  const health = ai.configured ? await aiHealth(ai.provider) : null;
   const email = emailSetup();
   const wa = whatsappSetup();
   const provider = getEmailProvider();
@@ -80,13 +82,18 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
 
       <Card className="p-5">
         <SectionTitle>
-          AI provider <Status on={ai.configured} />
+          AI provider {health?.failing ? <span className="text-[12.5px] font-medium text-danger">● Failing</span> : <Status on={ai.configured} />}
         </SectionTitle>
         <p className="text-[13px] text-muted">
           {ai.configured && ai.provider
             ? `${PROVIDER_LABEL[ai.provider]} · ${ai.model}. Receives role/criteria text, CV text with email and phone redacted, and confirmed profile facts for drafting outreach.`
             : "Not configured — AI features are off; labeled non-AI helpers are used."}
         </p>
+        {health?.failing && (
+          <p role="alert" className="mt-2 text-[13px] text-danger">
+            {health.help}
+          </p>
+        )}
       </Card>
 
       <Card className="p-5">

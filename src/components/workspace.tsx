@@ -16,7 +16,7 @@ export function Tabs({ tabs, initial = 0 }: { tabs: { label: string; count?: num
   };
   return (
     <div>
-      <SlidingIndicator id={`tabs-${tabs.map((t) => t.label).join("|")}`} variant="underline" match='[aria-selected="true"]' role="tablist" className="mb-4 flex gap-1 border-b border-line">
+      <SlidingIndicator id={`tabs-${tabs.map((t) => t.label).join("|")}`} variant="underline" match='[aria-selected="true"]' role="tablist" className="mb-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {tabs.map((t, i) => (
           <button
             key={t.label}
@@ -28,7 +28,10 @@ export function Tabs({ tabs, initial = 0 }: { tabs: { label: string; count?: num
             aria-selected={active === i}
             aria-controls={`${id}-panel-${i}`}
             tabIndex={active === i ? 0 : -1}
-            onClick={() => setActive(i)}
+            onClick={(e) => {
+              setActive(i);
+              e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
+            }}
             onKeyDown={(e) => {
               if (e.key === "ArrowRight") focus(i + 1);
               else if (e.key === "ArrowLeft") focus(i - 1);
@@ -36,7 +39,7 @@ export function Tabs({ tabs, initial = 0 }: { tabs: { label: string; count?: num
               else if (e.key === "End") focus(tabs.length - 1);
             }}
             className={clsx(
-              "relative -mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13.5px] font-medium transition-colors",
+              "relative -mb-px flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-[13.5px] font-medium transition-colors",
               active === i ? "text-ink" : "text-muted hover:text-ink",
             )}
           >

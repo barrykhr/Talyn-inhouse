@@ -68,15 +68,18 @@ export function ActionForm({
   pending = false,
   children,
   className,
+  id,
 }: {
   action: (fd: FormData) => void;
   pending?: boolean;
   children: ReactNode;
   className?: string;
+  id?: string;
 }) {
   return (
     <FormPending.Provider value={pending}>
       <form
+        id={id}
         method="post" // if submitted before hydration, never put field values in the URL
         className={className}
         onSubmit={(e) => {

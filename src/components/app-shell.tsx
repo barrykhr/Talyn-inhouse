@@ -49,7 +49,7 @@ export function AppShell({
   activeOrgId: string;
   orgName: string;
   user: { name: string; email: string; role: string };
-  ai: { configured: boolean; model: string | null };
+  ai: { configured: boolean; model: string | null; failing?: string | null };
   attention: number;
   queueCount: number;
   children: React.ReactNode;
@@ -108,9 +108,13 @@ export function AppShell({
         </nav>
       </div>
       <div className="mt-auto space-y-2 border-t border-line px-3 py-3 text-[12px]">
-        <Link href="/settings#ai" className="flex items-center gap-1.5 px-2.5 text-muted hover:text-ink" title={ai.configured ? `Model: ${ai.model}` : "AI assist is off — see Settings"}>
-          <span className={clsx("inline-block h-1.5 w-1.5 rounded-full", ai.configured ? "bg-ok" : "bg-faint")} aria-hidden />
-          {ai.configured ? "AI assist on" : "AI assist off"}
+        <Link
+          href="/settings#ai"
+          className={clsx("flex items-center gap-1.5 px-2.5 hover:text-ink", ai.failing ? "font-medium text-danger" : "text-muted")}
+          title={ai.failing ? `${ai.failing} — see Settings` : ai.configured ? `Model: ${ai.model}` : "AI assist is off — see Settings"}
+        >
+          <span className={clsx("inline-block h-1.5 w-1.5 rounded-full", ai.failing ? "bg-danger" : ai.configured ? "bg-ok" : "bg-faint")} aria-hidden />
+          {ai.failing ? "AI requests failing" : ai.configured ? "AI assist on" : "AI assist off"}
         </Link>
         <AccountMenu user={user} />
       </div>

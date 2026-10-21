@@ -7,7 +7,7 @@ import { audit } from "@/lib/audit";
 import { requireAuth, type AuthContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { loadKitForUser } from "@/lib/interviews/access";
-import { DECISIONS, RATING_LEVELS, defaultAnchors, parseEntries, type ScoreEntry } from "@/lib/interviews/rubric";
+import { DECISIONS, RATING_LEVELS, defaultAnchors, kitCompetencies, parseEntries, type ScoreEntry } from "@/lib/interviews/rubric";
 import { logError } from "@/lib/log";
 import { goTo, str, type ActionState } from "./form";
 import { ownApplication } from "./scope";
@@ -51,13 +51,15 @@ export async function createKit(applicationId: string): Promise<Ok> {
     include: { criteria: { where: { status: "approved" }, orderBy: [{ priority: "asc" }, { position: "asc" }] }, questions: { where: { kind: "core", status: "approved" } } },
   });
   if (!role.criteria.length) return { error: "This role has no approved criteria yet. Approve criteria first — the kit is built only from them." };
+  const chosen = kitCompetencies(role.criteria);
+  const left = role.criteria.length - chosen.length;
 
   const ai = aiStatus();
   let generated: Awaited<ReturnType<typeof generateInterviewKitWithAi>> | null = null;
   let notice: string | null = null;
   if (ai.configured) {
     try {
-      generated = await generateInterviewKitWithAi({ roleTitle: role.title, criteria: role.criteria.map((c) => ({ id: c.id, name: c.name, description: c.description, importance: c.importance })) });
+      generated = await generateInterviewKitWithAi({ roleTitle: role.title, criteria: chosen.map((c) => ({ id: c.id, name: c.name, description: c.description, importance: c.importance })) });
     } catch (err) {
       if (!(err instanceof AiRequestError || err instanceof AiUnavailableError)) logError("interview.kit_ai_failed", err);
       notice = "AI drafting failed, so template questions and anchors were used. Edit them before sharing.";
@@ -79,7 +81,7 @@ export async function createKit(applicationId: string): Promise<Ok> {
     },
   });
   const competencyIds: string[] = [];
-  for (const [i, c] of role.criteria.entries()) {
+  for (const [i, c] of chosen.entries()) {
     const g = byCriterion.get(c.id); // ignore anything the model returned for criteria we didn't send
     const core = role.questions.filter((q) => q.criterionId === c.id);
     const qs = [
@@ -101,8 +103,20 @@ export async function createKit(applicationId: string): Promise<Ok> {
     });
     competencyIds.push(comp.id);
   }
-  await db.interviewStage.create({ data: { kitId: kit.id, name: "Structured interview", purpose: "Gather evidence on the role's approved criteria with the same questions for every candidate.", position: 0, competencyIdsJson: JSON.stringify(competencyIds) } });
-  await audit(auth, "interview.kit_created", { subjectType: "application", subjectId: kit.id, candidateId: app.candidateId, roleId: role.id, applicationId, meta: { competencies: competencyIds.length, ai: !!generated } });
+  // A single conversation covers about four competencies well; more are split across two stages.
+  const purpose = "Gather evidence on the role's approved criteria with the same questions for every candidate.";
+  if (competencyIds.length <= 4) {
+    await db.interviewStage.create({ data: { kitId: kit.id, name: "Structured interview", purpose, position: 0, competencyIdsJson: JSON.stringify(competencyIds) } });
+  } else {
+    const half = Math.ceil(competencyIds.length / 2);
+    await db.interviewStage.create({ data: { kitId: kit.id, name: "Structured interview 1", purpose, position: 0, competencyIdsJson: JSON.stringify(competencyIds.slice(0, half)) } });
+    await db.interviewStage.create({ data: { kitId: kit.id, name: "Structured interview 2", purpose, position: 1, competencyIdsJson: JSON.stringify(competencyIds.slice(half)) } });
+  }
+  if (left > 0) {
+    const more = `Started with the ${chosen.length} most important requirements so each interview stays focused; ${left} other approved item${left === 1 ? " is" : "s are"} available under “+ Add competency”.`;
+    notice = notice ? `${notice} ${more}` : more;
+  }
+  await audit(auth, "interview.kit_created", { subjectType: "application", subjectId: kit.id, candidateId: app.candidateId, roleId: role.id, applicationId, meta: { competencies: competencyIds.length, leftOut: left, ai: !!generated } });
   refresh(kit.id, role.id, app.candidateId);
   return goTo(`/interviews/${kit.id}${notice ? `?notice=${encodeURIComponent(notice)}` : ""}`);
 }

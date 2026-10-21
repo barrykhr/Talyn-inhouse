@@ -133,6 +133,7 @@ _Decisions and stages never change when reassessing._
 3. Read each person's required-skill count (e.g. 5/6) with Meets / Below / Needs review, and their criteria evidence.
 4. Filter by search, stage, review status, skill threshold and minimum required skills; sort by most required skills evidenced.
 5. Record Shortlist, Hold or Reject (Reject needs a job-related reason and offers “Also move to the Rejected stage”, ticked — untick it to keep the stage).
+6. To decide on several at once, tick them (or “Select all”), choose Shortlist, Hold or Reject, and Apply. Reject asks once for a job-related reason and offers “Also move to the Rejected stage”.
 
 _Only people who applied appear here. People found in Discover appear in Discover and Shortlist, labelled Discovered._
 
@@ -172,6 +173,7 @@ _Lists show the same advisory chip next to each applicant, shortlisted and saved
 
 1. Review flags: possible or linked duplicate, details that differ from a linked source record (with source and date), and ATS conflicts.
 2. Click “Request clarification” to add a task with the questions to your queue (nothing is sent to the candidate).
+3. “Statements disagree” quotes lines that contradict each other, such as two different totals for years of experience across the CV and the candidate's answers. “Conflicting evidence” lists items the assessment found contradictory. Use “Request clarification” to ask.
 
 _Talyn never labels a person fake. No claim is marked verified because no verification process is configured. Contact-control and identity checks are not available._
 
@@ -295,7 +297,7 @@ _Interest shows Unknown until recorded. It is never inferred from profiles, job 
 **Needs:** Works without AI; better with AI
 
 1. Click “Create interview plan” for a shortlisted candidate. The plan is built from the role's approved skills and criteria.
-2. Edit competencies, questions and stages; assign interviewers to each stage; share the plan.
+2. A new plan starts with the 6 most important requirements (required criteria first), split across two stages when there are more than four. Add others with “+ Add competency”. Edit questions and stages, assign interviewers to each stage and share the plan.
 3. Each interviewer submits their own scorecard. Others' scores stay hidden until they submit.
 4. Open the debrief to see evidence by competency, disagreements and uncovered competencies, then record the team decision.
 
@@ -374,7 +376,7 @@ _Only admins can invite, change retention, view the audit log, link the ATS or d
 1. See each integration's status, which variables are set or missing (never their values), and setup steps.
 2. Connect your own Google Calendar here.
 
-_Credentials are added as environment variables in Vercel, then redeploy._
+_Credentials are added as environment variables in Vercel, then redeploy. If AI requests start failing (rejected key, out of credit, model unavailable), Workspace settings, Integrations, Home and the sidebar say so with the fix._
 
 ### Import and export
 
