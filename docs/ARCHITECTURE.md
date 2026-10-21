@@ -71,11 +71,21 @@ original wording, edited flag, JD source excerpt, rationale, approval state).
 ## Scoring and recommendation
 
 - Per-criterion states: supported, partially supported, inferred, conflicting, not stated.
-- `src/lib/score.ts` (method `alignment-v1`) is deterministic and computed by Talyn, not the AI:
-  essential weight 2, preferred 1; credit supported 1, partial 0.5, inferred 0.5; not stated and
-  conflicting are excluded from the score and reduce coverage. Withheld below 60% weighted
-  coverage or when fewer than half of essential criteria are assessable; "limited" below 80%.
-  The breakdown is stored on the assessment and recomputed live with recruiter corrections.
+- One deterministic calculation, method `profile-v2` (`src/lib/profile-score.ts`), computed by
+  Talyn, not the AI. `score.ts` (role fit, used for ranking) calls the same function, so the role
+  fit and the versioned profile score always agree. Required/preferred skills and criteria are
+  weighted (default 2/1, per role); credit supported 1; partial, inferred and conflicting 0.5;
+  not shown in the material 0; recruiter-confirmed absent 0. Score = points ÷ total weight × 100.
+- Insufficient evidence (no score, band or recommendation) when the assessment read under
+  `MIN_MATERIAL_CHARS` (400) characters of CV, candidate-provided and source text —
+  `Assessment.materialChars`; older assessments fall back to "a CV was on file or any item found
+  evidence". With enough material, unshown requirements lower the score; explanations say it is
+  missing evidence, not proof of absence.
+- A required item with conflicting evidence keeps the band out of the top band. Coverage under the
+  scoring version's minimum is flagged "limited". Ranking ties break on coverage.
+- Band labels never claim AI on non-AI results: `bandLabelFor` turns "AI Screen Pass" into
+  "Screen Pass (keyword check)" when the assessment was a keyword check. Stored scores keep the
+  label they were recorded with; "Recalculate scores" refreshes them.
 - The recommendation is a second AI call made after the score, given only per-criterion results
   and the score summary. Guardrail: an "advance" suggestion is changed to "gather more
   information" when the score is withheld. Recruiters accept, edit or override it; the final

@@ -1,16 +1,17 @@
 // Ranking model (consistent across the product). Two distinct concepts:
 //
-// 1. Role fit — how the available evidence aligns with this role's APPROVED criteria.
-//    = the alignment-v1 score of the latest assessment (recruiter corrections applied).
-//    Unranked when there's no assessment, the score is withheld, or the criteria changed
-//    since. Low-confidence (shown in a band, not a precise position) when evidence is
-//    limited or any criterion has conflicting evidence.
+// 1. Role fit — how much of this role's APPROVED skills and criteria the material shows
+//    = the role fit score of the latest assessment (recruiter corrections applied), the same
+//    calculation as the profile score. Unranked when there's no assessment, there's too little
+//    material to judge, or the criteria changed since. Low-confidence (shown in a band, not a
+//    precise position) when evidence is limited or a required item has conflicting evidence.
 //
 // 2. Stage readiness — how well supported the candidate is for the NEXT decision in their
 //    current stage. A transparent checklist; only compared within the same role AND stage.
 //
 // Neither ever changes a pipeline stage. Recruiters can sort, filter and override priority.
 
+import { enoughMaterial } from "./profile-score";
 import { computeScore, pct, type ScoreResult, type Weights } from "./score";
 import { isStale } from "./summary";
 import { STAGE_LABEL, type Stage } from "./domain";
@@ -21,6 +22,8 @@ export type AssessmentLike = {
   criteriaSnapshot: string;
   criteriaVersion: number | null;
   status: string;
+  materialChars?: number | null;
+  resumeId?: string | null;
   recommendation: string | null;
   recommendationStatus: string | null;
   items: { criterionName: string; importance: string; result: string; overrideResult: string | null; kind?: string }[];
@@ -40,6 +43,7 @@ const scoreOf = (a: AssessmentLike, weights?: Weights): ScoreResult =>
   computeScore(
     a.items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult, kind: i.kind })),
     weights,
+    { material: enoughMaterial(a, a.items.map((i) => i.overrideResult ?? i.result)) },
   );
 
 export function roleFit(assessments: AssessmentLike[], current: { criteria: { id: string; updatedAt: Date }[]; criteriaVersion: number; weights?: Weights }): RoleFit {
@@ -56,9 +60,9 @@ export function roleFit(assessments: AssessmentLike[], current: { criteria: { id
   }
   const base = { score: s.score, coverage: s.coverage, updatedAt: latest.createdAt, change, criteriaVersion: latest.criteriaVersion };
   if (stale) return { ...base, state: "unranked", reason: "Criteria changed since the assessment — re-run it" };
-  if (s.score === null) return { ...base, state: "unranked", reason: `Score withheld: evidence covers ${pct(s.coverage)}` };
-  const conflicting = s.rows.some((r) => r.result === "conflicting");
-  if (conflicting) return { ...base, state: "low_confidence", reason: "Conflicting evidence on at least one criterion" };
+  if (s.score === null) return { ...base, state: "unranked", reason: "Insufficient evidence: too little material to judge" };
+  const conflicting = s.rows.some((r) => r.result === "conflicting" && r.importance !== "preferred");
+  if (conflicting) return { ...base, state: "low_confidence", reason: "Conflicting evidence on a required item" };
   if (s.status === "limited") return { ...base, state: "low_confidence", reason: `Limited evidence (coverage ${pct(s.coverage)})` };
   return { ...base, state: "ranked", reason: `Coverage ${pct(s.coverage)}` };
 }
@@ -101,8 +105,8 @@ export function stageReadiness(input: {
   return { stage: STAGE_LABEL[input.stage as Stage] ?? input.stage, nextDecision: NEXT[input.stage] ?? "next step", checks, met, total: checks.length };
 }
 
-/** Sort comparator for role fit: ranked (desc score), then low-confidence (desc score), then unranked. */
+/** Sort comparator for role fit: ranked (desc score), then low-confidence (desc score), then unranked; ties go to more evidence. */
 export function compareFit(a: RoleFit, b: RoleFit) {
   const order = { ranked: 0, low_confidence: 1, unranked: 2 } as const;
-  return order[a.state] - order[b.state] || (b.score ?? -1) - (a.score ?? -1);
+  return order[a.state] - order[b.state] || (b.score ?? -1) - (a.score ?? -1) || (b.coverage ?? -1) - (a.coverage ?? -1);
 }

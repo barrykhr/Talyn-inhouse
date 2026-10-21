@@ -1,27 +1,51 @@
-// Role-specific 0–100 profile score (method "profile-v1"). Pure and deterministic — computed by
-// Talyn from recruiter-approved, job-related skills and criteria and the evidence on file.
+// Role-specific 0–100 profile score (method "profile-v2"). Pure and deterministic — computed by
+// Talyn from recruiter-approved, job-related skills and criteria and the evidence on file. The
+// criteria-alignment "role fit" in score.ts uses the same calculation, so the two always agree.
 //
 //   included:  approved skills and criteria marked Required or Preferred (informational excluded)
 //   weight:    Required = role weight (default 2), Preferred = role weight (default 1)
-//   credit:    supported = 1 · partially supported = 0.5 · confirmed not present (by a recruiter) = 0
-//   unknown:   not stated, inferred, conflicting → left out of the score (never counted as failed)
-//              and they lower evidence coverage instead
-//   score    = Σ(weight × credit) ÷ Σ(weight of criteria with known evidence) × 100
-//   coverage = Σ(weight with known evidence) ÷ Σ(weight of all included criteria)
-//   Insufficient evidence when coverage < the version's minimum, or fewer than half the Required
-//   items have known evidence. Then no score, colour or recommendation is shown.
+//   credit:    supported = 1 · partially supported, inferred or conflicting = 0.5 ·
+//              not shown in the material = 0 · confirmed not present (by a recruiter) = 0
+//   score    = Σ(weight × credit) ÷ Σ(weight of all included items) × 100
+//   coverage = share of the weight with any evidence in the material
+//
+//   Insufficient evidence when there is too little material to judge — no CV and only a title or
+//   a line or two (under MIN_MATERIAL_CHARS of text). Then no score, colour or recommendation is
+//   shown. With enough material, a requirement the material doesn't show lowers the score: that
+//   is missing evidence, not proof the candidate lacks it, and every explanation says so.
+//   A required item with conflicting evidence caps the band below the top band until a recruiter
+//   resolves it. Coverage under the version's minimum is flagged as limited evidence.
 //
 // Band labels are advisory. They never reject, advance, hide or disposition anyone.
 
-export const PROFILE_METHOD = "profile-v1";
-export const PROFILE_CREDIT: Record<string, number | null> = {
+export const PROFILE_METHOD = "profile-v2";
+export const MIN_MATERIAL_CHARS = 400;
+export const PROFILE_CREDIT: Record<string, number> = {
   supported: 1,
   partially_supported: 0.5,
+  inferred: 0.5,
+  conflicting: 0.5,
+  not_stated: 0,
   confirmed_absent: 0,
-  inferred: null,
-  conflicting: null,
-  not_stated: null,
 };
+const EVIDENCED = new Set(["supported", "partially_supported", "inferred", "conflicting"]);
+
+/**
+ * Whether an assessment had enough material to judge. `materialChars` is the length of the CV,
+ * candidate-provided and linked-source text the assessment read; older assessments that didn't
+ * record it count as enough when a CV was on file or any item found evidence.
+ */
+export function enoughMaterial(a: { materialChars?: number | null; resumeId?: string | null }, results: string[]) {
+  if (a.materialChars != null) return a.materialChars >= MIN_MATERIAL_CHARS;
+  return !!a.resumeId || results.some((r) => EVIDENCED.has(r));
+}
+
+/** A band label never claims AI was used when it wasn't (e.g. "AI Screen Pass" on a keyword check). */
+export function bandLabelFor(label: string, generator: string | null | undefined) {
+  if (generator === "ai") return label;
+  const cleaned = label.replace(/\bAI[- ]?/g, "").replace(/\s{2,}/g, " ").trim();
+  return `${cleaned.charAt(0).toUpperCase()}${cleaned.slice(1)} (keyword check)`;
+}
 
 export type BandKey = "red" | "yellow" | "green";
 export type Band = { key: BandKey; min: number; label: string };
@@ -64,39 +88,56 @@ export type ProfileResult = {
   requiredKnown: number;
   requiredTotal: number;
   band: Band | null;
+  limited: boolean;
+  conflicts: string[];
   rows: ProfileRow[];
   reason: string;
 };
 
-export function computeProfileScore(items: ScoreItem[], cfg: { bands: Band[]; weightRequired: number; weightPreferred: number; minCoverage: number }): ProfileResult {
+export function computeProfileScore(
+  items: ScoreItem[],
+  cfg: { bands: Band[]; weightRequired: number; weightPreferred: number; minCoverage: number },
+  opts: { material: boolean } = { material: true },
+): ProfileResult {
   const rows: ProfileRow[] = items
     .filter((i) => i.importance !== "informational")
     .map((i) => {
       const result = i.overrideResult ?? i.result;
       const weight = i.importance === "preferred" ? cfg.weightPreferred : cfg.weightRequired;
-      const credit = PROFILE_CREDIT[result] ?? null;
-      return { name: i.criterionName, kind: i.kind, importance: i.importance, result, corrected: !!i.overrideResult, weight, credit, points: credit === null ? null : weight * credit, evidence: i.evidenceCount ?? 0 };
+      const credit = PROFILE_CREDIT[result] ?? 0;
+      return { name: i.criterionName, kind: i.kind, importance: i.importance, result, corrected: !!i.overrideResult, weight, credit, points: weight * credit, evidence: i.evidenceCount ?? 0 };
     });
   const total = rows.reduce((n, r) => n + r.weight, 0);
-  const known = rows.filter((r) => r.credit !== null);
-  const knownWeight = known.reduce((n, r) => n + r.weight, 0);
-  const points = known.reduce((n, r) => n + (r.points ?? 0), 0);
+  const evidenced = rows.filter((r) => EVIDENCED.has(r.result));
+  const coverage = total ? evidenced.reduce((n, r) => n + r.weight, 0) / total : 0;
   const required = rows.filter((r) => r.importance !== "preferred");
-  const requiredKnown = required.filter((r) => r.credit !== null).length;
-  const coverage = total ? knownWeight / total : 0;
-  const base = { method: PROFILE_METHOD, rows, coverage, requiredKnown, requiredTotal: required.length };
+  const requiredKnown = required.filter((r) => EVIDENCED.has(r.result) || r.result === "confirmed_absent").length;
+  const conflicts = required.filter((r) => r.result === "conflicting").map((r) => r.name);
   const pct = (n: number) => `${Math.round(n * 100)}%`;
-  if (!rows.length) return { ...base, status: "insufficient", score: null, band: null, reason: "No approved Required or Preferred criteria were assessed." };
-  if (knownWeight === 0 || coverage < cfg.minCoverage || (required.length > 0 && requiredKnown / required.length < 0.5))
+  const base = { method: PROFILE_METHOD, rows, coverage, requiredKnown, requiredTotal: required.length, conflicts };
+  if (!rows.length) return { ...base, status: "insufficient", score: null, band: null, limited: false, reason: "No approved Required or Preferred criteria were assessed." };
+  if (!opts.material)
     return {
       ...base,
       status: "insufficient",
       score: null,
       band: null,
-      reason: `Insufficient evidence: known evidence covers ${pct(coverage)} of the weighted criteria (minimum ${pct(cfg.minCoverage)}) and ${requiredKnown} of ${required.length} Required items. Missing evidence is unknown, not a failure.`,
+      limited: false,
+      reason: "Insufficient evidence: there isn't enough material to judge (no CV, or only a title and a line or two). Gather more information — missing material isn't a failure.",
     };
-  const score = Math.round((points / knownWeight) * 100);
-  return { ...base, status: "ok", score, band: bandFor(score, cfg.bands), reason: `Based on ${known.length} of ${rows.length} criteria with known evidence (coverage ${pct(coverage)}).` };
+  const score = Math.round((rows.reduce((n, r) => n + (r.points ?? 0), 0) / total) * 100);
+  let band = bandFor(score, cfg.bands);
+  const top = cfg.bands[cfg.bands.length - 1];
+  if (conflicts.length && band.key === top.key) band = cfg.bands[cfg.bands.length - 2];
+  const limited = coverage < cfg.minCoverage;
+  const notShown = rows.filter((r) => r.result === "not_stated").length;
+  const parts = [
+    `The material shows evidence for ${evidenced.length} of ${rows.length} skills and criteria (weighted coverage ${pct(coverage)}).`,
+    notShown ? `${notShown} ${notShown === 1 ? "isn't" : "aren't"} shown, which lowers the score — that's missing evidence, not proof the candidate lacks ${notShown === 1 ? "it" : "them"}.` : "",
+    conflicts.length ? `Conflicting evidence on ${conflicts.join(", ")} — resolve it before relying on this band.` : "",
+    limited ? `Limited evidence (under the ${pct(cfg.minCoverage)} minimum for this role).` : "",
+  ];
+  return { ...base, status: "ok", score, band, limited, reason: parts.filter(Boolean).join(" ") };
 }
 
 export function parseBands(json: string | null | undefined): Band[] {
@@ -109,8 +150,24 @@ export function parseBands(json: string | null | undefined): Band[] {
 }
 
 // Criteria that name protected characteristics are refused; proxies need a documented reason.
-const PROTECTED = /\b(age|aged|gender|male|female|sex|pregnan\w*|maternity|marital|married|family status|religio\w*|caste|racial|ethnicity|ethnic origin|nationality|national origin|disabilit\w*|disabled|sexual orientation|photo|photograph|native speaker|date of birth|birth ?year)\b/i;
-const PROXY = /\b(career gaps?|employment gaps?|gap in|continuous employment|resume format\w*|cv format\w*|writing polish|well[- ]written|top[- ]tier (university|school|college)|ivy league|prestigious|elite (university|school)|recent graduate|digital native|culture fit|linear career)\b/i;
+const PROTECTED = new RegExp(
+  [
+    // age, including limits written as numbers ("under 35", "below 30 years old", "25-35 years old")
+    String.raw`\b(age|aged|young|youthful|elderly|millennials?|gen ?z|date of birth|birth ?year)\b`,
+    String.raw`\b(under|below|over|above|less than|not more than|max(imum)?|min(imum)?)\s+(the\s+age\s+of\s+)?\d{2}(\s*(years?|yrs?)\s*(old|of age))?\s*($|[,.;:)!])`,
+    String.raw`\b\d{2}\s*(-|to|–)\s*\d{2}\s*(years?|yrs?)\s*(old|of age)\b`,
+    String.raw`\b\d{2}\s*(years?|yrs?)\s*(old|of age)\b`,
+    // sex, gender, family status
+    String.raw`\b(gender|male|males|female|females|men|women|boys|girls|ladies|sex|pregnan\w*|maternity|paternity|marital|married|unmarried|spouse|children|family status)\b`,
+    // religion, caste, race, national or ethnic origin, language as a proxy for origin
+    String.raw`\b(religio\w*|hindu|muslim|christian|sikh|jain|buddhist|jewish|caste|racial|ethnic\w*|nationality|national origin|native (\w+ )?speaker|mother tongue|accent)\b`,
+    // disability, health, appearance
+    String.raw`\b(disabilit\w*|disabled|handicap\w*|able[- ]bodied|medical history|photograph|recent photo|passport[- ]size photo|good[- ]looking|complexion)\b`,
+    String.raw`\b(sexual orientation|transgender)\b`,
+  ].join("|"),
+  "i",
+);
+const PROXY = /\b(career gaps?|employment gaps?|gaps? in (employment|career)|no gaps|continuous employment|resume format\w*|cv format\w*|writing polish|well[- ]written|top[- ]tier (university|school|college|institute)|tier[- ]?1 (university|college|institute)|IIT|IIM|ivy league|prestigious|elite (university|school|college)|recent graduate|fresh graduate|digital native|culture fit|cultural fit|linear career|energetic team)\b/i;
 
 /** Returns a reason to refuse a criterion, or null when it can be used. */
 export function criterionFairnessIssue(name: string, description: string): string | null {

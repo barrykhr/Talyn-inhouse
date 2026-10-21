@@ -2,7 +2,7 @@ import "server-only";
 import type { AuthContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseEvidence } from "@/lib/evidence";
-import { DEFAULT_BANDS, computeProfileScore, parseBands } from "@/lib/profile-score";
+import { DEFAULT_BANDS, bandLabelFor, computeProfileScore, enoughMaterial, parseBands } from "@/lib/profile-score";
 
 type Actor = Pick<AuthContext, "orgId" | "userId" | "userName">;
 
@@ -59,6 +59,7 @@ export async function recordProfileScore(actor: Actor, assessmentId: string, tri
   const r = computeProfileScore(
     a.items.map((i) => ({ criterionName: i.criterionName, kind: i.kind, importance: i.importance, result: i.result, overrideResult: i.overrideResult, evidenceCount: parseEvidence(i.evidenceJson).filter((e) => e.verified).length })),
     { bands: parseBands(v.bandsJson), weightRequired: v.weightRequired, weightPreferred: v.weightPreferred, minCoverage: v.minCoverage },
+    { material: enoughMaterial(a, a.items.map((i) => i.overrideResult ?? i.result)) },
   );
   // On the alternative route the screening score isn't used, so none is shown.
   const alt = a.application.altRoute !== "none";
@@ -73,8 +74,8 @@ export async function recordProfileScore(actor: Actor, assessmentId: string, tri
       coverage: r.coverage,
       status: alt ? "alternative" : r.status,
       band: alt ? null : (r.band?.key ?? null),
-      bandLabel: alt ? null : (r.band?.label ?? null),
-      breakdownJson: JSON.stringify({ method: r.method, rows: r.rows, reason: r.reason, requiredKnown: r.requiredKnown, requiredTotal: r.requiredTotal, generator: a.generator, model: a.model, criteriaVersion: a.criteriaVersion }),
+      bandLabel: alt || !r.band ? null : bandLabelFor(r.band.label, a.generator),
+      breakdownJson: JSON.stringify({ method: r.method, rows: r.rows, reason: r.reason, requiredKnown: r.requiredKnown, requiredTotal: r.requiredTotal, limited: r.limited, conflicts: r.conflicts, materialChars: a.materialChars, generator: a.generator, model: a.model, criteriaVersion: a.criteriaVersion }),
       trigger,
       createdById: actor.userId,
       createdByName: actor.userName,

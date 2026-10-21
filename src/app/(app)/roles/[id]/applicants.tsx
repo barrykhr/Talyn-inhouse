@@ -8,7 +8,7 @@ import { AiMark, Badge, Card, EmptyState, LinkButton, buttonClass, formatDate } 
 import { GENERATOR_LABEL, RECOMMENDATION_LABEL, STAGES, STAGE_LABEL, type Recommendation, type Stage } from "@/lib/domain";
 import { compareFit, roleFit, stageReadiness } from "@/lib/ranking";
 import { REVIEW_STATUSES, REVIEW_STATUS_LABEL, REVIEW_STATUS_TONE, evidenceCounts, reviewStatus } from "@/lib/review-status";
-import { computeScore, pct, type Weights } from "@/lib/score";
+import { pct, scoreAssessment, type Weights } from "@/lib/score";
 import { passesSkillFilter, type SkillMatch } from "@/lib/skills";
 import { SkillCount, SkillFilterFields } from "@/components/skill-match";
 import { ProfileScoreChip, type ScoreSnapshot } from "@/components/profile-score";
@@ -44,7 +44,7 @@ export type AppRow = {
     _count: { resumes: number };
   };
   stageEvents: { createdAt: Date }[];
-  assessments: { id: string; status: string; generator: string; criteriaSnapshot: string; resumeId: string | null; profileHash: string | null; finalRecommendation: string | null; recommendation: string | null; recommendationStatus: string | null; createdAt: Date; criteriaVersion: number | null; items: ItemLite[] }[];
+  assessments: { id: string; status: string; generator: string; criteriaSnapshot: string; resumeId: string | null; materialChars?: number | null; profileHash: string | null; finalRecommendation: string | null; recommendation: string | null; recommendationStatus: string | null; createdAt: Date; criteriaVersion: number | null; items: ItemLite[] }[];
   _count: { tasks: number };
 };
 
@@ -304,7 +304,7 @@ function Board({
                         {skillMatches.get(a.id) && <SkillCount m={skillMatches.get(a.id)!} className="text-[12px]" />}
                         {asmt ? (
                           <>
-                            <ScoreChip items={asmt.items} weights={weights} />
+                            <ScoreChip a={asmt} weights={weights} />
                             <SummaryLine summary={summarize(asmt.items)} compact />
                             {(asmt.finalRecommendation ?? asmt.recommendation) && (
                               <div className="flex items-center gap-1 text-[11.5px] text-ink-2">
@@ -429,9 +429,9 @@ function Ranked({
       </form>
       <Card className="overflow-hidden">
         <div className="border-b border-line bg-[#fbfaf8] px-4 py-2 text-[12px] text-muted">
-          <strong className="font-medium text-ink-2">Role fit</strong> = evaluation-criteria alignment of the latest assessment: how much of the approved criteria the evidence supports, weighted
-          required {weights.essential} : preferred {weights.preferred}. The required-skill count is shown separately and is not part of it. It is not a measure of candidate quality or likelihood of success, and it is unranked when evidence is insufficient or criteria changed. Open a candidate for
-          the per-criterion evidence. <strong className="font-medium text-ink-2">Readiness</strong> = checklist for the next decision, compared only within the same stage. Neither moves or decides
+          <strong className="font-medium text-ink-2">Role fit</strong> = the profile score of the latest assessment: how much of the approved skills and criteria the material shows, weighted
+          required {weights.essential} : preferred {weights.preferred}. Requirements the material doesn&apos;t show lower it — missing evidence, not proof of absence. It is not a measure of candidate quality or likelihood of success, and it is unranked when there&apos;s too little material or the criteria changed. Ties go to the candidate with more evidence. Open a candidate for
+          the per-item evidence. <strong className="font-medium text-ink-2">Readiness</strong> = checklist for the next decision, compared only within the same stage. Neither moves or decides
           anything.
         </div>
         <div className="divide-y divide-line">
@@ -515,16 +515,16 @@ export function timeInStage(since: Date) {
   return days < 60 ? `${days}d` : `${Math.floor(days / 30)}mo`;
 }
 
-function ScoreChip({ items, weights }: { items: ItemLite[]; weights: Weights }) {
-  const s = computeScore(items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult, kind: i.kind })), weights);
+function ScoreChip({ a, weights }: { a: { materialChars?: number | null; resumeId: string | null; items: ItemLite[] }; weights: Weights }) {
+  const s = scoreAssessment(a, weights);
   return (
-    <div className="text-[12px]" title="Criteria-alignment score (alignment-v1) and weighted evidence coverage. Not a measure of candidate quality. Open the candidate for per-criterion evidence.">
+    <div className="text-[12px]" title="Role fit (same calculation as the profile score) and weighted evidence coverage. Not a measure of candidate quality. Open the candidate for per-criterion evidence.">
       {s.score === null ? (
-        <span className="text-muted">Score withheld · coverage {pct(s.coverage)}</span>
+        <span className="text-muted">Insufficient evidence · too little material</span>
       ) : (
         <span>
           <span className="font-semibold tabular-nums">{s.score}</span>
-          <span className="text-faint">/100 criteria alignment</span>
+          <span className="text-faint">/100 role fit</span>
           <span className="text-muted"> · coverage {pct(s.coverage)}</span>
         </span>
       )}

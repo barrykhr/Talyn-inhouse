@@ -366,6 +366,7 @@ model Assessment {
   engineVersion            String? // assessment prompt/logic version
   parserVersion            String? // resume text parser version
   profileHash              String? // fingerprint of the candidate-provided information used (detects later edits)
+  materialChars            Int? // characters of CV, candidate-provided and linked-source text the assessment read (null on older assessments)
   sourceProfileId          String? // linked Discover source record used as evidence, if any
   scoreJson                String? // score breakdown at generation time (see src/lib/score.ts)
   recommendation           String? // advance_to_review | gather_more_info | insufficient_evidence

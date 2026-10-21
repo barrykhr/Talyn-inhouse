@@ -215,7 +215,7 @@ Rules:
 
 // ---------- Candidate assessment ----------
 
-export const ASSESSMENT_ENGINE_VERSION = "assess-v3 (per-skill and per-criterion states + alignment-v1 score + recommend-v1)";
+export const ASSESSMENT_ENGINE_VERSION = "assess-v3 (per-skill and per-criterion states + profile-v2 score + recommend-v1)";
 
 const AssessmentOutput = z.object({
   items: z.array(

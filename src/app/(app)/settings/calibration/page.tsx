@@ -132,7 +132,7 @@ export default async function CalibrationPage({ searchParams }: { searchParams: 
               {(
                 [
                   ["Required-skill threshold", c.skillBands],
-                  ["Evaluation-criteria alignment", c.alignBands],
+                  ["Role fit", c.alignBands],
                 ] as const
               ).map(([title, bands]) => (
                 <Card key={title} className="overflow-x-auto">

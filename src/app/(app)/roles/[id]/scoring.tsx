@@ -59,7 +59,7 @@ export function ScoringForm({ roleId, bands, minCoverage, canEdit }: { roleId: s
       <div className="space-y-2">{(["red", "yellow", "green"] as const).map((k, i) => row(k, i))}</div>
       {err && <p className="text-[12.5px] text-danger">{err}</p>}
       <div className="flex flex-wrap items-center gap-2 text-[13px]">
-        <span>Show “Insufficient evidence” below</span>
+        <span>Flag “Limited evidence” below</span>
         <span className="w-20">
           <Input name="minCoverage" type="number" min={30} max={100} defaultValue={Math.round(minCoverage * 100)} disabled={!canEdit} aria-label="Minimum evidence coverage percent" />
         </span>

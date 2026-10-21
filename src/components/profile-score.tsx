@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { bandRanges, type Band, type ProfileRow } from "@/lib/profile-score";
+import { MIN_MATERIAL_CHARS, bandRanges, type Band, type ProfileRow } from "@/lib/profile-score";
 import { RESULT_LABEL, type AssessmentResult } from "@/lib/domain";
 
 export type ScoreSnapshot = {
@@ -29,7 +29,7 @@ export function ProfileScoreChip({ s, className }: { s: ScoreSnapshot | null; cl
   const outdated = s.version !== s.currentVersion;
   if (s.status !== "ok" || s.score === null)
     return (
-      <span className={clsx("inline-flex items-center gap-1 rounded-md border border-dashed border-line-strong px-1.5 py-0.5 text-[11.5px] font-medium text-muted", className)} title={s.status === "alternative" ? "Alternative assessment route — the screening score isn't used." : "Not enough known evidence for a meaningful score."}>
+      <span className={clsx("inline-flex items-center gap-1 rounded-md border border-dashed border-line-strong px-1.5 py-0.5 text-[11.5px] font-medium text-muted", className)} title={s.status === "alternative" ? "Alternative assessment route — the screening score isn't used." : "Not enough material to judge — no CV, or only a title and a line or two. Gather more information; missing material isn't a failure."}>
         {s.status === "alternative" ? "Alternative route" : "Insufficient evidence"}
         {outdated && <span className="text-faint">· v{s.version}</span>}
       </span>
@@ -94,7 +94,7 @@ export function ProfileScoreDetail({
             </span>
           </div>
           <div className="text-[12px] text-muted">
-            {requiredKnown}/{requiredTotal} Required items with known evidence · minimum {pct(minCoverage)}
+            {requiredKnown}/{requiredTotal} Required items with evidence · flagged as limited under {pct(minCoverage)}
           </div>
         </div>
       </div>
@@ -108,9 +108,11 @@ export function ProfileScoreDetail({
         <summary className="cursor-pointer font-medium text-muted hover:text-ink">How this score was calculated</summary>
         <div className="mt-2 space-y-2">
           <p className="text-muted">
-            Weights: Required = {weights.required}, Preferred = {weights.preferred}; informational items aren&apos;t scored. Credit: supported = 1, partially supported = 0.5,
-            confirmed not present (by a recruiter) = 0. Not stated, inferred and conflicting are unknown: left out of the score and they lower coverage. Score = points ÷ weight with
-            known evidence × 100. Bands: {bandRanges(bands).map((b) => `${b.label} ${b.min}–${b.maxInclusive ? "100" : `<${b.max}`}`).join(" · ")}.
+            Weights: Required = {weights.required}, Preferred = {weights.preferred}; informational items aren&apos;t scored. Credit: supported = 1; partially
+            supported, inferred or conflicting = 0.5; not shown in the material = 0; confirmed not present (by a recruiter) = 0. Score = points ÷ total weight × 100.
+            &ldquo;Not shown&rdquo; is missing evidence, not proof the candidate lacks it — ask, or correct the item once you know. Insufficient evidence (no score)
+            when there are under {MIN_MATERIAL_CHARS} characters of material to judge. A Required item with conflicting evidence keeps the score out of the top band.
+            Bands: {bandRanges(bands).map((b) => `${b.label} ${b.min}–${b.maxInclusive ? "100" : `<${b.max}`}`).join(" · ")}.
           </p>
           <div className="overflow-x-auto rounded-lg border border-line">
             <table className="w-full text-[12.5px]">

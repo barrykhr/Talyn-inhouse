@@ -8,6 +8,7 @@ import { locateQuote, type SourceDoc } from "@/lib/evidence";
 import { redactContact } from "@/lib/extraction";
 import { findSkillMentions, keywordMatch, keywordsFor, skillTerms } from "@/lib/heuristics";
 import { logError } from "@/lib/log";
+import { MIN_MATERIAL_CHARS } from "@/lib/profile-score";
 import { computeScore, scoreSummaryText, weightsOf } from "@/lib/score";
 import { profileEvidenceText, profileFingerprint } from "@/lib/skills";
 import { sourceLabel } from "@/lib/sourcing/connectors";
@@ -198,9 +199,14 @@ export async function assessApplication(auth: AuthContext, applicationId: string
     });
   }
 
-  // The evaluation score is computed by Talyn over evaluation criteria only (skills are counted
-  // separately). The AI recommendation is skipped in batch runs to keep them fast and cheap.
-  const score = computeScore(drafts.map((d) => ({ name: d.criterionName, importance: d.importance, result: d.result, kind: d.kind })), weightsOf(role));
+  // Role fit is computed by Talyn (same calculation as the profile score). The AI recommendation is
+  // skipped in batch runs to keep them fast and cheap.
+  const materialChars = doc.resumePages.join("").trim().length + doc.profileText.trim().length + (doc.sourceText?.trim().length ?? 0);
+  const score = computeScore(
+    drafts.map((d) => ({ name: d.criterionName, importance: d.importance, result: d.result, kind: d.kind })),
+    weightsOf(role),
+    { material: materialChars >= MIN_MATERIAL_CHARS },
+  );
   let recommendation: string | null = null;
   let recommendationJson: Record<string, unknown> | null = null;
   const criteriaDrafts = drafts.filter((d) => d.kind !== "skill" && d.importance !== "informational");
@@ -241,12 +247,13 @@ export async function assessApplication(auth: AuthContext, applicationId: string
       applicationId,
       resumeId: resume?.id ?? null,
       profileHash: profileFingerprint(profile),
+      materialChars,
       sourceProfileId: source?.id ?? null,
       generator: mode,
       model: mode === "ai" ? `${ai.provider}:${ai.model}` : null,
       criteriaSnapshot: JSON.stringify(criteria.map((c) => ({ id: c.id, updatedAt: c.updatedAt.toISOString() }))),
       criteriaVersion: role.criteriaVersion,
-      engineVersion: mode === "ai" ? ASSESSMENT_ENGINE_VERSION : "keyword-v2 (skill mentions) + alignment-v1",
+      engineVersion: mode === "ai" ? ASSESSMENT_ENGINE_VERSION : "keyword-v2 (skill mentions) + profile-v2",
       parserVersion: resume?.parserVersion ?? null,
       scoreJson: JSON.stringify(score),
       recommendation,

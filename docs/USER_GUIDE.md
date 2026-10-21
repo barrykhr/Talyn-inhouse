@@ -106,7 +106,7 @@ _The threshold describes evidence only. Nobody is hidden, rejected or advanced b
 3. Click “Save as new version”. Bands must rise and can't overlap or leave gaps; other roles aren't affected.
 4. Click “Recalculate scores” to re-score everyone's latest assessment with the current version. Earlier scores stay in each candidate's history.
 
-_Labels are advisory only and never reject, advance or hide anyone. Missing or unverified evidence is unknown, not a failure; too little known evidence shows Insufficient evidence instead of a colour. Criteria naming protected characteristics are refused; career gaps, formatting, writing polish, school prestige or career path need a documented “Job-related reason:”._
+_Labels are advisory only and never reject, advance or hide anyone. Requirements the CV doesn't show lower the score — that's missing evidence, not proof the candidate lacks them, so ask or correct the item. Insufficient evidence (no colour) means there's too little material to judge. Labels never say “AI” on keyword-check results. Criteria naming protected characteristics (including age limits like “under 35” or “native speaker”) are refused; career gaps, formatting, writing polish, school prestige or career path need a documented “Job-related reason:”._
 
 ### Reassess candidates
 

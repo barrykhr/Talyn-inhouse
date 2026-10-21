@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { parseEvidence } from "./evidence";
-import { computeScore, weightsOf } from "./score";
+import { scoreAssessment, weightsOf } from "./score";
 import { matchForApplication, roleSkillConfig, THRESHOLD_LABEL } from "./skills";
 
 // Calibration from what recruiters actually did: corrections, outcomes and interview evidence.
@@ -33,7 +33,7 @@ export async function calibration(orgId: string, days: number) {
         role: { select: { title: true } },
         assessments: {
           orderBy: { createdAt: "desc" },
-          select: { id: true, createdAt: true, generator: true, criteriaSnapshot: true, criteriaVersion: true, resumeId: true, profileHash: true, items: { select: { id: true, criterionId: true, criterionName: true, kind: true, importance: true, result: true, overrideResult: true } } },
+          select: { id: true, createdAt: true, generator: true, criteriaSnapshot: true, criteriaVersion: true, resumeId: true, materialChars: true, profileHash: true, items: { select: { id: true, criterionId: true, criterionName: true, kind: true, importance: true, result: true, overrideResult: true } } },
         },
         interviewKit: { select: { status: true, stages: { select: { assignments: { select: { submittedAt: true } } } } } },
       },
@@ -98,8 +98,8 @@ export async function calibration(orgId: string, days: number) {
     if (!r || !latest) continue;
     const m = matchForApplication(a, { config: roleSkillConfig(r, r.criteria), approved: r.criteria, criteriaVersion: r.criteriaVersion });
     if (m.state !== "no_skills") bump(skillBands, THRESHOLD_LABEL[m.state], a);
-    const s = computeScore(latest.items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult, kind: i.kind })), weightsOf(r));
-    bump(alignBands, s.score === null ? "Withheld (not enough evidence)" : s.score >= 75 ? "75–100" : s.score >= 50 ? "50–74" : "0–49", a);
+    const s = scoreAssessment(latest, weightsOf(r));
+    bump(alignBands, s.score === null ? "Insufficient evidence" : s.score >= 75 ? "75–100" : s.score >= 50 ? "50–74" : "0–49", a);
   }
 
   // 5. Assessments that changed after interview evidence arrived.

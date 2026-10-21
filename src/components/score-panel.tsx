@@ -1,17 +1,18 @@
 import { RESULT_LABEL, type AssessmentResult } from "@/lib/domain";
 import Link from "next/link";
-import { CREDIT, LIMITED_COVERAGE, MIN_COVERAGE, pct, type ScoreResult } from "@/lib/score";
+import { MIN_MATERIAL_CHARS } from "@/lib/profile-score";
+import { CREDIT, MIN_COVERAGE, pct, type ScoreResult } from "@/lib/score";
 import { Badge } from "./ui";
 
-/** Criteria-alignment score with its scale, weights and calculation visible; coverage shown separately. */
+/** Role fit (the same calculation as the profile score) with its scale, weights and calculation visible; coverage shown separately. */
 export function ScorePanel({ score, adjusted, editHref }: { score: ScoreResult; adjusted: boolean; editHref?: string }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
         <div>
-          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-muted">Evaluation criteria alignment</div>
+          <div className="text-[11.5px] font-semibold uppercase tracking-wide text-muted">Role fit</div>
           {score.score === null ? (
-            <div className="mt-0.5 text-[15px] font-semibold text-muted">Withheld</div>
+            <div className="mt-0.5 text-[15px] font-semibold text-muted">Insufficient evidence</div>
           ) : (
             <div className="mt-0.5">
               <span className="text-3xl font-semibold tabular-nums tracking-tight">{score.score}</span>
@@ -29,24 +30,25 @@ export function ScorePanel({ score, adjusted, editHref }: { score: ScoreResult; 
             </span>
           </div>
           <div className="text-[12px] text-muted">
-            {score.essentialAssessable}/{score.essentialTotal} required criteria assessable
+            {score.essentialAssessable}/{score.essentialTotal} required items with evidence
           </div>
         </div>
       </div>
       <p className="text-[12.5px] text-ink-2">{score.reason}</p>
       <p className="text-[12px] text-faint">
-        Measures alignment with this role&apos;s approved criteria only. It is not a measure of candidate quality, potential or likelihood of hire, and it has not
-        been validated as a predictor. Skills are counted separately and are not part of this number. {adjusted && "Includes your corrections."}
+        Measures how much of this role&apos;s approved skills and criteria the material shows. It is not a measure of candidate quality, potential or likelihood of
+        hire, and it has not been validated as a predictor. It uses the same calculation as the profile score. {adjusted && "Includes your corrections."}
       </p>
       <details className="text-[12.5px]">
         <summary className="cursor-pointer font-medium text-muted hover:text-ink">How this is calculated</summary>
         <div className="mt-2 space-y-2">
           <p className="text-muted">
-            Weights (set for this role): required = {score.weights.essential}, preferred = {score.weights.preferred}; informational criteria and skills are not
-            weighted. Credit: supported = {CREDIT.supported}, partially supported = {CREDIT.partially_supported}, inferred = {CREDIT.inferred}, confirmed not met by a
-            recruiter = {CREDIT.confirmed_absent}. Not stated and conflicting criteria can&apos;t be assessed: they are left out of the score
-            (never counted as failed) and lower coverage instead. Score = points ÷ weight of assessable criteria × 100. Withheld below {pct(MIN_COVERAGE)}{" "}
-            coverage or when fewer than half of required criteria are assessable; flagged as limited below {pct(LIMITED_COVERAGE)}. Method: {score.method}.
+            Weights (set for this role): required = {score.weights.essential}, preferred = {score.weights.preferred}; informational criteria are not weighted.
+            Credit: supported = {CREDIT.supported}; partially supported, inferred or conflicting = {CREDIT.partially_supported}; not shown in the material ={" "}
+            {CREDIT.not_stated}; confirmed not present by a recruiter = {CREDIT.confirmed_absent}. Score = points ÷ total weight × 100. &ldquo;Not shown&rdquo; is
+            missing evidence, not proof the candidate lacks it — ask, or correct it once you know. Insufficient evidence when there&apos;s under{" "}
+            {MIN_MATERIAL_CHARS} characters of material to judge (no CV and only a title or a line or two). Flagged as limited below {pct(MIN_COVERAGE)} coverage;
+            a required item with conflicting evidence keeps it out of the top band. Method: {score.method}.
             {editHref && (
               <>
                 {" "}
@@ -74,7 +76,7 @@ export function ScorePanel({ score, adjusted, editHref }: { score: ScoreResult; 
                     <td className="px-2.5 py-1.5">{RESULT_LABEL[r.result as AssessmentResult] ?? r.result}</td>
                     <td className="px-2.5 py-1.5 text-right tabular-nums">{r.weight}</td>
                     <td className="px-2.5 py-1.5 text-right tabular-nums">{r.credit === null ? "—" : r.credit}</td>
-                    <td className="px-2.5 py-1.5 text-right tabular-nums">{r.points === null ? "not assessable" : r.points}</td>
+                    <td className="px-2.5 py-1.5 text-right tabular-nums">{r.points === null ? "—" : r.points}</td>
                   </tr>
                 ))}
               </tbody>

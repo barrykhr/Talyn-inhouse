@@ -20,7 +20,7 @@ import { EvidenceCounts, OriginBadge, SampleBadge } from "@/components/role-work
 import { evidenceCounts } from "@/lib/review-status";
 import { sourceLabel } from "@/lib/sourcing/connectors";
 import { pct } from "@/lib/score";
-import { computeScore, weightsOf } from "@/lib/score";
+import { scoreAssessment, weightsOf } from "@/lib/score";
 import { candidateInfoChanged, roleSkillConfig, skillMatch, THRESHOLD_LABEL } from "@/lib/skills";
 import { SkillCount } from "@/components/skill-match";
 import { ProfileScoreChip, ProfileScoreDetail, type ScoreSnapshot } from "@/components/profile-score";
@@ -125,7 +125,7 @@ export default async function CandidatePage({
   const needsReview = candidate.extractionStatus === "needs_review";
   const origins = parseOrigins(candidate.fieldOriginsJson);
   const liveScore = latest
-    ? computeScore(latest.items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult, kind: i.kind })), weightsOf(app?.role))
+    ? scoreAssessment(latest, weightsOf(app?.role))
     : null;
   const recJson = (latest?.recommendationJson ? JSON.parse(latest.recommendationJson) : {}) as {
     rationale?: string;
@@ -847,20 +847,12 @@ export default async function CandidatePage({
           <StageSelect applicationId={app.id} stage={app.stage} />
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3 border-t border-line pt-3 text-[12.5px]">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">Role fit</div>
-            {fit && fit.state !== "unranked" ? (
-              <div>
-                <span className="font-semibold tabular-nums">{fit.score}</span>
-                <span className="text-faint">/100</span>
-                {fit.state === "low_confidence" && <span className="text-warn"> · low confidence</span>}
-              </div>
-            ) : (
-              <div className="text-muted">Unranked</div>
-            )}
-            <div className="text-[11.5px] text-muted">{fit?.reason}</div>
-            {fit?.change && <div className="text-[11.5px] text-ink-2">Changed {fit.change}</div>}
-          </div>
+          {fit?.change && (
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">Score change</div>
+              <div className="text-[11.5px] text-ink-2">{fit.change}</div>
+            </div>
+          )}
           {readiness && (
             <details>
               <summary className="cursor-pointer list-none">
@@ -1017,7 +1009,7 @@ export default async function CandidatePage({
         )}
         {liveScore && (
           <details className="mt-3 border-t border-line pt-2 text-[12.5px]">
-            <summary className="cursor-pointer text-muted hover:text-ink">Evaluation-criteria alignment (criteria only, used for ranking)</summary>
+            <summary className="cursor-pointer text-muted hover:text-ink">How role fit was calculated (same as the profile score, used for ranking)</summary>
             <div className="mt-2">
               <ScorePanel score={liveScore} adjusted={summarize(latest!.items).overrides > 0} editHref={`/roles/${app!.roleId}?tab=criteria#rubric`} />
             </div>

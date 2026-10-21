@@ -2,7 +2,7 @@ import { audit } from "@/lib/audit";
 import { getAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { APP_ORIGIN_LABEL, REJECT_REASON_LABEL, DECISION_LABEL, RECOMMENDATION_LABEL, RESULT_LABEL, STAGE_LABEL, type AssessmentResult, type Decision, type Recommendation, type Stage } from "@/lib/domain";
-import { computeScore, weightsOf, type Weights } from "@/lib/score";
+import { scoreAssessment, weightsOf, type Weights } from "@/lib/score";
 import { THRESHOLD_LABEL, matchForApplication, roleSkillConfig, skillStatus, SKILL_STATUS_LABEL } from "@/lib/skills";
 import { csvResponse, today } from "@/lib/export";
 
@@ -93,7 +93,7 @@ type Asmt = {
 };
 function scoreCols(a: Asmt | undefined, weights: Weights): unknown[] {
   if (!a) return ["", "", "", "", "", "", ""];
-  const s = computeScore(a.items.map((i) => ({ name: i.criterionName, importance: i.importance, result: i.result, overrideResult: i.overrideResult, kind: i.kind })), weights);
+  const s = scoreAssessment(a, weights);
   const rec = (r: string | null) => (r ? RECOMMENDATION_LABEL[r as Recommendation] ?? r : "");
   return [a.criteriaVersion ?? "", s.score ?? "", Math.round(s.coverage * 100), s.status, rec(a.recommendation), a.recommendationStatus ?? "", rec(a.finalRecommendation)];
 }
