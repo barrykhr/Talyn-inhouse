@@ -5,6 +5,7 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { requireAuth, type AuthContext } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { scanDuplicates } from "@/lib/duplicates";
 import { DECISIONS, REJECT_REASONS, STAGES, STAGE_FOR_DECISION, STAGE_LABEL } from "@/lib/domain";
 import { logError } from "@/lib/log";
 import { DocumentParseError } from "@/lib/documents";
@@ -74,6 +75,7 @@ export async function createCandidate(_prev: ActionState, fd: FormData): Promise
   if (note) await db.note.create({ data: { orgId: auth.orgId, candidateId: candidate.id, authorId: auth.userId, authorName: auth.userName, body: note } });
   if (roleId) await attach(auth, candidate.id, roleId);
   await audit(auth, "candidate.created", { subjectType: "candidate", subjectId: candidate.id, candidateId: candidate.id, roleId: roleId || null, meta: { source: "manual", resume: !!resume } });
+  await scanDuplicates(auth.orgId).catch((err) => logError("duplicates.scan_failed", err)); // flag possible duplicates right away, not only when a list is opened
   return goTo(roleId ? `/candidates/${candidate.id}?role=${roleId}` : `/candidates/${candidate.id}`);
 }
 
@@ -93,6 +95,7 @@ export async function updateCandidate(id: string, _prev: ActionState, fd: FormDa
   await db.candidate.update({ where: { id }, data: { ...parsed.data, fieldOriginsJson: JSON.stringify(origins) } });
   await audit(auth, "candidate.updated", { subjectType: "candidate", subjectId: id, candidateId: id });
   revalidatePath(`/candidates/${id}`);
+  await scanDuplicates(auth.orgId).catch((err) => logError("duplicates.scan_failed", err)); // flag possible duplicates right away, not only when a list is opened
   return { ok: true, message: "Saved" };
 }
 

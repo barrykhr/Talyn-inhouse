@@ -5,6 +5,8 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { logError } from "@/lib/log";
+import { scanDuplicates } from "@/lib/duplicates";
 import { normalize } from "@/lib/documents";
 import { ownRole } from "./scope";
 
@@ -100,6 +102,7 @@ export async function importCandidates(rows: ImportRow[], roleId: string | null,
   await audit(auth, "import.csv", { subjectType: "org", roleId, meta: { created: result.created, skipped: result.skipped.length } });
   revalidatePath("/candidates");
   if (roleId) revalidatePath(`/roles/${roleId}`);
+  if (result.created) await scanDuplicates(auth.orgId).catch((err) => logError("duplicates.scan_failed", err)); // flag possible duplicates right away, not only when a list is opened
   return result;
 }
 

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { scanDuplicates } from "@/lib/duplicates";
 import { DocumentParseError } from "@/lib/documents";
 import { CORRECTION_REASONS } from "@/lib/domain";
 import { logError } from "@/lib/log";
@@ -149,5 +150,6 @@ export async function reviewCvExtraction(candidateId: string, _prev: ActionState
   ]);
   const counts = ops.length;
   await audit(auth, "cv.reviewed", { subjectType: "candidate", subjectId: candidateId, candidateId, meta: { facts: counts } });
+  await scanDuplicates(auth.orgId).catch((err) => logError("duplicates.scan_failed", err)); // flag possible duplicates right away, not only when a list is opened
   return goTo(`/candidates/${candidateId}?saved=profile`);
 }
