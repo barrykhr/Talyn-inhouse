@@ -7,7 +7,8 @@ import { useFormStatus } from "react-dom";
 import { useToast } from "./toast";
 import { buttonClass } from "./ui";
 
-const FormPending = createContext(false);
+// null outside <ActionForm>: plain forms fall back to React's useFormStatus.
+const FormPending = createContext<boolean | null>(null);
 
 /**
  * Like useTransition's [pending, start] but WITHOUT a React transition. Server actions
@@ -114,7 +115,10 @@ export function SubmitButton({
   disabled?: boolean;
 }) {
   const status = useFormStatus();
-  const pending = useContext(FormPending) || status.pending;
+  const ctx = useContext(FormPending);
+  // Inside <ActionForm> the form tracks its own submission exactly. React's form status can stay
+  // "pending" after a save that overlapped a page refresh, leaving the button stuck on its pending label.
+  const pending = ctx ?? status.pending;
   return (
     <button type="submit" name={name} value={value} disabled={pending || disabled} aria-busy={pending} className={buttonClass(variant, size, className)}>
       {pending ? <Spinner /> : null}
