@@ -1,0 +1,32 @@
+Site Reliability Engineer
+
+Team: Engineering · Location: Hyderabad
+
+About the role
+You will join our Engineering team to help us grow. You'll own outcomes end to end and work closely with cross-functional partners.
+
+Responsibilities
+- Deliver high-quality work for the Engineering function
+- Partner with stakeholders across the company
+
+Requirements
+- Kubernetes in production
+- Terraform infrastructure as code
+- Observability with Prometheus and Grafana
+- Incident response and postmortems
+- Linux systems administration
+
+Nice to have
+- Go or Python scripting
+- AWS or GCP certifications
+
+Skills
+- Kubernetes
+- Terraform
+- Prometheus
+- Grafana
+- Linux
+- AWS
+- GCP
+- Python
+- Go

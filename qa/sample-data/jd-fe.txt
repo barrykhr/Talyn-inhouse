@@ -1,0 +1,30 @@
+Frontend Engineer (React)
+
+Team: Engineering · Location: Remote (India)
+
+About the role
+You will join our Engineering team to help us grow. You'll own outcomes end to end and work closely with cross-functional partners.
+
+Responsibilities
+- Deliver high-quality work for the Engineering function
+- Partner with stakeholders across the company
+
+Requirements
+- 3+ years building production React applications
+- TypeScript
+- Web performance optimisation
+- Testing with Jest or Playwright
+
+Nice to have
+- Next.js
+- Accessibility (WCAG)
+- Design system components
+
+Skills
+- React
+- TypeScript
+- Next.js
+- Jest
+- Playwright
+- Web performance
+- WCAG

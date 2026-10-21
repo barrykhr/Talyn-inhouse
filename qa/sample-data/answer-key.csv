@@ -1,0 +1,201 @@
+role_key,role_title,row,full_name,email,tier,cv_file
+be,"Senior Backend Engineer",0,"Omar Reddy",omar.reddy.be0@example.com,strong,cvs/cv-be-0.pdf
+be,"Senior Backend Engineer",1,"Karan Agarwal",karan.agarwal.be1@example.com,strong,cvs/cv-be-1.docx
+be,"Senior Backend Engineer",2,"Arjun Bose",arjun.bose.be2@example.com,strong,
+be,"Senior Backend Engineer",3,"Noor Das",noor.das.be3@example.com,strong,
+be,"Senior Backend Engineer",4,"Kunal Banerjee",kunal.banerjee.be4@example.com,strong,
+be,"Senior Backend Engineer",5,"Harish Okafor",harish.okafor.be5@example.com,medium,
+be,"Senior Backend Engineer",6,"Shreya Patel",shreya.patel.be6@example.com,medium,cvs/cv-be-6.pdf
+be,"Senior Backend Engineer",7,"Kavya Das",kavya.das.be7@example.com,medium,cvs/cv-be-7.docx
+be,"Senior Backend Engineer",8,"Kavya Garcia",kavya.garcia.be8@example.com,medium,
+be,"Senior Backend Engineer",9,"Kunal Joshi",kunal.joshi.be9@example.com,medium,
+be,"Senior Backend Engineer",10,"Aisha Singh",aisha.singh.be10@example.com,medium,
+be,"Senior Backend Engineer",11,"Harish Chatterjee",harish.chatterjee.be11@example.com,weak,cvs/cv-be-11.pdf
+be,"Senior Backend Engineer",12,"Liam Kulkarni",liam.kulkarni.be12@example.com,weak,
+be,"Senior Backend Engineer",13,"Ananya Banerjee",ananya.banerjee.be13@example.com,weak,
+be,"Senior Backend Engineer",14,"Nikhil Menon",nikhil.menon.be14@example.com,weak,
+be,"Senior Backend Engineer",15,"Ananya Iyer",ananya.iyer.be15@example.com,gap,
+be,"Senior Backend Engineer",16,"Kunal Iyer",kunal.iyer.be16@example.com,conflict,
+be,"Senior Backend Engineer",17,"Gurpreet Garcia",gurpreet.garcia.be17@example.com,sparse,
+be,"Senior Backend Engineer",18,"Arjun Patel",arjun.patel.be18@example.com,nomaterial,
+be,"Senior Backend Engineer",19,"Imran Okafor",imran.okafor.be19@example.com,medium,
+da,"Data Analyst",0,"Sofia Kulkarni",sofia.kulkarni.da0@example.com,strong,cvs/cv-da-0.pdf
+da,"Data Analyst",1,"Siddharth Ghosh",siddharth.ghosh.da1@example.com,strong,cvs/cv-da-1.docx
+da,"Data Analyst",2,"Lakshmi Bose",lakshmi.bose.da2@example.com,strong,
+da,"Data Analyst",3,"Sanjay Mishra",sanjay.mishra.da3@example.com,strong,
+da,"Data Analyst",4,"Priya D'Souza",priya.dsouza.da4@example.com,strong,
+da,"Data Analyst",5,"Arjun Hussain",arjun.hussain.da5@example.com,medium,
+da,"Data Analyst",6,"Sana Kulkarni",sana.kulkarni.da6@example.com,medium,cvs/cv-da-6.pdf
+da,"Data Analyst",7,"Harish Das",harish.das.da7@example.com,medium,cvs/cv-da-7.docx
+da,"Data Analyst",8,"Joseph Mehta",joseph.mehta.da8@example.com,medium,
+da,"Data Analyst",9,"Sofia Agarwal",sofia.agarwal.da9@example.com,medium,
+da,"Data Analyst",10,"Aisha Hussain",aisha.hussain.da10@example.com,medium,
+da,"Data Analyst",11,"Zoya Fernandes",zoya.fernandes.da11@example.com,weak,cvs/cv-da-11.pdf
+da,"Data Analyst",12,"Sanjay Kulkarni",sanjay.kulkarni.da12@example.com,weak,
+da,"Data Analyst",13,"Amara Ghosh",amara.ghosh.da13@example.com,weak,
+da,"Data Analyst",14,"Sana Pillai",sana.pillai.da14@example.com,weak,
+da,"Data Analyst",15,"Fatima Kulkarni",fatima.kulkarni.da15@example.com,gap,
+da,"Data Analyst",16,"Kofi Sharma",kofi.sharma.da16@example.com,conflict,
+da,"Data Analyst",17,"Kunal Hussain",kunal.hussain.da17@example.com,sparse,
+da,"Data Analyst",18,"Arjun Verma",arjun.verma.da18@example.com,nomaterial,
+da,"Data Analyst",19,"Omar Reddy",omar.reddy.be0+alt@example.com,duplicate,
+pd,"Product Designer",0,"Elena Kulkarni",elena.kulkarni.pd0@example.com,strong,cvs/cv-pd-0.pdf
+pd,"Product Designer",1,"Fatima Joshi",fatima.joshi.pd1@example.com,strong,cvs/cv-pd-1.docx
+pd,"Product Designer",2,"Shreya Wong",shreya.wong.pd2@example.com,strong,
+pd,"Product Designer",3,"Kofi Singh",kofi.singh.pd3@example.com,strong,
+pd,"Product Designer",4,"Rajesh Pillai",rajesh.pillai.pd4@example.com,strong,
+pd,"Product Designer",5,"Kofi Agarwal",kofi.agarwal.pd5@example.com,medium,
+pd,"Product Designer",6,"Zoya Iyer",zoya.iyer.pd6@example.com,medium,cvs/cv-pd-6.pdf
+pd,"Product Designer",7,"Vikram Rao",vikram.rao.pd7@example.com,medium,cvs/cv-pd-7.docx
+pd,"Product Designer",8,"Noor Mehta",noor.mehta.pd8@example.com,medium,
+pd,"Product Designer",9,"Isha Pillai",isha.pillai.pd9@example.com,medium,
+pd,"Product Designer",10,"Farhan Mishra",farhan.mishra.pd10@example.com,medium,
+pd,"Product Designer",11,"Manoj Reddy",manoj.reddy.pd11@example.com,weak,cvs/cv-pd-11.pdf
+pd,"Product Designer",12,"Aditya D'Souza",aditya.dsouza.pd12@example.com,weak,
+pd,"Product Designer",13,"Sneha Chatterjee",sneha.chatterjee.pd13@example.com,weak,
+pd,"Product Designer",14,"Gurpreet Menon",gurpreet.menon.pd14@example.com,weak,
+pd,"Product Designer",15,"Kofi Iyer",kofi.iyer.pd15@example.com,gap,
+pd,"Product Designer",16,"Sneha Singh",sneha.singh.pd16@example.com,conflict,
+pd,"Product Designer",17,"Nikhil Khan",nikhil.khan.pd17@example.com,sparse,
+pd,"Product Designer",18,"Vikram Menon",vikram.menon.pd18@example.com,nomaterial,
+pd,"Product Designer",19,"Sofia Kulkarni",sofia.kulkarni.da0+alt@example.com,duplicate,
+ae,"Account Executive (Mid-Market)",0,"Chen Singh",chen.singh.ae0@example.com,strong,cvs/cv-ae-0.pdf
+ae,"Account Executive (Mid-Market)",1,"Nandini Garcia",nandini.garcia.ae1@example.com,strong,cvs/cv-ae-1.docx
+ae,"Account Executive (Mid-Market)",2,"Nikhil Kulkarni",nikhil.kulkarni.ae2@example.com,strong,
+ae,"Account Executive (Mid-Market)",3,"Manoj Gupta",manoj.gupta.ae3@example.com,strong,
+ae,"Account Executive (Mid-Market)",4,"Siddharth Gupta",siddharth.gupta.ae4@example.com,strong,
+ae,"Account Executive (Mid-Market)",5,"Joseph D'Souza",joseph.dsouza.ae5@example.com,medium,
+ae,"Account Executive (Mid-Market)",6,"Imran Verma",imran.verma.ae6@example.com,medium,cvs/cv-ae-6.pdf
+ae,"Account Executive (Mid-Market)",7,"Omar Banerjee",omar.banerjee.ae7@example.com,medium,cvs/cv-ae-7.docx
+ae,"Account Executive (Mid-Market)",8,"Abhishek Garcia",abhishek.garcia.ae8@example.com,medium,
+ae,"Account Executive (Mid-Market)",9,"Riya Sharma",riya.sharma.ae9@example.com,medium,
+ae,"Account Executive (Mid-Market)",10,"Omar Thomas",omar.thomas.ae10@example.com,medium,
+ae,"Account Executive (Mid-Market)",11,"Pooja D'Souza",pooja.dsouza.ae11@example.com,weak,cvs/cv-ae-11.pdf
+ae,"Account Executive (Mid-Market)",12,"Neha Wong",neha.wong.ae12@example.com,weak,
+ae,"Account Executive (Mid-Market)",13,"Priya Iyer",priya.iyer.ae13@example.com,weak,
+ae,"Account Executive (Mid-Market)",14,"Varun Menon",varun.menon.ae14@example.com,weak,
+ae,"Account Executive (Mid-Market)",15,"Nandini Reddy",nandini.reddy.ae15@example.com,gap,
+ae,"Account Executive (Mid-Market)",16,"Rajesh Wong",rajesh.wong.ae16@example.com,conflict,
+ae,"Account Executive (Mid-Market)",17,"Kunal Mehta",kunal.mehta.ae17@example.com,sparse,
+ae,"Account Executive (Mid-Market)",18,"Arjun Mishra",arjun.mishra.ae18@example.com,nomaterial,
+ae,"Account Executive (Mid-Market)",19,"Elena Kulkarni",elena.kulkarni.pd0+alt@example.com,duplicate,
+cs,"Customer Success Manager",0,"Meera D'Souza",meera.dsouza.cs0@example.com,strong,cvs/cv-cs-0.pdf
+cs,"Customer Success Manager",1,"Imran Wong",imran.wong.cs1@example.com,strong,cvs/cv-cs-1.docx
+cs,"Customer Success Manager",2,"Pooja Reddy",pooja.reddy.cs2@example.com,strong,
+cs,"Customer Success Manager",3,"Meera Verma",meera.verma.cs3@example.com,strong,
+cs,"Customer Success Manager",4,"Noor Verma",noor.verma.cs4@example.com,strong,
+cs,"Customer Success Manager",5,"Divya Kapoor",divya.kapoor.cs5@example.com,medium,
+cs,"Customer Success Manager",6,"Kofi Menon",kofi.menon.cs6@example.com,medium,cvs/cv-cs-6.pdf
+cs,"Customer Success Manager",7,"Vikram Wong",vikram.wong.cs7@example.com,medium,cvs/cv-cs-7.docx
+cs,"Customer Success Manager",8,"Tanvi Wong",tanvi.wong.cs8@example.com,medium,
+cs,"Customer Success Manager",9,"Abhishek Khan",abhishek.khan.cs9@example.com,medium,
+cs,"Customer Success Manager",10,"Noor Banerjee",noor.banerjee.cs10@example.com,medium,
+cs,"Customer Success Manager",11,"Ananya Bose",ananya.bose.cs11@example.com,weak,cvs/cv-cs-11.pdf
+cs,"Customer Success Manager",12,"Aisha Mishra",aisha.mishra.cs12@example.com,weak,
+cs,"Customer Success Manager",13,"Rohan Singh",rohan.singh.cs13@example.com,weak,
+cs,"Customer Success Manager",14,"Vikram Kulkarni",vikram.kulkarni.cs14@example.com,weak,
+cs,"Customer Success Manager",15,"Lakshmi Pillai",lakshmi.pillai.cs15@example.com,gap,
+cs,"Customer Success Manager",16,"Karan Singh",karan.singh.cs16@example.com,conflict,
+cs,"Customer Success Manager",17,"Liam Fernandes",liam.fernandes.cs17@example.com,sparse,
+cs,"Customer Success Manager",18,"Neha Fernandes",neha.fernandes.cs18@example.com,nomaterial,
+cs,"Customer Success Manager",19,"Chen Singh",chen.singh.ae0+alt@example.com,duplicate,
+sre,"Site Reliability Engineer",0,"Rahul Wong",rahul.wong.sre0@example.com,strong,cvs/cv-sre-0.pdf
+sre,"Site Reliability Engineer",1,"Manoj Okafor",manoj.okafor.sre1@example.com,strong,cvs/cv-sre-1.docx
+sre,"Site Reliability Engineer",2,"Rahul Iyer",rahul.iyer.sre2@example.com,strong,
+sre,"Site Reliability Engineer",3,"Kavya Kapoor",kavya.kapoor.sre3@example.com,strong,
+sre,"Site Reliability Engineer",4,"Sofia Nair",sofia.nair.sre4@example.com,strong,
+sre,"Site Reliability Engineer",5,"Rajesh Iyer",rajesh.iyer.sre5@example.com,medium,
+sre,"Site Reliability Engineer",6,"Noor D'Souza",noor.dsouza.sre6@example.com,medium,cvs/cv-sre-6.pdf
+sre,"Site Reliability Engineer",7,"Rajesh Menon",rajesh.menon.sre7@example.com,medium,cvs/cv-sre-7.docx
+sre,"Site Reliability Engineer",8,"Chen Chatterjee",chen.chatterjee.sre8@example.com,medium,
+sre,"Site Reliability Engineer",9,"Manoj Hussain",manoj.hussain.sre9@example.com,medium,
+sre,"Site Reliability Engineer",10,"Priya Nair",priya.nair.sre10@example.com,medium,
+sre,"Site Reliability Engineer",11,"Harish Nair",harish.nair.sre11@example.com,weak,cvs/cv-sre-11.pdf
+sre,"Site Reliability Engineer",12,"Sofia Fernandes",sofia.fernandes.sre12@example.com,weak,
+sre,"Site Reliability Engineer",13,"Daniel Bose",daniel.bose.sre13@example.com,weak,
+sre,"Site Reliability Engineer",14,"Pooja Pillai",pooja.pillai.sre14@example.com,weak,
+sre,"Site Reliability Engineer",15,"Rahul Kulkarni",rahul.kulkarni.sre15@example.com,gap,
+sre,"Site Reliability Engineer",16,"Sofia Singh",sofia.singh.sre16@example.com,conflict,
+sre,"Site Reliability Engineer",17,"Liam Okafor",liam.okafor.sre17@example.com,sparse,
+sre,"Site Reliability Engineer",18,"Priya Patel",priya.patel.sre18@example.com,nomaterial,
+sre,"Site Reliability Engineer",19,"Meera D'Souza",meera.dsouza.cs0+alt@example.com,duplicate,
+pm,"Product Manager",0,"Sanjay Chatterjee",sanjay.chatterjee.pm0@example.com,strong,cvs/cv-pm-0.pdf
+pm,"Product Manager",1,"Kavya Menon",kavya.menon.pm1@example.com,strong,cvs/cv-pm-1.docx
+pm,"Product Manager",2,"Fatima Chatterjee",fatima.chatterjee.pm2@example.com,strong,
+pm,"Product Manager",3,"Joseph Pillai",joseph.pillai.pm3@example.com,strong,
+pm,"Product Manager",4,"Abhishek Fernandes",abhishek.fernandes.pm4@example.com,strong,
+pm,"Product Manager",5,"Abhishek Rao",abhishek.rao.pm5@example.com,medium,
+pm,"Product Manager",6,"Tenzin Mehta",tenzin.mehta.pm6@example.com,medium,cvs/cv-pm-6.pdf
+pm,"Product Manager",7,"Elena Mishra",elena.mishra.pm7@example.com,medium,cvs/cv-pm-7.docx
+pm,"Product Manager",8,"Gurpreet Joshi",gurpreet.joshi.pm8@example.com,medium,
+pm,"Product Manager",9,"Varun Kulkarni",varun.kulkarni.pm9@example.com,medium,
+pm,"Product Manager",10,"Rajesh Bose",rajesh.bose.pm10@example.com,medium,
+pm,"Product Manager",11,"Amara Chatterjee",amara.chatterjee.pm11@example.com,weak,cvs/cv-pm-11.pdf
+pm,"Product Manager",12,"Ananya Reddy",ananya.reddy.pm12@example.com,weak,
+pm,"Product Manager",13,"Elena Iyer",elena.iyer.pm13@example.com,weak,
+pm,"Product Manager",14,"Lakshmi Verma",lakshmi.verma.pm14@example.com,weak,
+pm,"Product Manager",15,"Elena Menon",elena.menon.pm15@example.com,gap,
+pm,"Product Manager",16,"Rahul Chatterjee",rahul.chatterjee.pm16@example.com,conflict,
+pm,"Product Manager",17,"Ananya D'Souza",ananya.dsouza.pm17@example.com,sparse,
+pm,"Product Manager",18,"Mei Mehta",mei.mehta.pm18@example.com,nomaterial,
+pm,"Product Manager",19,"Rahul Wong",rahul.wong.sre0+alt@example.com,duplicate,
+fin,"FP&A Manager",0,"Mei Kapoor",mei.kapoor.fin0@example.com,strong,cvs/cv-fin-0.pdf
+fin,"FP&A Manager",1,"Gurpreet Wong",gurpreet.wong.fin1@example.com,strong,cvs/cv-fin-1.docx
+fin,"FP&A Manager",2,"Aisha Fernandes",aisha.fernandes.fin2@example.com,strong,
+fin,"FP&A Manager",3,"Vikram Garcia",vikram.garcia.fin3@example.com,strong,
+fin,"FP&A Manager",4,"Elena Wong",elena.wong.fin4@example.com,strong,
+fin,"FP&A Manager",5,"Aditya Singh",aditya.singh.fin5@example.com,medium,
+fin,"FP&A Manager",6,"Neha Ghosh",neha.ghosh.fin6@example.com,medium,cvs/cv-fin-6.pdf
+fin,"FP&A Manager",7,"Nandini Singh",nandini.singh.fin7@example.com,medium,cvs/cv-fin-7.docx
+fin,"FP&A Manager",8,"Sanjay Nair",sanjay.nair.fin8@example.com,medium,
+fin,"FP&A Manager",9,"Neha Menon",neha.menon.fin9@example.com,medium,
+fin,"FP&A Manager",10,"Liam D'Souza",liam.dsouza.fin10@example.com,medium,
+fin,"FP&A Manager",11,"Neha Pillai",neha.pillai.fin11@example.com,weak,cvs/cv-fin-11.pdf
+fin,"FP&A Manager",12,"Kofi Thomas",kofi.thomas.fin12@example.com,weak,
+fin,"FP&A Manager",13,"Karan Kulkarni",karan.kulkarni.fin13@example.com,weak,
+fin,"FP&A Manager",14,"Shreya Gupta",shreya.gupta.fin14@example.com,weak,
+fin,"FP&A Manager",15,"Pooja Iyer",pooja.iyer.fin15@example.com,gap,
+fin,"FP&A Manager",16,"Priya Mehta",priya.mehta.fin16@example.com,conflict,
+fin,"FP&A Manager",17,"Riya Fernandes",riya.fernandes.fin17@example.com,sparse,
+fin,"FP&A Manager",18,"Mei Thomas",mei.thomas.fin18@example.com,nomaterial,
+fin,"FP&A Manager",19,"Sanjay Chatterjee",sanjay.chatterjee.pm0+alt@example.com,duplicate,
+hr,"HR Business Partner",0,"Aditya Khan",aditya.khan.hr0@example.com,strong,cvs/cv-hr-0.pdf
+hr,"HR Business Partner",1,"Siddharth Verma",siddharth.verma.hr1@example.com,strong,cvs/cv-hr-1.docx
+hr,"HR Business Partner",2,"Tenzin Hussain",tenzin.hussain.hr2@example.com,strong,
+hr,"HR Business Partner",3,"Sneha Kapoor",sneha.kapoor.hr3@example.com,strong,
+hr,"HR Business Partner",4,"Sneha Sharma",sneha.sharma.hr4@example.com,strong,
+hr,"HR Business Partner",5,"Imran Pillai",imran.pillai.hr5@example.com,medium,
+hr,"HR Business Partner",6,"Siddharth Nair",siddharth.nair.hr6@example.com,medium,cvs/cv-hr-6.pdf
+hr,"HR Business Partner",7,"Sana Khan",sana.khan.hr7@example.com,medium,cvs/cv-hr-7.docx
+hr,"HR Business Partner",8,"Chen Khan",chen.khan.hr8@example.com,medium,
+hr,"HR Business Partner",9,"Isha D'Souza",isha.dsouza.hr9@example.com,medium,
+hr,"HR Business Partner",10,"Nikhil Patel",nikhil.patel.hr10@example.com,medium,
+hr,"HR Business Partner",11,"Harish Banerjee",harish.banerjee.hr11@example.com,weak,cvs/cv-hr-11.pdf
+hr,"HR Business Partner",12,"Deepa Agarwal",deepa.agarwal.hr12@example.com,weak,
+hr,"HR Business Partner",13,"Nandini Chatterjee",nandini.chatterjee.hr13@example.com,weak,
+hr,"HR Business Partner",14,"Amara Singh",amara.singh.hr14@example.com,weak,
+hr,"HR Business Partner",15,"Amara Hussain",amara.hussain.hr15@example.com,gap,
+hr,"HR Business Partner",16,"Gurpreet Khan",gurpreet.khan.hr16@example.com,conflict,
+hr,"HR Business Partner",17,"Mei Agarwal",mei.agarwal.hr17@example.com,sparse,
+hr,"HR Business Partner",18,"Kavya Singh",kavya.singh.hr18@example.com,nomaterial,
+hr,"HR Business Partner",19,"Mei Kapoor",mei.kapoor.fin0+alt@example.com,duplicate,
+fe,"Frontend Engineer (React)",0,"Ananya Wong",ananya.wong.fe0@example.com,strong,cvs/cv-fe-0.pdf
+fe,"Frontend Engineer (React)",1,"Joseph Iyer",joseph.iyer.fe1@example.com,strong,cvs/cv-fe-1.docx
+fe,"Frontend Engineer (React)",2,"Tanvi Reddy",tanvi.reddy.fe2@example.com,strong,
+fe,"Frontend Engineer (React)",3,"Sofia Hussain",sofia.hussain.fe3@example.com,strong,
+fe,"Frontend Engineer (React)",4,"Zoya Wong",zoya.wong.fe4@example.com,strong,
+fe,"Frontend Engineer (React)",5,"Shreya Nair",shreya.nair.fe5@example.com,medium,
+fe,"Frontend Engineer (React)",6,"Noor Wong",noor.wong.fe6@example.com,medium,cvs/cv-fe-6.pdf
+fe,"Frontend Engineer (React)",7,"Harish Wong",harish.wong.fe7@example.com,medium,cvs/cv-fe-7.docx
+fe,"Frontend Engineer (React)",8,"Elena Das",elena.das.fe8@example.com,medium,
+fe,"Frontend Engineer (React)",9,"Sofia Reddy",sofia.reddy.fe9@example.com,medium,
+fe,"Frontend Engineer (React)",10,"Liam Mishra",liam.mishra.fe10@example.com,medium,
+fe,"Frontend Engineer (React)",11,"Sanjay Hussain",sanjay.hussain.fe11@example.com,weak,cvs/cv-fe-11.pdf
+fe,"Frontend Engineer (React)",12,"Liam Hussain",liam.hussain.fe12@example.com,weak,
+fe,"Frontend Engineer (React)",13,"Neha Chatterjee",neha.chatterjee.fe13@example.com,weak,
+fe,"Frontend Engineer (React)",14,"Deepa Patel",deepa.patel.fe14@example.com,weak,
+fe,"Frontend Engineer (React)",15,"Lakshmi Patel",lakshmi.patel.fe15@example.com,gap,
+fe,"Frontend Engineer (React)",16,"Fatima Hussain",fatima.hussain.fe16@example.com,conflict,
+fe,"Frontend Engineer (React)",17,"Siddharth Bose",siddharth.bose.fe17@example.com,sparse,
+fe,"Frontend Engineer (React)",18,"Priya Kulkarni",priya.kulkarni.fe18@example.com,nomaterial,
+fe,"Frontend Engineer (React)",19,"Aditya Khan",aditya.khan.hr0+alt@example.com,duplicate,

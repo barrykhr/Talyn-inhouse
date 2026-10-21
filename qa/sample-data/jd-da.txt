@@ -1,0 +1,31 @@
+Data Analyst
+
+Team: Analytics · Location: Mumbai
+
+About the role
+You will join our Analytics team to help us grow. You'll own outcomes end to end and work closely with cross-functional partners.
+
+Responsibilities
+- Deliver high-quality work for the Analytics function
+- Partner with stakeholders across the company
+
+Requirements
+- 3+ years of SQL for analysis
+- Building dashboards in Tableau or Power BI
+- Stakeholder reporting for business teams
+- Experimentation and A/B test analysis
+
+Nice to have
+- Python (pandas)
+- dbt
+- Product analytics tools such as Amplitude
+
+Skills
+- SQL
+- Tableau
+- Power BI
+- Python
+- pandas
+- dbt
+- A/B testing
+- Amplitude
