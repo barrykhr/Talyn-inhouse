@@ -5,6 +5,11 @@ import { z } from "zod";
 import { checkEnv } from "../integrations/env";
 import type { SearchFilters } from "./filters";
 import { SAMPLE_PROFILES } from "./sample-profiles";
+import { makeGithubConnector } from "./github";
+import { makeGitlabConnector } from "./gitlab";
+import { makeHuggingFaceConnector } from "./huggingface";
+import { makeOpenAlexConnector } from "./openalex";
+import { makeStackOverflowConnector } from "./stackoverflow";
 
 /**
  * Sourcing connectors. Talyn only searches data it is authorized to use: the customer's own
@@ -349,7 +354,7 @@ const sampleData: SourcingConnector = {
   label: "Sample data (fictional)",
   kind: "sample",
   description: "Fictional example profiles for exploring Discover. Not real people and not a live search.",
-  configured: () => !externalProvider.configured(),
+  configured: () => !isLiveSourceConnected(),
   setupHint: "Sample data is turned off because a live sourcing provider is connected.",
   syntaxNote: "Matches your terms against a fixed list of fictional profiles. Nothing is searched online.",
   renderQuery(f, b) {
@@ -372,10 +377,16 @@ const sampleData: SourcingConnector = {
   },
 };
 
-export const CONNECTORS: SourcingConnector[] = [talynRediscovery, externalProvider, sampleData];
+/** Public-profile sources read through each service's official API. Each is off until its key is set. */
+const sourceDeps = { profileFromRecord, SourceError };
+const publicSources = [makeGithubConnector(sourceDeps), makeGitlabConnector(sourceDeps), makeStackOverflowConnector(sourceDeps), makeHuggingFaceConnector(sourceDeps), makeOpenAlexConnector(sourceDeps)];
+
+export const CONNECTORS: SourcingConnector[] = [talynRediscovery, externalProvider, ...publicSources, sampleData];
 export const connector = (key: string) => CONNECTORS.find((c) => c.key === key);
 /** Display label for a stored source key (connectors plus imported files). */
-export const isLiveSourceConnected = () => externalProvider.configured();
+export function isLiveSourceConnected() {
+  return CONNECTORS.some((c) => c.kind === "external" && c.configured());
+}
 export const sourceLabel = (key: string) => (key === "file" ? "Imported file" : (connector(key)?.label ?? key));
 
 /** Duplicate check against existing Talyn candidates (used for external profiles). */
