@@ -25,6 +25,7 @@ import { cityOf, locationMatches, locationSearchTerms, locationTerms } from "./h
 
 export const GITHUB_ENV = [
   { name: "GITHUB_TOKEN", purpose: "GitHub personal access token (public data only — no scopes needed)", secret: true },
+  { name: "GITHUB_MAX_PROFILES", purpose: "Profiles read per GitHub search (default 200, at most 300); each costs 2 of the token's 5,000 hourly requests", optional: true },
   { name: "SOURCING_DEFAULT_LOCATION", purpose: 'Location used when the role has none, e.g. "India" (shared with Stack Overflow)', optional: true },
 ];
 
@@ -34,9 +35,11 @@ type Deps = {
 };
 
 const API = "https://api.github.com";
-const MAX_PEOPLE = 40; // profiles read per search (2 API calls each)
+/** Profiles read per search (2 API calls each). GITHUB_MAX_PROFILES overrides it, up to 300. */
+const maxPeople = () => Math.min(300, Math.max(10, Number(process.env.GITHUB_MAX_PROFILES) || 200));
 const REPOS_PER_PERSON = 12;
-const CONCURRENCY = 5;
+const CONCURRENCY = 10;
+const PAGE = 100; // GitHub search returns at most 100 per page and 1,000 per query
 
 /** Skills that GitHub understands as a `language:` qualifier. Anything else is a topic keyword. */
 export const LANGUAGE: Record<string, string> = {
@@ -74,15 +77,15 @@ export function planGithubSearch(filters: SearchFilters, defaultLocation: string
   const location = filters.locations[0] ? cityOf(filters.locations[0]) || defaultLocation : defaultLocation;
   const since = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
 
-  // "India" fans out to the country and its largest cities, since many profiles name only the city.
-  const places = location ? locationSearchTerms(location) : [null];
-  const userQueries = (languages.length ? languages : [null]).flatMap((lang) =>
-    places.map((place) => ["type:user", place ? `location:${quoteIfNeeded(place)}` : null, lang ? `language:${quoteIfNeeded(lang)}` : null, "repos:>3"].filter(Boolean).join(" ")),
-  );
+  // GitHub combines several location: filters with OR, so one query per language covers every
+  // place: "India" becomes the country plus every Indian city and state people write on profiles.
+  const places = location ? locationSearchTerms(location) : [];
+  const where = places.map((p) => `location:${quoteIfNeeded(p)}`).join(" ");
+  const userQueries = (languages.length ? languages : [null]).map((lang) => ["type:user", lang ? `language:${quoteIfNeeded(lang)}` : null, "repos:>3", where || null].filter(Boolean).join(" "));
   // Without a language or a location a people search would be "everyone on GitHub": skip it.
   const peopleQueries = languages.length || location ? userQueries : [];
   const repoQuery = topics.length ? [...topics.map(quoteIfNeeded), "in:name,description,topics", languages[0] ? `language:${quoteIfNeeded(languages[0])}` : null, `pushed:>${since}`, "fork:false"].filter(Boolean).join(" ") : null;
-  return { languages, topics, location, peopleQueries, repoQuery };
+  return { languages, topics, location, places, peopleQueries, repoQuery };
 }
 
 function linkedinFrom(blog: string | null): string | null {
@@ -166,39 +169,55 @@ export function makeGithubConnector({ profileFromRecord, SourceError }: Deps): S
     syntaxNote: "Programming languages become GitHub language filters; other required skills are searched in repository names, descriptions and topics; the location is matched against each person's public profile; India covers the country and its major cities (Bangalore/Bengaluru, Hyderabad, Pune, Mumbai, Delhi NCR, Chennai and more). Boolean operators are not interpreted.",
     renderQuery(filters) {
       const plan = planGithubSearch(filters, defaultLocation());
-      return [...plan.peopleQueries.map((q) => `people: ${q}`), plan.repoQuery ? `repositories: ${plan.repoQuery}` : null].filter(Boolean).join(" · ") || "No searchable terms";
+      const short = (q: string) => (plan.places.length > 3 ? `${q.replace(/ location:.*$/, "")} · location: ${plan.location} (${plan.places.length} place names)` : q);
+      return [...plan.peopleQueries.map((q) => `people: ${short(q)}`), plan.repoQuery ? `repositories: ${plan.repoQuery}` : null].filter(Boolean).join(" · ") || "No searchable terms";
     },
     async search({ orgId, filters, years }) {
       const plan = planGithubSearch(filters, defaultLocation());
       if (!plan.peopleQueries.length && !plan.repoQuery) throw new SourceError("GitHub needs at least one skill or a location to search.");
 
+      const cap = maxPeople();
       // 1. People whose public profile matches language + location (GitHub applies the location).
+      //    Pages of 100, shared across the queries, until there are enough candidates.
+      const perQuery = Math.ceil(cap / Math.max(1, plan.peopleQueries.length));
       const fromPeople = new Set<string>();
+      let estimatedTotal: number | null = null;
       for (const q of plan.peopleQueries) {
-        const r = await gh<{ items: { login: string; type: string }[] }>(`/search/users?q=${encodeURIComponent(q)}&per_page=${plan.peopleQueries.length > 2 ? 10 : 30}`);
-        for (const u of r.items) if (u.type === "User") fromPeople.add(u.login);
+        let got = 0;
+        for (let page = 1; got < perQuery && page <= 10; page++) {
+          const r = await gh<{ total_count: number; items: { login: string; type: string }[] }>(`/search/users?q=${encodeURIComponent(q)}&per_page=${PAGE}&page=${page}`);
+          if (page === 1) estimatedTotal = (estimatedTotal ?? 0) + r.total_count;
+          for (const u of r.items) if (u.type === "User" && !fromPeople.has(u.login)) { fromPeople.add(u.login); got++; }
+          if (r.items.length < PAGE) break;
+        }
       }
       // 2. Owners of repositories about the role's topics (location checked below).
       const fromRepos = new Set<string>();
-      let estimatedTotal: number | null = null;
       if (plan.repoQuery) {
-        const r = await gh<{ total_count: number; items: { owner: { login: string; type: string } | null }[] }>(`/search/repositories?q=${encodeURIComponent(plan.repoQuery)}&per_page=30`);
-        estimatedTotal = r.total_count;
+        const r = await gh<{ total_count: number; items: { owner: { login: string; type: string } | null }[] }>(`/search/repositories?q=${encodeURIComponent(plan.repoQuery)}&per_page=${PAGE}`);
+        estimatedTotal ??= r.total_count;
         for (const it of r.items) if (it.owner?.type === "User" && !fromPeople.has(it.owner.login)) fromRepos.add(it.owner.login);
       }
-      // People found both ways first, then the rest, up to the cap.
-      const logins = [...fromPeople, ...fromRepos].slice(0, MAX_PEOPLE);
+      // Topic-repository owners first (they show the role's topics), then people by language and place.
+      const logins = [...fromRepos, ...fromPeople].slice(0, cap);
 
       const terms = locationTerms(plan.location);
+      let limited = false;
       const profiles = await inBatches(logins, CONCURRENCY, async (login): Promise<RawProfile | null> => {
-        const user = await gh<GhUser>(`/users/${encodeURIComponent(login)}`);
-        // Repository owners weren't location-filtered by GitHub: keep only those whose public
-        // location shows the role's location (an empty location is "not established" → skipped).
-        if (fromRepos.has(login) && !locationMatches(user.location, terms)) return null;
-        const repos = await gh<GhRepo[]>(`/users/${encodeURIComponent(login)}/repos?type=owner&sort=pushed&per_page=30`);
-        return profileFromRecord(orgId, githubRecord(user, repos), filters, "GitHub", { relevanceGate: true, years });
+        if (limited) return null;
+        try {
+          const user = await gh<GhUser>(`/users/${encodeURIComponent(login)}`);
+          // Repository owners weren't location-filtered by GitHub: keep only those whose public
+          // location shows the role's location (an empty location is "not established" → skipped).
+          if (fromRepos.has(login) && !locationMatches(user.location, terms)) return null;
+          const repos = await gh<GhRepo[]>(`/users/${encodeURIComponent(login)}/repos?type=owner&sort=pushed&per_page=30`);
+          return profileFromRecord(orgId, githubRecord(user, repos), filters, "GitHub", { relevanceGate: true, years });
+        } catch (err) {
+          // Out of hourly requests part-way: keep the profiles already read rather than failing the search.
+          if (err instanceof SourceError && /rate limit/i.test(err.message)) { limited = true; return null; }
+          throw err;
+        }
       });
-
       return { profiles: profiles.filter((p): p is RawProfile => !!p), estimatedTotal, query: this.renderQuery(filters, "") };
     },
   };
