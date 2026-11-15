@@ -58,6 +58,9 @@ export function mergeAcrossSources(batches: { key: string; label: string; retrie
       fields,
       signals: primary.signals.map((s) => byTerm.get(`${s.category}|${s.term.toLowerCase()}`) ?? s),
       evidenceStatus: ok ? "ok" : primary.p.evidenceStatus,
+      // Work from the source with the most of it; text from every source (AI ranking reads it).
+      work: [...g].map((it) => it.p.work).filter((w) => !!w).sort((a, b) => b!.units.length - a!.units.length)[0] ?? null,
+      text: g.map((it) => it.p.text).filter(Boolean).join("\n\n").slice(0, 8000),
       staleReason: ok ? ok.p.staleReason : primary.p.staleReason,
       excludedBy: g.find((it) => it.p.excludedBy)?.p.excludedBy ?? null,
       duplicateCandidateId: talyn ? talyn.p.sourceRecordId : (g.find((it) => it.p.duplicateCandidateId)?.p.duplicateCandidateId ?? null),

@@ -81,6 +81,7 @@ export function stackRecord(u: SeUser, standings: Standing[]): ExternalRecord {
     summary: [u.reputation != null ? `Stack Overflow reputation: ${u.reputation.toLocaleString("en-US")}` : null, ...lines, website ? `Website: ${website}` : null].filter(Boolean).join("\n"),
     experience: null,
     updatedAt: u.last_access_date ? new Date(u.last_access_date * 1000).toISOString() : null,
+    work: { units: lines, unitLabel: "top-answerer tags", lastActiveAt: u.last_access_date ? new Date(u.last_access_date * 1000).toISOString() : null, popularity: u.reputation ?? null, popularityLabel: "reputation" },
   };
 }
 

@@ -126,6 +126,7 @@ export function githubRecord(user: GhUser, repos: GhRepo[]): ExternalRecord {
     summary: summary || null,
     experience: null,
     updatedAt: pushed[pushed.length - 1] ?? user.updated_at,
+    work: { units: repoLines, unitLabel: "repositories", lastActiveAt: pushed[pushed.length - 1] ?? null, popularity: own.reduce((n, r) => n + (r.stargazers_count || 0), 0), popularityLabel: "stars" },
   };
 }
 

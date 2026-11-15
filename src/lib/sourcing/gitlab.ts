@@ -79,6 +79,7 @@ export function gitlabRecord(user: GlUser, matched: GlProject[], recent: GlProje
     summary: [user.bio?.trim(), github ? `GitHub: ${github}` : null, website ? `Website: ${website}` : null, lines.length ? "Public projects (matching this search first, then most recently active):" : null, ...lines].filter(Boolean).join("\n").slice(0, 20000) || null,
     experience: null,
     updatedAt: dates[dates.length - 1] ?? null,
+    work: { units: lines, unitLabel: "projects", lastActiveAt: dates[dates.length - 1] ?? null, popularity: own.reduce((n, p) => n + (p.star_count ?? 0), 0), popularityLabel: "stars" },
   };
 }
 

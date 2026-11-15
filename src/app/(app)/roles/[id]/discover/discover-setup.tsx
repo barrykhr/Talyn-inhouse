@@ -25,6 +25,9 @@ export function DiscoverSetupForm({
   booleanKey,
   sources,
   confirmed,
+  minRequiredSkills,
+  aiRankTop,
+  aiConfigured,
 }: {
   roleId: string;
   fields: BriefFields;
@@ -34,6 +37,9 @@ export function DiscoverSetupForm({
   booleanKey: string | null;
   sources: SourceOption[];
   confirmed: boolean;
+  minRequiredSkills: number | null;
+  aiRankTop: boolean;
+  aiConfigured: boolean;
 }) {
   const [state, action, pending] = useServerForm(saveBriefAndSearch.bind(null, roleId));
   const live = sources.filter((s) => s.kind !== "sample");
@@ -45,6 +51,36 @@ export function DiscoverSetupForm({
   return (
     <ActionForm action={action} pending={pending} className="space-y-5">
       <BriefFieldsEditor initial={fields} provenance={provenance} initialBoolean={booleanQuery} initialBooleanEdited={booleanEdited} initialBooleanKey={booleanKey} />
+
+      <fieldset className="space-y-2 rounded-lg border border-line px-3 py-2.5">
+        <legend className="px-1 text-[13px] font-medium">Relevance</legend>
+        <label className="flex flex-wrap items-center gap-2 text-[13px]">
+          Show in the main list only people with evidence for at least
+          <input
+            type="number"
+            name="minRequiredSkills"
+            min={0}
+            max={50}
+            defaultValue={minRequiredSkills ?? ""}
+            placeholder="half"
+            aria-label="Minimum required skills with evidence"
+            className="h-8 w-20 rounded-md border border-line-strong bg-surface px-2 text-[13px]"
+          />
+          required skills
+        </label>
+        <p className="text-[12px] text-muted">Leave empty for half of the required skills, rounded up. Everyone below goes to “Limited evidence”, still listed and never rejected. Results are ordered by a relevance score: required skills with evidence, title, preferred skills, how much public work shows those skills, how recent it is and how much others use it. Location is a filter, not points.</p>
+        <label className={clsx("flex items-start gap-2 text-[13px]", !aiConfigured && "opacity-60")}>
+          <input type="checkbox" name="aiRankTop" value="1" defaultChecked={aiRankTop && aiConfigured} disabled={!aiConfigured} className="mt-0.5" />
+          <span>
+            Rank the top 50 against the role&apos;s approved criteria with AI
+            <span className="block text-[12px] text-muted">
+              {aiConfigured
+                ? "Uses AI credit on every search. The AI only orders results and quotes the public work it relied on; it never rejects, hides or contacts anyone. Contact details are removed before sending."
+                : "AI isn't configured for this workspace."}
+            </span>
+          </span>
+        </label>
+      </fieldset>
 
       <fieldset className="space-y-2">
         <legend className="mb-1 text-[13px] font-medium">Search in</legend>

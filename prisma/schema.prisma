@@ -639,6 +639,10 @@ model SourcedProfile {
   createdAt            DateTime  @default(now())
   run                  SearchRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   sourcesJson          String    @default("[]") // every source this person was found in: [{ key, label, url, recordId, retrievedAt }]
+  relevanceScore       Int       @default(0) // 0–100 ordering aid from src/lib/sourcing/relevance.ts; never a decision
+  relevanceJson        String    @default("{}") // Relevance breakdown: required/preferred matches, work depth, recency, minimum bar
+  aiRank               Int? // 1 = best, when the recruiter asked AI to rank the top results against the role's approved criteria
+  aiFitJson            String? // { fit, summary, evidence: [{ criterion, quote }], model } — quotes verified against the profile text
 
   @@index([orgId, roleId, status])
   @@index([runId])
@@ -850,6 +854,8 @@ model DiscoveryBrief {
   jdId                String?
   confirmedAt         DateTime?
   confirmedByName     String?
+  minRequiredSkills   Int? // Discover: profiles with fewer required skills evidenced go to "Limited evidence"; null = half, rounded up
+  aiRankTop           Boolean   @default(false) // Discover: rank the top results against the role's approved criteria with AI
   updatedByName       String    @default("")
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
