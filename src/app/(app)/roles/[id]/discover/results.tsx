@@ -64,7 +64,8 @@ function relevanceLine(r: Partial<Relevance>) {
   if (r.preferred?.total) parts.push(`${r.preferred.matched} of ${r.preferred.total} preferred`);
   const deep = (r.depth ?? []).filter((d) => d.units > 0).sort((a, b) => b.units - a.units).slice(0, 3);
   const unit = r.unitLabel;
-  if (deep.length && unit) parts.push(deep.map((d) => `${d.term} in ${d.units} ${d.units === 1 ? unit.replace(/s$/, "") : unit}`).join(", "));
+  const one = unit ? (unit.endsWith("ies") ? `${unit.slice(0, -3)}y` : unit.replace(/s$/, "")) : "";
+  if (deep.length && unit) parts.push(deep.map((d) => `${d.term} in ${d.units} ${d.units === 1 ? one : unit}`).join(", "));
   const active = monthYear(r.lastActiveAt);
   if (active) parts.push(`active ${active}`);
   if (r.popularity && r.popularityLabel) parts.push(`${Math.round(r.popularity).toLocaleString("en-US")} ${r.popularityLabel}`);
