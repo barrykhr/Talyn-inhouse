@@ -10,6 +10,8 @@ export type SearchFilters = {
   seniority: string[];
   industries: string[];
   exclusions: string[];
+  /** Companies the recruiter chose to source from: evidence and a ranking input, never a hard filter. */
+  target_companies: string[];
 };
 
 export const FILTER_LABEL: Record<keyof SearchFilters, string> = {
@@ -22,9 +24,10 @@ export const FILTER_LABEL: Record<keyof SearchFilters, string> = {
   seniority: "Seniority",
   industries: "Industries / company contexts",
   exclusions: "Exclusions",
+  target_companies: "Target companies",
 };
 
-export const EMPTY_FILTERS: SearchFilters = { keywords: [], titles: [], adjacent_titles: [], skills_required: [], skills_preferred: [], locations: [], seniority: [], industries: [], exclusions: [] };
+export const EMPTY_FILTERS: SearchFilters = { keywords: [], titles: [], adjacent_titles: [], skills_required: [], skills_preferred: [], locations: [], seniority: [], industries: [], exclusions: [], target_companies: [] };
 
 /** Reads stored filters, filling fields added later (older saved searches lack them). */
 export function parseFilters(json: string): SearchFilters {
@@ -52,6 +55,8 @@ export function toBoolean(f: SearchFilters): string {
   if (f.skills_preferred.length) parts.push(`${group(f.skills_preferred, "OR")}`);
   let out = parts.join(" AND ");
   if (f.exclusions.length) out += ` NOT ${group(f.exclusions, "OR")}`;
+  // Target companies rank people higher; they don't narrow the search, so they're a preference clause.
+  if (f.target_companies.length) out += ` PREFER current_company:${group(f.target_companies, "OR")}`;
   return out;
 }
 

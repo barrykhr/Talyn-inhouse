@@ -324,3 +324,31 @@ predictive validity.
 
 - A hiring-manager portal, a meeting bot and advanced analytics are out of scope.
 - Auth is isolated behind `src/lib/auth.ts`; resume bytes behind the `ResumeFile` model and `/api/resumes/[id]`.
+
+## Target companies for outbound search
+
+- `Role.clientCompanyName/Website/Notes`: the company the role is for (role form; JD extraction
+  proposes name and website when the JD states them, for the recruiter to confirm).
+- `src/lib/discovery/target-companies.ts` (pure): bands, the fixed match-reason set, prompts,
+  `cleanTargetCompanies` (zod validation per entry; drops duplicates by name-without-suffixes or
+  website, the client company, and the role's exclusions; keeps the AI's order as rank, max 30),
+  `filterByReasons` (chips: every selected reason), `companyMatches`, `keepSeenUrls`.
+- `generateClientProfileWithAi` then `generateTargetCompaniesWithAi` (`src/lib/ai.ts`) use the
+  provider's web search when available (OpenAI `web_search`, Anthropic `web_search_20250305`) and
+  fall back to the model alone. Source links are stored only if the web search returned them.
+- `TargetCompanySet` (one per role) stores the client profile (with `edited` when the recruiter
+  corrected it), the companies, what was dropped and why, model and whether web search was used.
+  Actions: `getTargetCompanies`, `regenerateTargetCompanies` in `src/server/discovery-actions.ts`.
+- The popup (`src/components/target-companies-dialog.tsx`) opens from Discover's Search button
+  when AI is configured; nothing is pre-selected. The choice becomes `SearchFilters.target_companies`:
+  a `company` signal in `profileFromRecord` and Talyn rediscovery (current company equal after
+  suffixes), +10 relevance when matched. Never a filter; external providers receive it in `filters`.
+
+## Candidate page presentation
+
+- The decision (Shortlist / Hold / Reject) is a single sticky bar under the header
+  (`DecisionForm compact`); the score dialog points to it.
+- Evidence rows show status, the best quote (`bestQuote`, ≤160 characters) and its source;
+  the rest is under "Show details". Relevance bullets and the top score factors come from
+  `src/lib/candidate-summary.ts`. The processing log and the text read from the CV sit behind
+  "View processing details". Presentation only: no data, provenance or audit is removed.

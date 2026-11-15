@@ -15,6 +15,9 @@ const RoleSchema = z.object({
   employmentType: z.enum(EMPLOYMENT_TYPES),
   status: z.enum(ROLE_STATUSES),
   description: z.string().max(30000),
+  clientCompanyName: z.string().max(160).nullable(),
+  clientCompanyWebsite: z.string().max(300).nullable().refine((v) => !v || /^(https?:\/\/)?[\w.-]+\.[a-z]{2,}(\/\S*)?$/i.test(v), "Enter the company website as a web address, e.g. acme.com"),
+  clientCompanyNotes: z.string().max(2000).nullable(),
 });
 
 function parseRole(fd: FormData) {
@@ -25,6 +28,9 @@ function parseRole(fd: FormData) {
     employmentType: str(fd, "employmentType") || "full_time",
     status: str(fd, "status") || "draft",
     description: str(fd, "description", 30000),
+    clientCompanyName: str(fd, "clientCompanyName", 160) || null,
+    clientCompanyWebsite: str(fd, "clientCompanyWebsite", 300) || null,
+    clientCompanyNotes: str(fd, "clientCompanyNotes", 2000) || null,
   });
 }
 

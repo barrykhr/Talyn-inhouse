@@ -88,7 +88,7 @@ export async function executeSearch(
   roleId: string,
   brief: { booleanQuery: string },
   f: BriefFields,
-  opts: { demo: boolean; keys: string[]; onlyNew?: boolean },
+  opts: { demo: boolean; keys: string[]; onlyNew?: boolean; targetCompanies?: string[] },
 ): Promise<SearchRunResult> {
   const demo = opts.demo;
   const chosen = opts.keys.map((k) => connector(k)).filter((c): c is NonNullable<typeof c> => !!c && (demo ? c.kind === "sample" : c.kind !== "sample"));
@@ -102,6 +102,7 @@ export async function executeSearch(
     skills_preferred: f.skillsPreferred,
     locations: f.location && f.workArrangement !== "remote" ? [f.location] : [],
     exclusions: f.exclusions,
+    target_companies: (opts.targetCompanies ?? []).map((t) => t.trim()).filter(Boolean).slice(0, 60),
   };
   const years = { min: f.minYears, max: f.maxYears };
   const last = await db.searchStrategy.findFirst({ where: { roleId }, orderBy: { version: "desc" } });

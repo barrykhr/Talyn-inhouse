@@ -20,6 +20,8 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
             <SectionTitle hint="CSV files open in any spreadsheet tool.">Export</SectionTitle>
             <div className="flex flex-col gap-2">
               <a href="/api/export/candidates" className={buttonClass("secondary")}>All candidates (.csv)</a>
+              {/* A file download from an API route: a plain link, not client-side navigation. */}
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
               <a href="/api/export/roles" className={buttonClass("secondary")}>Roles &amp; criteria (.csv)</a>
             </div>
             <p className="mt-3 text-[12.5px] text-muted">For a role&apos;s pipeline with per-criterion results, use “Export CSV” on the role page.</p>

@@ -109,7 +109,7 @@ export async function mapJdCriteriaStep(roleId: string): Promise<StepResult> {
   }
 }
 
-const SCALAR_FIELDS = ["title", "department", "location", "employment_type"] as const;
+const SCALAR_FIELDS = ["title", "department", "location", "employment_type", "client_company_name", "client_company_website"] as const;
 
 /** Applies the recruiter-reviewed extraction to the role. Each fact is marked accepted, edited or rejected. */
 export async function reviewRoleExtraction(roleId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -117,7 +117,7 @@ export async function reviewRoleExtraction(roleId: string, _prev: ActionState, f
   await ownRole(auth, roleId);
   const facts = await db.extractedField.findMany({ where: { roleId, orgId: auth.orgId, status: "pending" } });
   const reviewedAt = new Date();
-  const update: { title?: string; department?: string; location?: string; employmentType?: string; description?: string } = {};
+  const update: { title?: string; department?: string; location?: string; employmentType?: string; description?: string; clientCompanyName?: string | null; clientCompanyWebsite?: string | null } = {};
 
   for (const field of SCALAR_FIELDS) {
     if (fd.get(`use_${field}`) !== "on") continue;
@@ -129,7 +129,9 @@ export async function reviewRoleExtraction(roleId: string, _prev: ActionState, f
       const t = z.enum(EMPLOYMENT_TYPES).safeParse(value);
       if (!t.success) return { error: "Choose a valid employment type." };
       update.employmentType = t.data;
-    } else update[field] = value;
+    } else if (field === "client_company_name") update.clientCompanyName = value || null;
+    else if (field === "client_company_website") update.clientCompanyWebsite = value.slice(0, 300) || null;
+    else update[field] = value;
   }
   if (fd.get("useJdText") === "on") {
     const jd = await db.jobDescription.findFirst({ where: { roleId, orgId: auth.orgId, isCurrent: true } });

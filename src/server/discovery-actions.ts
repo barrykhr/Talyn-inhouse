@@ -8,6 +8,8 @@ import { BRIEF_FIELD_LABEL, WORK_ARRANGEMENTS, booleanKey, buildBoolean, checkBo
 import { suggestBriefFromJd } from "@/lib/discovery/extract";
 import { briefColumns, briefFields, briefProvenance } from "@/lib/discovery/store";
 import { logError } from "@/lib/log";
+import { AiRequestError, AiUnavailableError, aiStatus, generateClientProfileWithAi, generateTargetCompaniesWithAi } from "@/lib/ai";
+import { ClientProfileSchema, cleanTargetCompanies, keepSeenUrls, type ClientProfile, type DroppedCompany, type TargetCompany, type TargetCompanyInput } from "@/lib/discovery/target-companies";
 import { executeSearch } from "./search-run";
 import { goTo, str, type ActionState } from "./form";
 import { ownRole } from "./scope";
@@ -72,7 +74,15 @@ export async function startManualDiscovery(_prev: ActionState, fd: FormData): Pr
   if (!r.fields) return { error: r.error };
   const f = r.fields;
   const role = await db.role.create({
-    data: { orgId: auth.orgId, title: f.roleName, location: f.location ?? "", status: "draft", createdById: auth.userId },
+    data: {
+      orgId: auth.orgId,
+      title: f.roleName,
+      location: f.location ?? "",
+      status: "draft",
+      createdById: auth.userId,
+      clientCompanyName: str(fd, "clientCompanyName", 160) || null,
+      clientCompanyWebsite: str(fd, "clientCompanyWebsite", 300) || null,
+    },
   });
   const prov: Provenance = Object.fromEntries((Object.keys(BRIEF_FIELD_LABEL) as (keyof BriefFields)[]).map((k) => [k, { status: "manual" }]));
   await db.discoveryBrief.create({
@@ -196,9 +206,125 @@ export async function saveBriefAndSearch(roleId: string, _prev: ActionState, fd:
 async function runSearch(auth: AuthContext, roleId: string, brief: { booleanQuery: string }, f: BriefFields, fd: FormData): Promise<ActionState> {
   const demo = str(fd, "mode", 10) === "demo";
   const keys = demo ? ["sample"] : fd.getAll("source").map(String);
-  const out = await executeSearch(auth, roleId, brief, f, { demo, keys });
+  let targetCompanies: string[] = [];
+  try {
+    const raw = JSON.parse(str(fd, "targetCompanies", 20000) || "[]") as unknown;
+    if (Array.isArray(raw)) targetCompanies = raw.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 160));
+  } catch {
+    /* no selection */
+  }
+  const out = await executeSearch(auth, roleId, brief, f, { demo, keys, targetCompanies });
   if ("error" in out) return { error: out.error };
   refresh(roleId);
   if (!out.anyOk) return { error: out.statuses.map((s) => `${s.label}: ${s.error}`).join(" · ") };
   return { ok: true, redirectTo: `/roles/${roleId}/discover?run=${out.runId}#results` };
+}
+
+// ---------- Target companies (AI suggests; the recruiter picks before searching) ----------
+
+export type TargetCompaniesView = {
+  aiConfigured: boolean;
+  client: { name: string | null; website: string | null };
+  set: { clientProfile: ClientProfile; companies: TargetCompany[]; dropped: DroppedCompany[]; model: string; webSearch: boolean; generatedAt: string; generatedByName: string } | null;
+  error?: string;
+};
+
+async function targetInput(auth: AuthContext, roleId: string): Promise<{ input: TargetCompanyInput; client: { name: string | null; website: string | null } }> {
+  const role = await ownRole(auth, roleId);
+  const [criteria, brief] = await Promise.all([
+    db.criterion.findMany({ where: { roleId, orgId: auth.orgId, status: "approved" }, select: { name: true, importance: true, kind: true }, orderBy: { position: "asc" } }),
+    db.discoveryBrief.findUnique({ where: { roleId } }),
+  ]);
+  const f = brief ? briefFields(brief) : null;
+  const client = { name: role.clientCompanyName, website: role.clientCompanyWebsite };
+  return {
+    client,
+    input: {
+      roleTitle: f?.roleName || role.title,
+      criteria: criteria.slice(0, 40),
+      brief: f ? { altTitles: f.altTitles, skillsRequired: f.skillsRequired, skillsPreferred: f.skillsPreferred, location: f.location || role.location || null, workArrangement: f.workArrangement } : { altTitles: [], skillsRequired: [], skillsPreferred: [], location: role.location || null, workArrangement: null },
+      client: { name: role.clientCompanyName, website: role.clientCompanyWebsite, notes: role.clientCompanyNotes },
+      exclusions: f?.exclusions ?? [],
+    },
+  };
+}
+
+function setView(row: { clientProfileJson: string; companiesJson: string; droppedJson: string; model: string; webSearch: boolean; generatedAt: Date; generatedByName: string }): NonNullable<TargetCompaniesView["set"]> {
+  return {
+    clientProfile: JSON.parse(row.clientProfileJson),
+    companies: JSON.parse(row.companiesJson),
+    dropped: JSON.parse(row.droppedJson),
+    model: row.model,
+    webSearch: row.webSearch,
+    generatedAt: row.generatedAt.toISOString(),
+    generatedByName: row.generatedByName,
+  };
+}
+
+/** Opens the popup: the stored list, or a new one when there is none yet. */
+export async function getTargetCompanies(roleId: string): Promise<TargetCompaniesView> {
+  const auth = await requireAuth();
+  const { client } = await targetInput(auth, roleId);
+  const configured = aiStatus().configured;
+  const stored = await db.targetCompanySet.findUnique({ where: { roleId } });
+  if (stored && stored.orgId === auth.orgId) return { aiConfigured: configured, client, set: setView(stored) };
+  if (!configured) return { aiConfigured: false, client, set: null };
+  return generateTargets(auth, roleId, null);
+}
+
+/** "Regenerate", or "Update profile and regenerate" with the recruiter's corrected profile. */
+export async function regenerateTargetCompanies(roleId: string, correctedProfile?: unknown): Promise<TargetCompaniesView> {
+  const auth = await requireAuth();
+  let profile: ClientProfile | null = null;
+  if (correctedProfile !== undefined) {
+    const p = ClientProfileSchema.safeParse(correctedProfile);
+    if (!p.success) return { aiConfigured: aiStatus().configured, client: { name: null, website: null }, set: null, error: "Check the company profile: each field is required and the bands must be one of the listed options." };
+    profile = { ...p.data, edited: true };
+  }
+  return generateTargets(auth, roleId, profile);
+}
+
+async function generateTargets(auth: AuthContext, roleId: string, corrected: ClientProfile | null): Promise<TargetCompaniesView> {
+  const { input, client } = await targetInput(auth, roleId);
+  const ai = aiStatus();
+  if (!ai.configured) return { aiConfigured: false, client, set: null };
+  try {
+    let profile = corrected;
+    let profileWeb = false;
+    if (!profile) {
+      const step1 = await generateClientProfileWithAi(input);
+      const seen = new Set(step1.urls);
+      profile = {
+        industry: step1.output.industry.slice(0, 120),
+        domain: step1.output.domain.slice(0, 120),
+        product: step1.output.product.slice(0, 240),
+        headcount_band: step1.output.headcount_band,
+        revenue_band: step1.output.revenue_band,
+        source_urls: keepSeenUrls(step1.output.source_urls, seen),
+      };
+      profileWeb = step1.webSearch;
+    }
+    const step2 = await generateTargetCompaniesWithAi(input, profile);
+    const seen = new Set(step2.urls);
+    // Links are kept only if the provider's web search actually returned them.
+    const raw = step2.output.companies.map((c) => ({ ...c, source_urls: step2.webSearch ? keepSeenUrls(c.source_urls, seen) : [] }));
+    const { companies, dropped } = cleanTargetCompanies(raw, { clientName: client.name, clientWebsite: client.website, exclusions: input.exclusions, limit: 30 });
+    const data = {
+      clientProfileJson: JSON.stringify(profile),
+      companiesJson: JSON.stringify(companies),
+      droppedJson: JSON.stringify(dropped),
+      model: `${ai.provider}:${ai.model}`,
+      webSearch: step2.webSearch || profileWeb,
+      generatedByName: auth.userName,
+      generatedAt: new Date(),
+    };
+    const row = await db.targetCompanySet.upsert({ where: { roleId }, create: { orgId: auth.orgId, roleId, ...data }, update: data });
+    await audit(auth, "discover.target_companies_generated", { subjectType: "role", subjectId: roleId, roleId, meta: { companies: companies.length, dropped: dropped.length, webSearch: data.webSearch, profileEdited: !!corrected } });
+    return { aiConfigured: true, client, set: setView(row) };
+  } catch (err) {
+    const message = err instanceof AiRequestError || err instanceof AiUnavailableError ? err.message : "The AI couldn't suggest companies this time.";
+    if (!(err instanceof AiRequestError)) logError("discover.target_companies_failed", err, { roleId });
+    const stored = await db.targetCompanySet.findUnique({ where: { roleId } });
+    return { aiConfigured: true, client, set: stored ? setView(stored) : null, error: `${message} Try again, or search without target companies.` };
+  }
 }

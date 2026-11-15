@@ -447,7 +447,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
             <RoleReviewForm
               roleId={role.id}
               facts={pendingFacts}
-              current={{ title: role.title, department: role.department, location: role.location, employmentType: role.employmentType }}
+              current={{ title: role.title, department: role.department, location: role.location, employmentType: role.employmentType, clientCompanyName: role.clientCompanyName, clientCompanyWebsite: role.clientCompanyWebsite }}
             />
           )}
           {needsReview && proposed.length > 0 && (

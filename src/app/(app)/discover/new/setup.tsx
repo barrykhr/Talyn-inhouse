@@ -48,6 +48,18 @@ export function NewDiscovery({ roles }: { roles: { id: string; title: string }[]
         <Card className="p-5">
           <ActionForm action={action} pending={pending} className="space-y-4">
             <BriefFieldsEditor initial={EMPTY_BRIEF} showProvenance={false} />
+            <fieldset className="grid gap-3 rounded-lg border border-line p-3 sm:grid-cols-2">
+              <legend className="px-1 text-[13px] font-medium">Company this role is for (optional)</legend>
+              <label className="text-[12.5px] text-muted">
+                Company name
+                <input name="clientCompanyName" maxLength={160} placeholder="e.g. Acme Payments" className="mt-0.5 block h-9 w-full rounded-lg border border-line-strong bg-surface px-2.5 text-[13.5px] text-ink" />
+              </label>
+              <label className="text-[12.5px] text-muted">
+                Website
+                <input name="clientCompanyWebsite" maxLength={300} placeholder="e.g. acme.com" className="mt-0.5 block h-9 w-full rounded-lg border border-line-strong bg-surface px-2.5 text-[13.5px] text-ink" />
+              </label>
+              <p className="text-[12px] text-muted sm:col-span-2">Used to suggest similar companies to source from when you search.</p>
+            </fieldset>
             <FormMessage state={state} />
             <div className="flex items-center gap-2">
               <span className="text-[12.5px] text-muted">Creates a draft role with these fields. You choose sources on the next screen.</span>

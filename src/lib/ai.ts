@@ -6,6 +6,7 @@ import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { recordAiFailure, recordAiOk, type AiErrorKind } from "./ai-health";
 import { logError } from "./log";
+import { HEADCOUNT_BANDS, MATCH_REASONS, REVENUE_BANDS, clientProfilePrompt, targetCompaniesPrompt, type ClientProfile, type TargetCompanyInput } from "./discovery/target-companies";
 
 // Two interchangeable providers. AI_PROVIDER picks one explicitly; otherwise whichever
 // API key is set is used (Anthropic first if both are present).
@@ -129,6 +130,109 @@ async function runOpenAi<T extends z.ZodType>(model: string, opts: RunOpts<T>): 
   return response.output_parsed as z.infer<T>;
 }
 
+// ---------- Structured output with the provider's web search (when available) ----------
+
+type WebResult<T> = { output: T; urls: string[]; webSearch: boolean };
+
+function collectOpenAiUrls(response: unknown): string[] {
+  const urls = new Set<string>();
+  for (const item of (response as { output?: { type: string; content?: { type: string; annotations?: { type: string; url?: string }[] }[] }[] }).output ?? [])
+    if (item.type === "message") for (const c of item.content ?? []) for (const a of c.annotations ?? []) if (a.type === "url_citation" && a.url) urls.add(a.url);
+  return [...urls];
+}
+
+function collectAnthropicUrls(response: unknown): string[] {
+  const urls = new Set<string>();
+  for (const block of (response as { content?: { type: string; content?: unknown; citations?: { url?: string }[] | null }[] }).content ?? []) {
+    if (block.type === "web_search_tool_result" && Array.isArray(block.content)) for (const r of block.content as { type: string; url?: string }[]) if (r.type === "web_search_result" && r.url) urls.add(r.url);
+    for (const c of block.citations ?? []) if (c.url) urls.add(c.url);
+  }
+  return [...urls];
+}
+
+/**
+ * Like runStructured, but lets the model use the provider's web search and returns the pages it
+ * actually retrieved. If web search isn't available for this provider, model or account, the same
+ * request runs on the model alone and webSearch is false.
+ */
+async function runStructuredWithWeb<T extends z.ZodType>(opts: RunOpts<T>): Promise<WebResult<z.infer<T>>> {
+  const { configured, provider, model } = aiStatus();
+  if (!configured || !provider) throw new AiUnavailableError();
+  try {
+    if (provider === "openai") {
+      openaiClient ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 2 });
+      const response = await openaiClient.responses.parse({
+        model,
+        instructions: opts.system,
+        input: opts.user,
+        tools: [{ type: "web_search" }],
+        max_output_tokens: opts.maxTokens ?? 16000,
+        text: { format: zodTextFormat(opts.schema, opts.name) },
+        store: false,
+      });
+      if (response.status === "incomplete" || !response.output_parsed) throw new Error("incomplete web-search response");
+      await recordAiOk(provider);
+      return { output: response.output_parsed as z.infer<T>, urls: collectOpenAiUrls(response), webSearch: true };
+    }
+    anthropicClient ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 2 });
+    const response = await anthropicClient.beta.messages.parse({
+      model,
+      max_tokens: opts.maxTokens ?? 16000,
+      output_config: { effort: "medium", format: betaZodOutputFormat(opts.schema) },
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
+      system: opts.system,
+      messages: [{ role: "user", content: opts.user }],
+    });
+    if (response.stop_reason !== "end_turn" || !response.parsed_output) throw new Error(`web-search response ended with ${response.stop_reason}`);
+    await recordAiOk(provider);
+    return { output: response.parsed_output as z.infer<T>, urls: collectAnthropicUrls(response), webSearch: true };
+  } catch (err) {
+    // Fall back to the model alone; runStructured classifies and records any real failure.
+    logError("ai.web_search_unavailable", err, { provider, model });
+    return { output: await runStructured(opts), urls: [], webSearch: false };
+  }
+}
+
+// ---------- Discover: target companies (client profile, then companies to source from) ----------
+
+const ClientProfileOutput = z.object({
+  industry: z.string(),
+  domain: z.string(),
+  product: z.string(),
+  headcount_band: z.enum(HEADCOUNT_BANDS),
+  revenue_band: z.enum(REVENUE_BANDS),
+  source_urls: z.array(z.string()).describe("Web pages you used, only from web search results; empty if none"),
+});
+
+export async function generateClientProfileWithAi(input: TargetCompanyInput) {
+  const { system, user } = clientProfilePrompt(input);
+  return runStructuredWithWeb({ system, user, schema: ClientProfileOutput, name: "client_company_profile" });
+}
+
+// Loose on purpose: each company is validated strictly afterwards, so one bad entry is dropped
+// instead of failing the whole list.
+const TargetCompaniesOutput = z.object({
+  companies: z.array(
+    z.object({
+      name: z.string(),
+      website: z.string(),
+      industry: z.string(),
+      domain: z.string(),
+      product: z.string(),
+      headcount_band: z.string().describe(`One of: ${HEADCOUNT_BANDS.join(" | ")}`),
+      revenue_band: z.string().describe(`One of: ${REVENUE_BANDS.join(" | ")}`),
+      match_reasons: z.array(z.string()).describe(`One or more of: ${MATCH_REASONS.join(" | ")}`),
+      reason: z.string(),
+      source_urls: z.array(z.string()),
+    }),
+  ),
+});
+
+export async function generateTargetCompaniesWithAi(input: TargetCompanyInput, profile: ClientProfile) {
+  const { system, user } = targetCompaniesPrompt(input, profile);
+  return runStructuredWithWeb({ system, user, schema: TargetCompaniesOutput, name: "target_companies" });
+}
+
 // ---------- Criteria proposal ----------
 
 const ProposedCriteria = z.object({
@@ -172,6 +276,8 @@ const JdExtraction = z.object({
   employment_type: z
     .object({ value: z.enum(["full_time", "part_time", "contract", "temporary", "internship"]), source_quote: z.string() })
     .nullable(),
+  company_name: QuotedOrNull.describe("The hiring company the JD names (e.g. in 'About us'); null if it doesn't name one"),
+  company_website: QuotedOrNull.describe("The company's website if the JD states one; null otherwise"),
   responsibilities: z.array(Quoted),
   qualifications: z.array(Quoted),
   experience_requirements: z.array(Quoted),
