@@ -3,7 +3,7 @@ import { checkEnv } from "../integrations/env";
 import type { ExternalRecord, RawProfile, SourcingConnector } from "./connectors";
 import type { SearchFilters } from "./filters";
 import { LANGUAGE } from "./github";
-import { cityOf, defaultSourcingLocation, getJson, inBatches, linkedinFrom } from "./http";
+import { cityOf, defaultSourcingLocation, getJson, inBatches, linkedinFrom, locationMatches, locationTerms } from "./http";
 
 /**
  * GitLab sourcing connector (official REST API v4 on gitlab.com, token auth — no scraping).
@@ -40,7 +40,7 @@ export function planGitlabSearch(filters: SearchFilters) {
   const skills = [...filters.skills_required, ...filters.skills_preferred, ...filters.keywords];
   const language = skills.map((s) => LANGUAGE[s.trim().toLowerCase()]).find((x): x is string => !!x) ?? null;
   const topics = Array.from(new Set([...filters.skills_required, ...filters.keywords].map((s) => s.trim()).filter((s) => s.length > 1 && !LANGUAGE[s.toLowerCase()]))).slice(0, MAX_TOPICS);
-  const location = filters.locations[0] ? cityOf(filters.locations[0]) : defaultSourcingLocation();
+  const location = filters.locations[0] ? cityOf(filters.locations[0]) || defaultSourcingLocation() : defaultSourcingLocation();
   return { language, topics, location };
 }
 
@@ -92,7 +92,7 @@ export function makeGitlabConnector({ profileFromRecord, SourceError }: Deps): S
     description: "Public GitLab.com projects and their owners' public profiles, read through GitLab's official API. Evidence is quoted from project names, descriptions and topics.",
     configured: () => checkEnv(GITLAB_ENV).ready,
     setupHint: "Not connected. Create a GitLab personal access token with the read_api scope and set GITLAB_TOKEN.",
-    syntaxNote: "The first two required skills that aren't programming languages are searched in public project names and descriptions (active in the last year); a programming language narrows the projects; owners are kept only when their public profile location shows the role's location. Boolean operators are not interpreted.",
+    syntaxNote: "The first two required skills that aren't programming languages are searched in public project names and descriptions (active in the last year); a programming language narrows the projects; owners are kept only when their public profile location shows the role's location (India covers the country and its major cities). Boolean operators are not interpreted.",
     renderQuery(filters) {
       const plan = planGitlabSearch(filters);
       return plan.topics.length ? `projects: ${plan.topics.join(" | ")}${plan.language ? ` · language ${plan.language}` : ""} · owned by a person${plan.location ? ` · location contains "${plan.location}"` : ""}` : "No searchable topics";
@@ -114,7 +114,7 @@ export function makeGitlabConnector({ profileFromRecord, SourceError }: Deps): S
         }
       }
       const owners = [...byOwner.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, MAX_PEOPLE);
-      const loc = plan.location?.toLowerCase() ?? null;
+      const terms = locationTerms(plan.location);
 
       const profiles = await inBatches(owners, 4, async ([username, matched]): Promise<RawProfile | null> => {
         const found = (await gl<{ id: number }[]>(`/users?username=${encodeURIComponent(username)}`)) ?? [];
@@ -122,7 +122,7 @@ export function makeGitlabConnector({ profileFromRecord, SourceError }: Deps): S
         const user = await gl<GlUser>(`/users/${found[0].id}`, true);
         if (!user || user.bot || (user.state && user.state !== "active")) return null;
         // An empty location is "not established": skipped when the role (or the default) has one.
-        if (loc && !(user.location ?? "").toLowerCase().includes(loc)) return null;
+        if (!locationMatches(user.location, terms)) return null;
         const recent = (await gl<GlProject[]>(`/users/${found[0].id}/projects?visibility=public&order_by=last_activity_at&sort=desc&per_page=20`, true)) ?? [];
         return profileFromRecord(orgId, gitlabRecord(user, matched, Array.isArray(recent) ? recent : []), filters, "GitLab", { relevanceGate: true, years });
       });

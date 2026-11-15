@@ -2,14 +2,15 @@ import "server-only";
 import { checkEnv } from "../integrations/env";
 import type { ExternalRecord, RawProfile, SourcingConnector } from "./connectors";
 import type { SearchFilters } from "./filters";
-import { cityOf, defaultSourcingLocation, getJson, linkedinFrom } from "./http";
+import { cityOf, defaultSourcingLocation, getJson, linkedinFrom, locationMatches, locationTerms } from "./http";
 
 /**
  * Stack Overflow sourcing connector (official Stack Exchange API 2.3).
- * Finds the top answerers for each required skill's tag (all time and last month), then keeps
- * the people whose public profile location matches the role. The API has no location search, so
- * most top answerers are filtered out: expect a short, high-signal list. No emails exist in the
- * API, so none are stored.
+ * Finds the top answerers for each required skill's tag (all time and last month). The API returns
+ * only the top 20 per tag and period worldwide and has no location search, so filtering by the
+ * role's location would almost always leave no one. People whose public location matches are
+ * listed first; the others are kept, with their own location shown, so the recruiter can judge.
+ * No emails exist in the API, so none are stored.
  */
 
 export const STACKOVERFLOW_ENV = [{ name: "STACKEXCHANGE_KEY", purpose: "Stack Apps key (free at stackapps.com/apps/oauth/register) — 10,000 requests a day", secret: true }];
@@ -95,14 +96,14 @@ export function makeStackOverflowConnector({ profileFromRecord, SourceError }: D
     key: "stackoverflow",
     label: "Stack Overflow",
     kind: "external",
-    description: "Top answerers for the role's required skills on Stack Overflow, from the official Stack Exchange API. A short list of people with demonstrated depth.",
+    description: "Top answerers worldwide for the role's required skills on Stack Overflow, from the official Stack Exchange API. People in the role's location come first; others are shown with their own location.",
     configured: () => checkEnv(STACKOVERFLOW_ENV).ready,
     setupHint: "Not connected. Register a free key at stackapps.com/apps/oauth/register and set STACKEXCHANGE_KEY.",
-    syntaxNote: "Each of the first three required skills is mapped to a Stack Overflow tag and its top answerers (all time and last month) are read; people are kept only when their public profile location shows the role's location. Titles and Boolean operators are not interpreted.",
+    syntaxNote: "Each of the first three required skills is mapped to a Stack Overflow tag and its top 20 answerers worldwide (all time and last month) are read. People whose public profile location shows the role's location are listed first; the rest follow with their own location. Titles and Boolean operators are not interpreted.",
     renderQuery(filters) {
       const tags = stackTags(filters);
       const loc = filters.locations[0] ? cityOf(filters.locations[0]) : defaultSourcingLocation();
-      return tags.length ? `top answerers in ${tags.map((t) => `[${t.tag}]`).join(", ")}${loc ? ` · location contains "${loc}"` : ""}` : "No searchable skills";
+      return tags.length ? `top answerers in ${tags.map((t) => `[${t.tag}]`).join(", ")}${loc ? ` · "${loc}" first` : ""}` : "No searchable skills";
     },
     async search({ orgId, filters, years }) {
       const tags = stackTags(filters);
@@ -122,10 +123,11 @@ export function makeStackOverflowConnector({ profileFromRecord, SourceError }: D
       const users: SeUser[] = [];
       for (let i = 0; i < ids.length; i += 100) users.push(...(await se<SeUser>(`/users/${ids.slice(i, i + 100).join(";")}?pagesize=100`)));
 
-      const loc = (filters.locations[0] ? cityOf(filters.locations[0]) : defaultSourcingLocation())?.toLowerCase() ?? null;
+      const terms = locationTerms((filters.locations[0] ? cityOf(filters.locations[0]) : null) || defaultSourcingLocation());
+      // Location matches first, then by how many of the role's tags they lead, then reputation.
+      const local = (u: SeUser) => (terms && locationMatches(u.location, terms) ? 1 : 0);
       const kept = users
-        .filter((u) => !loc || (u.location ?? "").toLowerCase().includes(loc))
-        .sort((a, b) => (standings.get(b.user_id)?.length ?? 0) - (standings.get(a.user_id)?.length ?? 0) || (b.reputation ?? 0) - (a.reputation ?? 0))
+        .sort((a, b) => local(b) - local(a) || (standings.get(b.user_id)?.length ?? 0) - (standings.get(a.user_id)?.length ?? 0) || (b.reputation ?? 0) - (a.reputation ?? 0))
         .slice(0, MAX_PEOPLE);
 
       const profiles: RawProfile[] = [];

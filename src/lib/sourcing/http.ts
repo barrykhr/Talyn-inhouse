@@ -31,7 +31,15 @@ export async function inBatches<T, R>(items: T[], size: number, fn: (item: T) =>
 /** Location used when a role has none (e.g. "India"). Shared by the public-profile sources. */
 export const defaultSourcingLocation = () => process.env.SOURCING_DEFAULT_LOCATION?.trim() || process.env.GITHUB_DEFAULT_LOCATION?.trim() || null;
 
-export const cityOf = (loc: string) => loc.split(",")[0].trim();
+/**
+ * The place name from a role location, for matching against public profiles: drops notes such as
+ * "(hybrid)" or "remote" and keeps the first place ("Bengaluru (hybrid)" → "Bengaluru").
+ */
+export function cityOf(loc: string) {
+  const parts = loc.replace(/\([^)]*\)/g, " ").split(/[,/|;]| - /);
+  const clean = parts.map((p) => p.replace(/\b(hybrid|remote|on-?site|in[- ]office|wfh)\b/gi, " ").replace(/\s+/g, " ").trim());
+  return clean.find((p) => p.length > 1) ?? "";
+}
 
 export function linkedinFrom(url: string | null | undefined): string | null {
   const m = url?.match(/(?:https?:\/\/)?(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[A-Za-z0-9\-_%]+/i);
@@ -41,4 +49,56 @@ export function linkedinFrom(url: string | null | undefined): string | null {
 
 /** Programming-language names: useful as code-host filters, but noise in paper and model searches. */
 const LANGUAGE_NAMES = new Set(["python", "java", "javascript", "typescript", "go", "golang", "scala", "rust", "kotlin", "swift", "ruby", "php", "dart", "r", "c", "c++", "c#", "sql", "shell", "bash"]);
+/** Alternate spellings of the same Indian city, as people write them on public profiles. */
+const CITY_ALIASES: string[][] = [
+  ["bengaluru", "bangalore"],
+  ["mumbai", "bombay", "navi mumbai", "thane"],
+  ["delhi", "new delhi", "ncr", "gurgaon", "gurugram", "noida"],
+  ["chennai", "madras"],
+  ["kolkata", "calcutta"],
+  ["kochi", "cochin"],
+  ["thiruvananthapuram", "trivandrum"],
+  ["mysuru", "mysore"],
+  ["visakhapatnam", "vizag"],
+  ["hyderabad", "secunderabad"],
+  ["pune"],
+  ["ahmedabad"],
+  ["jaipur"],
+  ["chandigarh", "mohali"],
+  ["indore"],
+  ["coimbatore"],
+  ["nagpur"],
+  ["lucknow"],
+  ["bhubaneswar"],
+];
+const INDIA_NAMES = ["india", "bharat"];
+
+/**
+ * What a public profile's location may say for the role's location to count as a match, lower-case.
+ * "India" matches the country or any listed city; an Indian city matches its alternate spellings.
+ * Anything else matches itself.
+ */
+export function locationTerms(loc: string | null): string[] | null {
+  const l = loc?.trim().toLowerCase();
+  if (!l) return null;
+  if (INDIA_NAMES.includes(l)) return [...INDIA_NAMES, ...CITY_ALIASES.flat()];
+  return CITY_ALIASES.find((g) => g.includes(l)) ?? [l];
+}
+
+/** True when the profile location contains one of the terms as a whole word. An empty location never matches. */
+export function locationMatches(profileLocation: string | null | undefined, terms: string[] | null): boolean {
+  if (!terms) return true;
+  const pl = ` ${(profileLocation ?? "").toLowerCase().replace(/[^a-z]+/g, " ")} `;
+  return terms.some((t) => pl.includes(` ${t} `));
+}
+
+/** Location words to send to a source that searches by location (GitHub), most common spellings first. */
+export function locationSearchTerms(loc: string | null): string[] {
+  const l = loc?.trim().toLowerCase();
+  if (!l) return [];
+  if (INDIA_NAMES.includes(l)) return ["India", "Bangalore", "Bengaluru", "Hyderabad", "Pune", "Mumbai", "Delhi", "Chennai"];
+  const g = CITY_ALIASES.find((x) => x.includes(l));
+  return g ? g.slice(0, 2).map((x) => x.replace(/\b\w/g, (c) => c.toUpperCase())) : [loc!.trim()];
+}
+
 export const isLanguageName = (skill: string) => LANGUAGE_NAMES.has(skill.trim().toLowerCase());
