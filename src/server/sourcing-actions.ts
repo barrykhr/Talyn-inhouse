@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { logError } from "@/lib/log";
 import Papa from "papaparse";
 import { ExternalRecord, profileFromRecord, sourceLabel, type SearchOutcome } from "@/lib/sourcing/connectors";
+import { CONTACT_PROVIDERS, lookupContact } from "@/lib/sourcing/contacts";
 import { EMPTY_FILTERS, parseFilters, parseList, toBoolean, type SearchFilters } from "@/lib/sourcing/filters";
 import { str, type ActionState } from "./form";
 import { attach } from "./pipeline";
@@ -260,6 +261,7 @@ export async function saveProfileToRole(profileId: string): Promise<ActionState>
         currentCompany: p.currentCompany,
         location: p.location,
         email: fields.email?.value ?? null,
+        phone: fields.phone?.value ?? null,
         linkedinUrl: fields.linkedin_url?.value ?? null,
         source: p.source === "sample" ? "sample" : `sourced:${p.source}`,
         isSample: p.source === "sample",
@@ -314,4 +316,59 @@ export async function reviewProfile(profileId: string, input: { feedback?: "usef
   await audit(auth, "sourcing.feedback", { subjectType: "sourcing", subjectId: profileId, roleId: p.roleId, meta: { feedback: input.feedback ?? null, dismissed: !!input.dismiss, reason: input.reason ?? null } });
   revalidatePath(`/roles/${p.roleId}/discover`);
   return { ok: true };
+}
+
+/**
+ * Looks up contact details for one Discover result with a licensed provider it was found in, only
+ * when a recruiter asks. Uses that provider's credits. Values are stored as the provider returned
+ * them, with the source and date; nothing is guessed, and nothing is sent.
+ */
+export async function revealContact(profileId: string): Promise<ActionState> {
+  const auth = await requireAuth();
+  const p = await ownProfile(auth.orgId, profileId);
+  if (!p) return { error: "Profile not found." };
+  if (p.source === "sample") return { error: "This is a fictional sample person." };
+  const fields = JSON.parse(p.fieldsJson) as Record<string, { value: string; source: string; asOf: string }>;
+  if (fields.email) return { ok: true, message: "Contact details are already shown." };
+  if (p.savedApplicationId) {
+    const app = await db.application.findFirst({ where: { id: p.savedApplicationId, orgId: auth.orgId }, select: { candidate: { select: { contactOptOut: true } } } });
+    if (app?.candidate.contactOptOut) return { error: "This person asked not to be contacted." };
+  }
+  const found = (JSON.parse(p.sourcesJson || "[]") as { key: string; recordId: string }[]).length ? (JSON.parse(p.sourcesJson) as { key: string; recordId: string }[]) : [{ key: p.source, recordId: p.sourceRecordId }];
+  const options = found.filter((s) => CONTACT_PROVIDERS[s.key]?.configured());
+  if (!options.length) return { error: "None of the sources this person came from offers contact lookups. Coresignal, People Data Labs and Apollo do, once connected." };
+  const tried: string[] = [];
+  for (const s of options) {
+    const label = CONTACT_PROVIDERS[s.key].label;
+    try {
+      const r = await lookupContact(s.key, s.recordId.replace(new RegExp(`^${s.key}:`), ""));
+      tried.push(`${label}: ${r.found ? "found" : (r.note ?? "nothing found")}`);
+      await audit(auth, "discover.contact_lookup", { subjectType: "sourcing", subjectId: profileId, roleId: p.roleId, meta: { provider: s.key, found: r.found, email: !!r.email, phone: !!r.phone } });
+      if (!r.found && !r.fullName && !r.linkedinUrl) continue;
+      const asOf = new Date().toISOString();
+      const src = `${label} contact lookup`;
+      const next = { ...fields };
+      if (r.email) next.email = { value: r.email, source: r.emailNote ? `${src} (${r.emailNote})` : src, asOf };
+      if (r.phone) next.phone = { value: r.phone, source: src, asOf };
+      if (r.linkedinUrl && !next.linkedin_url) next.linkedin_url = { value: r.linkedinUrl, source: src, asOf };
+      if (r.location && !next.location) next.location = { value: r.location, source: src, asOf };
+      await db.sourcedProfile.update({
+        where: { id: profileId },
+        data: { fieldsJson: JSON.stringify(next), ...(r.fullName && /\*/.test(p.displayName) ? { displayName: r.fullName } : {}), ...(r.location && !p.location ? { location: r.location } : {}) },
+      });
+      // Already saved to the role: fill the candidate's empty contact fields, never overwrite.
+      if (p.savedApplicationId && (r.email || r.phone)) {
+        const app = await db.application.findFirst({ where: { id: p.savedApplicationId, orgId: auth.orgId }, select: { candidateId: true, candidate: { select: { email: true, phone: true } } } });
+        if (app) await db.candidate.update({ where: { id: app.candidateId }, data: { ...(r.email && !app.candidate.email ? { email: r.email } : {}), ...(r.phone && !app.candidate.phone ? { phone: r.phone } : {}) } });
+      }
+      if (!r.found) continue;
+      revalidatePath(`/roles/${p.roleId}/discover`);
+      return { ok: true, message: `Contact details from ${label}. Nothing was sent.` };
+    } catch (err) {
+      tried.push(`${label}: ${err instanceof Error ? err.message : "failed"}`);
+      logError("discover.contact_lookup_failed", err, { provider: s.key });
+    }
+  }
+  revalidatePath(`/roles/${p.roleId}/discover`);
+  return { error: `No contact details found. ${tried.join(" · ")}` };
 }

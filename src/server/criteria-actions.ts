@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { AiRequestError, AiUnavailableError, proposeCriteriaWithAi } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
@@ -14,6 +15,7 @@ import { str, type ActionState } from "./form";
 import { bumpCriteriaVersion, storeProposedCriteria } from "./facts";
 import { newScoringVersion } from "./scoring-store";
 import { ownCriterion, ownRole } from "./scope";
+import { autoSearchRole } from "./auto-search";
 
 const CriterionSchema = z
   .object({
@@ -117,6 +119,8 @@ export async function setCriterionStatus(id: string, status: "approved" | "rejec
     },
   });
   if ((c.status === "approved") !== (s === "approved")) await bumpCriteriaVersion(c.roleId, auth, s === "approved" ? "approved" : "unapproved");
+  // First approved skills: search connected sources in the background (once; the daily run adds more).
+  if (s === "approved" && c.kind === "skill") after(() => autoSearchRole(auth.orgId, c.roleId, { onlyIfNoRun: true }));
   revalidatePath(`/roles/${c.roleId}`);
 }
 
@@ -131,6 +135,7 @@ export async function approveAllProposed(roleId: string) {
     data: { status: "approved", approvedById: auth.userId, approvedAt: new Date() },
   });
   if (count) await bumpCriteriaVersion(roleId, auth, "approved_all");
+  if (count) after(() => autoSearchRole(auth.orgId, roleId, { onlyIfNoRun: true }));
   revalidatePath(`/roles/${roleId}`);
   return held.length ? { error: `${count} approved. ${held.length} held back for review: ${held.map((h) => `“${h.name}”`).join(", ")} may refer to a protected characteristic or an undocumented proxy.` } : { ok: true };
 }
