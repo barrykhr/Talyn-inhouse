@@ -139,16 +139,23 @@ export default async function DiscoverPage({
       fields: JSON.parse(p.fieldsJson),
       signals: JSON.parse(p.signalsJson),
       sources: JSON.parse(p.sourcesJson),
+      relevance: JSON.parse(p.relevanceJson || "{}"),
+      aiFit: p.aiFitJson ? JSON.parse(p.aiFitJson) : null,
       isDemo: p.source === "sample",
       savedCandidateId: app?.candidateId ?? null,
       application: app ? { interest: app.interest, permission: permissionText(app) } : null,
     };
   };
-  // Ordering by matched terms is a review aid, not an assessment. Limited evidence is listed separately, unranked.
-  const bySignals = (a: (typeof profiles)[number], b: (typeof profiles)[number]) => b.matchedSignals - a.matchedSignals || a.displayName.localeCompare(b.displayName);
+  // Ordering is a review aid, not an assessment: AI rank (when asked for), then relevance score,
+  // then matched terms. People below the recruiter's required-skills bar go to Limited evidence.
+  const belowBar = (p: (typeof profiles)[number]) => Boolean((JSON.parse(p.relevanceJson || "{}") as { belowBar?: boolean }).belowBar);
+  const bySignals = (a: (typeof profiles)[number], b: (typeof profiles)[number]) =>
+    (a.aiRank ?? 1e9) - (b.aiRank ?? 1e9) || b.relevanceScore - a.relevanceScore || b.matchedSignals - a.matchedSignals || a.displayName.localeCompare(b.displayName);
+  const runPlan = currentRun ? (JSON.parse(strategies.find((s) => s.id === currentRun.strategyId)?.planJson || "{}") as { aiRank?: { status: string; ranked: number; note?: string } }) : {};
+  const aiRankNote = runPlan.aiRank && runPlan.aiRank.status !== "off" ? runPlan.aiRank : null;
   const groups: Record<string, typeof profiles> = {
-    review: profiles.filter((p) => p.status === "new" && p.evidenceStatus === "ok").sort(bySignals),
-    limited: profiles.filter((p) => p.status === "new" && p.evidenceStatus !== "ok").sort(bySignals),
+    review: profiles.filter((p) => p.status === "new" && p.evidenceStatus === "ok" && !belowBar(p)).sort(bySignals),
+    limited: profiles.filter((p) => p.status === "new" && (p.evidenceStatus !== "ok" || belowBar(p))).sort(bySignals),
     saved: profiles.filter((p) => p.status === "saved"),
     dismissed: profiles.filter((p) => p.status === "dismissed"),
     excluded: profiles.filter((p) => p.status === "excluded"),
@@ -363,6 +370,9 @@ export default async function DiscoverPage({
             booleanEdited={brief?.booleanEdited ?? false}
             booleanKey={brief?.booleanFieldsKey ?? null}
             sources={sources}
+            minRequiredSkills={brief?.minRequiredSkills ?? null}
+            aiRankTop={brief?.aiRankTop ?? false}
+            aiConfigured={aiStatus().configured}
             confirmed={!!brief?.confirmedAt}
           />
         </Card>
@@ -428,9 +438,10 @@ export default async function DiscoverPage({
             </nav>
             <p className="mb-2 text-[12px] text-faint">
               {view === "limited"
-                ? "Little profile text, no date, or an old profile: listed unranked rather than forcing an order."
-                : "Ordered by how many search terms were found with a quote — a review aid, not a score. People found in several sources are merged into one card."}
+                ? "Below the required-skills bar, little profile text, no date, or an old profile. Still listed, ordered by relevance score."
+                : `${aiRankNote?.ranked ? `The top ${aiRankNote.ranked} are ordered by AI against the role's approved criteria, then everyone else by` : "Ordered by"} relevance score: required skills with evidence, title, preferred skills, and the depth, recency and use of public work. A review aid, not a decision. People found in several sources are merged into one card.`}
             </p>
+            {aiRankNote?.note && <p className="mb-2 text-[12px] text-warn">{aiRankNote.note}</p>}
             {groups[view].length ? (
               <Card className={fresh ? "motion-arrive divide-y divide-line overflow-hidden" : "divide-y divide-line overflow-hidden"}>
                 {groups[view].map((p) => (

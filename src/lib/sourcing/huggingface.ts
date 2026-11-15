@@ -53,6 +53,7 @@ export function hfRecord(login: string, user: HfUser, models: HfModel[]): Extern
     summary: [counts ? `Hugging Face: ${counts}` : null, "Public models matching this search (most downloaded first):", ...lines].filter(Boolean).join("\n").slice(0, 20000),
     experience: null,
     updatedAt: dates[dates.length - 1] ?? null,
+    work: { units: lines, unitLabel: "models", lastActiveAt: dates[dates.length - 1] ?? null, popularity: own.reduce((n, m) => n + (m.downloads ?? 0), 0), popularityLabel: "downloads" },
   };
 }
 

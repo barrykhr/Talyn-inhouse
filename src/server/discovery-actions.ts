@@ -10,7 +10,10 @@ import { briefColumns, briefFields, briefProvenance } from "@/lib/discovery/stor
 import { logError } from "@/lib/log";
 import { SourceError, connector, type RawProfile } from "@/lib/sourcing/connectors";
 import { EMPTY_FILTERS, type SearchFilters } from "@/lib/sourcing/filters";
-import { mergeAcrossSources } from "@/lib/sourcing/merge";
+import { mergeAcrossSources, type MergedProfile } from "@/lib/sourcing/merge";
+import { computeRelevance, type Relevance } from "@/lib/sourcing/relevance";
+import { AiRequestError, AiUnavailableError, aiStatus, rankProfilesWithAi, type ProfileRank } from "@/lib/ai";
+import { redactContact } from "@/lib/extraction";
 import { goTo, str, type ActionState } from "./form";
 import { ownRole } from "./scope";
 
@@ -161,8 +164,12 @@ async function saveFields(auth: AuthContext, roleId: string, fd: FormData) {
     const bad = checkBoolean(booleanQuery);
     if (bad) return { error: `Boolean query: ${bad}` };
   }
+  const minRaw = str(fd, "minRequiredSkills", 4);
+  const minRequiredSkills = minRaw === "" ? null : Math.max(0, Math.min(50, Math.round(Number(minRaw)) || 0));
   const data = {
     ...briefColumns(f),
+    minRequiredSkills,
+    aiRankTop: fd.get("aiRankTop") === "1",
     provenanceJson: JSON.stringify(prov),
     booleanQuery,
     booleanEdited: edited,
@@ -189,6 +196,66 @@ export async function saveBriefAndSearch(roleId: string, _prev: ActionState, fd:
     return { ok: true, message: "Fields saved. Choose sources and search when you're ready." };
   }
   return runSearch(auth, roleId, saved.brief, saved.fields, fd);
+}
+
+const AI_RANK_TOP = 50;
+const AI_BATCH = 10;
+const FIT_ORDER: Record<string, number> = { strong: 0, partial: 1, unclear: 2, weak: 3 };
+type AiRankOutcome = { status: "off" | "ok" | "partial" | "error" | "skipped"; ranked: number; note?: string };
+
+/** Quotes are kept only when they appear in the profile's own text (spacing and case ignored). */
+const norm = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+
+/**
+ * Optional: the AI orders the top results by how well their public work shows the role's approved
+ * criteria. It only orders; everyone stays listed and nothing is decided or sent.
+ */
+async function rankWithAi(auth: AuthContext, roleId: string, roleTitle: string, scored: { p: MergedProfile; rel: Relevance }[]) {
+  const ranks = new Map<string, { rank: number; fit: ProfileRank & { verified: { criterion: string; quote: string }[] } }>();
+  if (!aiStatus().configured) return { ranks, outcome: { status: "skipped", ranked: 0, note: "AI isn't configured, so results are ordered by relevance score only." } as AiRankOutcome };
+  const criteria = await db.criterion.findMany({ where: { roleId, orgId: auth.orgId, status: "approved" }, select: { id: true, name: true, description: true, importance: true, kind: true } });
+  if (!criteria.length) return { ranks, outcome: { status: "skipped", ranked: 0, note: "AI ranking needs approved role criteria. Approve them on the Criteria tab." } as AiRankOutcome };
+  const top = scored.filter((x) => !x.p.excludedBy).sort((a, b) => b.rel.score - a.rel.score).slice(0, AI_RANK_TOP);
+  const byId = new Map(top.map((x, i) => [`p${i + 1}`, x]));
+  const batches: [string, (typeof top)[number]][][] = [];
+  const entries = [...byId.entries()];
+  for (let i = 0; i < entries.length; i += AI_BATCH) batches.push(entries.slice(i, i + AI_BATCH));
+  const results: (ProfileRank & { id: string })[] = [];
+  let failed = 0;
+  let lastError = "";
+  for (let i = 0; i < batches.length; i += 3) {
+    await Promise.all(
+      batches.slice(i, i + 3).map(async (batch) => {
+        try {
+          const out = await rankProfilesWithAi({
+            roleTitle,
+            criteria: criteria.map((c) => ({ ...c, description: c.description ?? "" })),
+            profiles: batch.map(([id, x]) => ({ id, text: redactContact(x.p.text).slice(0, 3500) })),
+          });
+          for (const r of out) if (byId.has(r.profile_id) && batch.some(([id]) => id === r.profile_id)) results.push({ ...r, id: r.profile_id });
+        } catch (err) {
+          failed++;
+          lastError = err instanceof AiRequestError || err instanceof AiUnavailableError ? err.message : "The AI request failed.";
+          if (!(err instanceof AiRequestError)) logError("discover.ai_rank_failed", err, { roleId });
+        }
+      }),
+    );
+  }
+  const names = new Map(criteria.map((c) => [c.id, c.name]));
+  const ordered = results
+    .map((r) => ({ r, x: byId.get(r.id)! }))
+    .sort((a, b) => (FIT_ORDER[a.r.fit] ?? 9) - (FIT_ORDER[b.r.fit] ?? 9) || b.x.rel.score - a.x.rel.score);
+  ordered.forEach(({ r, x }, i) => {
+    const text = norm(x.p.text);
+    const verified = r.evidence.filter((e) => e.quote.trim().length > 3 && text.includes(norm(e.quote)) && names.has(e.criterion_id)).slice(0, 4).map((e) => ({ criterion: names.get(e.criterion_id)!, quote: e.quote.trim() }));
+    ranks.set(x.p.sourceKey + "|" + x.p.sourceRecordId, { rank: i + 1, fit: { ...r, verified } });
+  });
+  const outcome: AiRankOutcome = !failed
+    ? { status: "ok", ranked: ordered.length }
+    : ordered.length
+      ? { status: "partial", ranked: ordered.length, note: `Some AI requests failed (${lastError}); the rest are ordered by relevance score.` }
+      : { status: "error", ranked: 0, note: `AI ranking failed: ${lastError} Results are ordered by relevance score.` };
+  return { ranks, outcome };
 }
 
 type SourceStatus = { key: string; label: string; status: "ok" | "error" | "setup_required"; count: number; error?: string };
@@ -244,6 +311,12 @@ async function runSearch(auth: AuthContext, roleId: string, brief: { booleanQuer
     }
   }
   const merged = mergeAcrossSources(batches);
+  // Relevance: required skills evidenced, depth and recency of public work. Ordering only.
+  const brief2 = await db.discoveryBrief.findUnique({ where: { roleId }, select: { minRequiredSkills: true, aiRankTop: true } });
+  const scored = merged.map((p) => ({ p, rel: computeRelevance(p.signals, p.work, brief2?.minRequiredSkills ?? null) }));
+  const role = await db.role.findUnique({ where: { id: roleId }, select: { title: true } });
+  const ai = brief2?.aiRankTop && scored.length ? await rankWithAi(auth, roleId, role?.title ?? f.roleName, scored) : { ranks: new Map(), outcome: { status: "off", ranked: 0 } as AiRankOutcome };
+  await db.searchStrategy.update({ where: { id: strategy.id }, data: { planJson: JSON.stringify({ years, workArrangement: f.workArrangement, minRequiredSkills: brief2?.minRequiredSkills ?? null, aiRank: ai.outcome }) } });
   const excluded = merged.filter((p) => p.excludedBy).length;
   const anyOk = statuses.some((s) => s.status === "ok");
   const run = await db.searchRun.create({
@@ -280,6 +353,13 @@ async function runSearch(auth: AuthContext, roleId: string, brief: { booleanQuer
         fieldsJson: JSON.stringify(p.fields),
         signalsJson: JSON.stringify(p.signals),
         matchedSignals: p.signals.filter((s) => s.matched).length,
+        relevanceScore: scored.find((x) => x.p === p)!.rel.score,
+        relevanceJson: JSON.stringify(scored.find((x) => x.p === p)!.rel),
+        aiRank: ai.ranks.get(p.sourceKey + "|" + p.sourceRecordId)?.rank ?? null,
+        aiFitJson: (() => {
+          const r = ai.ranks.get(p.sourceKey + "|" + p.sourceRecordId);
+          return r ? JSON.stringify({ fit: r.fit.fit, summary: r.fit.summary, evidence: r.fit.verified, model: aiStatus().model }) : null;
+        })(),
         totalSignals: p.signals.length,
         evidenceStatus: p.evidenceStatus,
         staleReason: p.staleReason,

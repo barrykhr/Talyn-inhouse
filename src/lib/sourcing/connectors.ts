@@ -5,6 +5,7 @@ import { z } from "zod";
 import { checkEnv } from "../integrations/env";
 import type { SearchFilters } from "./filters";
 import { SAMPLE_PROFILES } from "./sample-profiles";
+import type { WorkEvidence } from "./relevance";
 import { makeGithubConnector } from "./github";
 import { makeGitlabConnector } from "./gitlab";
 import { makeHuggingFaceConnector } from "./huggingface";
@@ -35,6 +36,10 @@ export type RawProfile = {
   excludedBy: string | null;
   duplicateCandidateId: string | null;
   duplicateReason: string | null;
+  /** Public work the source returned (repositories, papers…), used for relevance ordering. */
+  work: WorkEvidence | null;
+  /** The profile text evidence was quoted from (contact details included only if the source gave them). */
+  text: string;
 };
 export type SearchOutcome = { profiles: RawProfile[]; estimatedTotal: number | null; query: string };
 
@@ -212,6 +217,8 @@ const talynRediscovery: SourcingConnector = {
         excludedBy: excl ?? null,
         duplicateCandidateId: null, // the record *is* the Talyn candidate
         duplicateReason: null,
+        work: null,
+        text: searchable.join("\n").slice(0, 6000),
       });
     }
     return { profiles, estimatedTotal: null, query: this.renderQuery(filters, "") };
@@ -235,6 +242,16 @@ export const ExternalRecord = z.object({
     .max(50)
     .nullish(),
   updatedAt: z.string().max(40).nullish(),
+  /** Optional: one line per piece of public work, for relevance ordering (see relevance.ts). */
+  work: z
+    .object({
+      units: z.array(z.string().max(400)).max(60),
+      unitLabel: z.string().max(40),
+      lastActiveAt: z.string().max(40).nullish(),
+      popularity: z.number().nonnegative().nullish(),
+      popularityLabel: z.string().max(40).nullish(),
+    })
+    .nullish(),
 });
 export type ExternalRecord = z.infer<typeof ExternalRecord>;
 
@@ -295,6 +312,8 @@ export async function profileFromRecord(
     excludedBy: excl ?? null,
     duplicateCandidateId: dup?.id ?? null,
     duplicateReason: dup?.reason ?? null,
+    work: r.work ? { units: r.work.units, unitLabel: r.work.unitLabel, lastActiveAt: r.work.lastActiveAt ?? null, popularity: r.work.popularity ?? null, popularityLabel: r.work.popularityLabel ?? null } : null,
+    text: lines.join("\n").slice(0, 6000),
   };
 }
 

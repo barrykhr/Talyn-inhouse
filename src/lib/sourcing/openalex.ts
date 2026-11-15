@@ -78,6 +78,7 @@ export function openAlexRecord(a: OaAuthor, country: string): ExternalRecord {
     summary,
     experience: null,
     updatedAt: works[0]?.publication_date ?? null,
+    work: { units: lines, unitLabel: "papers", lastActiveAt: works[0]?.publication_date ?? null, popularity: a.citations, popularityLabel: "citations" },
   };
 }
 

@@ -7,6 +7,7 @@ import { useId, useState } from "react";
 import { ActionButton } from "@/components/client";
 import { SampleBadge } from "@/components/role-workspace";
 import { useToast } from "@/components/toast";
+import type { Relevance } from "@/lib/sourcing/relevance";
 import { reviewProfile, saveProfileToRole } from "@/server/sourcing-actions";
 
 export type ProfileView = {
@@ -34,6 +35,10 @@ export type ProfileView = {
   feedback: string | null;
   savedApplicationId: string | null;
   savedCandidateId: string | null;
+  relevanceScore: number;
+  relevance: Partial<Relevance>;
+  aiRank: number | null;
+  aiFit: { fit: string; summary: string; evidence: { criterion: string; quote: string }[]; model?: string } | null;
   /** Once saved: what the candidate has said, and contact permission — kept apart from role fit. */
   application: { interest: string; permission: string } | null;
 };
@@ -49,6 +54,23 @@ const CAT: Record<string, string> = {
   experience: "Experience",
 };
 const REASONS = ["Wrong title or function", "Missing key skills", "Wrong location", "Seniority mismatch", "Already known / contacted", "Other"];
+const FIT_LABEL: Record<string, string> = { strong: "Strong match", partial: "Partial match", unclear: "Unclear — little public work", weak: "Weak match" };
+const monthYear = (d: string | null | undefined) => (d && !Number.isNaN(Date.parse(d)) ? new Date(d).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : null);
+
+/** "3 of 3 required skills · Go in 6 repositories · active Oct 2026 · 120 stars" — from the stored breakdown only. */
+function relevanceLine(r: Partial<Relevance>) {
+  const parts: string[] = [];
+  if (r.required?.total) parts.push(`${r.required.matched} of ${r.required.total} required skills`);
+  if (r.preferred?.total) parts.push(`${r.preferred.matched} of ${r.preferred.total} preferred`);
+  const deep = (r.depth ?? []).filter((d) => d.units > 0).sort((a, b) => b.units - a.units).slice(0, 3);
+  const unit = r.unitLabel;
+  if (deep.length && unit) parts.push(deep.map((d) => `${d.term} in ${d.units} ${d.units === 1 ? unit.replace(/s$/, "") : unit}`).join(", "));
+  const active = monthYear(r.lastActiveAt);
+  if (active) parts.push(`active ${active}`);
+  if (r.popularity && r.popularityLabel) parts.push(`${Math.round(r.popularity).toLocaleString("en-US")} ${r.popularityLabel}`);
+  return parts.join(" · ");
+}
+
 const fmt = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
 function NotEstablished({ what }: { what: string }) {
@@ -164,6 +186,33 @@ export function ResultCard({ p, outreachHref }: { p: ProfileView; outreachHref: 
           )}
         </div>
       </div>
+
+      <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-ink-2">
+        <span className="rounded-md bg-sunken px-1.5 py-0.5 font-medium tabular-nums text-ink" title="Relevance score: an ordering aid from the evidence below, not a decision">
+          Relevance {p.relevanceScore}
+        </span>
+        {p.relevance && relevanceLine(p.relevance) && <span>{relevanceLine(p.relevance)}</span>}
+        {p.relevance?.belowBar && p.relevance.required && <span className="text-muted">below the bar of {p.relevance.required.min}</span>}
+      </p>
+
+      {p.aiFit && (
+        <div className="mt-1.5 rounded-lg border border-line px-3 py-2 text-[12.5px]">
+          <div className="font-medium">
+            AI vs approved criteria{p.aiRank ? ` · #${p.aiRank}` : ""}: {FIT_LABEL[p.aiFit.fit] ?? p.aiFit.fit}
+          </div>
+          <p className="text-ink-2">{p.aiFit.summary}</p>
+          {p.aiFit.evidence.length > 0 && (
+            <ul className="mt-1 space-y-0.5 text-[12px] text-muted">
+              {p.aiFit.evidence.map((e, i) => (
+                <li key={i}>
+                  <span className="font-medium text-ink-2">{e.criterion}:</span> “{e.quote}”
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-1 text-[11.5px] text-faint">An ordering aid from public work only. It doesn&apos;t decide anything; quotes were checked against the profile.</p>
+        </div>
+      )}
 
       <p className="mt-1.5 text-[12.5px] text-ink-2">{whyAppeared(p)}</p>
 
