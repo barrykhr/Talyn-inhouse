@@ -72,6 +72,18 @@ const CITY_ALIASES: string[][] = [
   ["bhubaneswar"],
 ];
 const INDIA_NAMES = ["india", "bharat"];
+/** Other Indian cities and all states and union territories, as they appear on public profiles. */
+const INDIA_PLACES = [
+  "ghaziabad", "faridabad", "greater noida", "sonipat", "meerut", "gandhinagar", "surat", "vadodara", "baroda", "rajkot", "udaipur", "jodhpur",
+  "panchkula", "ludhiana", "amritsar", "jalandhar", "dehradun", "kanpur", "varanasi", "prayagraj", "allahabad", "agra", "patna", "ranchi",
+  "jamshedpur", "cuttack", "guwahati", "shillong", "raipur", "bhopal", "gwalior", "jabalpur", "nashik", "aurangabad", "kolhapur", "goa",
+  "panaji", "mangalore", "mangaluru", "manipal", "hubli", "dharwad", "belgaum", "belagavi", "madurai", "tiruchirappalli", "trichy", "salem",
+  "vellore", "pondicherry", "puducherry", "kozhikode", "calicut", "thrissur", "kollam", "vijayawada", "guntur", "tirupati", "warangal",
+  "srinagar", "jammu", "shimla", "agartala", "imphal", "gangtok", "kota", "bikaner", "siliguri", "durgapur", "kharagpur", "roorkee",
+  "andhra pradesh", "arunachal pradesh", "assam", "bihar", "chhattisgarh", "gujarat", "haryana", "himachal pradesh", "jharkhand",
+  "karnataka", "kerala", "madhya pradesh", "maharashtra", "manipur", "meghalaya", "mizoram", "nagaland", "odisha", "orissa", "punjab",
+  "rajasthan", "sikkim", "tamil nadu", "tamilnadu", "telangana", "tripura", "uttar pradesh", "uttarakhand", "west bengal", "ladakh",
+];
 
 /**
  * What a public profile's location may say for the role's location to count as a match, lower-case.
@@ -81,7 +93,7 @@ const INDIA_NAMES = ["india", "bharat"];
 export function locationTerms(loc: string | null): string[] | null {
   const l = loc?.trim().toLowerCase();
   if (!l) return null;
-  if (INDIA_NAMES.includes(l)) return [...INDIA_NAMES, ...CITY_ALIASES.flat()];
+  if (INDIA_NAMES.includes(l)) return [...INDIA_NAMES, ...CITY_ALIASES.flat(), ...INDIA_PLACES];
   return CITY_ALIASES.find((g) => g.includes(l)) ?? [l];
 }
 
@@ -92,13 +104,16 @@ export function locationMatches(profileLocation: string | null | undefined, term
   return terms.some((t) => pl.includes(` ${t} `));
 }
 
+const titleCase = (x: string) => x.replace(/\b\w/g, (c) => c.toUpperCase());
+
 /** Location words to send to a source that searches by location (GitHub), most common spellings first. */
 export function locationSearchTerms(loc: string | null): string[] {
   const l = loc?.trim().toLowerCase();
   if (!l) return [];
-  if (INDIA_NAMES.includes(l)) return ["India", "Bangalore", "Bengaluru", "Hyderabad", "Pune", "Mumbai", "Delhi", "Chennai"];
+  // GitHub combines several location: filters with OR, so one query can cover the whole country.
+  if (INDIA_NAMES.includes(l)) return ["India", ...CITY_ALIASES.flat(), ...INDIA_PLACES].map(titleCase);
   const g = CITY_ALIASES.find((x) => x.includes(l));
-  return g ? g.slice(0, 2).map((x) => x.replace(/\b\w/g, (c) => c.toUpperCase())) : [loc!.trim()];
+  return g ? g.map(titleCase) : [loc!.trim()];
 }
 
 export const isLanguageName = (skill: string) => LANGUAGE_NAMES.has(skill.trim().toLowerCase());
