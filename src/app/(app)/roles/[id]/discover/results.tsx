@@ -8,7 +8,7 @@ import { ActionButton } from "@/components/client";
 import { SampleBadge } from "@/components/role-workspace";
 import { useToast } from "@/components/toast";
 import type { Relevance } from "@/lib/sourcing/relevance";
-import { reviewProfile, saveProfileToRole } from "@/server/sourcing-actions";
+import { revealContact, reviewProfile, saveProfileToRole } from "@/server/sourcing-actions";
 
 export type ProfileView = {
   id: string;
@@ -35,6 +35,8 @@ export type ProfileView = {
   feedback: string | null;
   savedApplicationId: string | null;
   savedCandidateId: string | null;
+  /** Licensed providers this person was found in that can look up contact details (configured only). */
+  contactLookup: { label: string; cost: string }[];
   relevanceScore: number;
   relevance: Partial<Relevance>;
   aiRank: number | null;
@@ -212,6 +214,38 @@ export function ResultCard({ p, outreachHref }: { p: ProfileView; outreachHref: 
             </ul>
           )}
           <p className="mt-1 text-[11.5px] text-faint">An ordering aid from public work only. It doesn&apos;t decide anything; quotes were checked against the profile.</p>
+        </div>
+      )}
+
+      {(p.fields.email || p.fields.phone) && (
+        <dl className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-[12.5px]">
+          {p.fields.email && (
+            <div>
+              <dt className="inline text-muted">Email </dt>
+              <dd className="inline font-medium">{p.fields.email.value}</dd>
+              <span className="text-[11.5px] text-faint"> · {p.fields.email.source}, {fmt(p.fields.email.asOf)}</span>
+            </div>
+          )}
+          {p.fields.phone && (
+            <div>
+              <dt className="inline text-muted">Phone </dt>
+              <dd className="inline font-medium">{p.fields.phone.value}</dd>
+              <span className="text-[11.5px] text-faint"> · {p.fields.phone.source}</span>
+            </div>
+          )}
+        </dl>
+      )}
+      {!p.fields.email && !p.isDemo && p.contactLookup.length > 0 && (
+        <div className="mt-1.5">
+          <ActionButton
+            action={() => revealContact(p.id)}
+            variant="secondary"
+            size="sm"
+            pendingLabel="Looking up…"
+            confirm={`Look up contact details with ${p.contactLookup.map((c) => c.label).join(", then ")}? This uses ${p.contactLookup.map((c) => c.cost).join("; ")}. Nothing is sent to the person.`}
+          >
+            Get contact details
+          </ActionButton>
         </div>
       )}
 

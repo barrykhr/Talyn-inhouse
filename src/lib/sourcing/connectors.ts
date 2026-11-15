@@ -11,6 +11,9 @@ import { makeGitlabConnector } from "./gitlab";
 import { makeHuggingFaceConnector } from "./huggingface";
 import { makeOpenAlexConnector } from "./openalex";
 import { makeStackOverflowConnector } from "./stackoverflow";
+import { makeCoresignalConnector } from "./coresignal";
+import { makePdlConnector } from "./pdl";
+import { makeApolloConnector } from "./apollo";
 
 /**
  * Sourcing connectors. Talyn only searches data it is authorized to use: the customer's own
@@ -398,9 +401,11 @@ const sampleData: SourcingConnector = {
 
 /** Public-profile sources read through each service's official API. Each is off until its key is set. */
 const sourceDeps = { profileFromRecord, SourceError };
+/** Licensed people-data providers (paid; each off until its key is set). */
+const licensedSources = [makeCoresignalConnector(sourceDeps), makePdlConnector(sourceDeps), makeApolloConnector(sourceDeps)];
 const publicSources = [makeGithubConnector(sourceDeps), makeGitlabConnector(sourceDeps), makeStackOverflowConnector(sourceDeps), makeHuggingFaceConnector(sourceDeps), makeOpenAlexConnector(sourceDeps)];
 
-export const CONNECTORS: SourcingConnector[] = [talynRediscovery, externalProvider, ...publicSources, sampleData];
+export const CONNECTORS: SourcingConnector[] = [talynRediscovery, externalProvider, ...licensedSources, ...publicSources, sampleData];
 export const connector = (key: string) => CONNECTORS.find((c) => c.key === key);
 /** Display label for a stored source key (connectors plus imported files). */
 export function isLiveSourceConnected() {

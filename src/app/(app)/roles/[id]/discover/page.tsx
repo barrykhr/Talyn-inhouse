@@ -13,6 +13,7 @@ import { EMPTY_BRIEF } from "@/lib/discovery/brief";
 import { briefFields, briefProvenance } from "@/lib/discovery/store";
 import { REVIEW_STATUS_LABEL, REVIEW_STATUS_TONE, reviewStatus } from "@/lib/review-status";
 import { CONNECTORS, isLiveSourceConnected, sourceLabel } from "@/lib/sourcing/connectors";
+import { CONTACT_PROVIDERS } from "@/lib/sourcing/contacts";
 import { THRESHOLD_FILTERS, matchForApplication, passesSkillFilter, roleSkillConfig } from "@/lib/skills";
 import { SkillCount, SkillFilterFields } from "@/components/skill-match";
 import { ProfileScoreChip } from "@/components/profile-score";
@@ -140,6 +141,9 @@ export default async function DiscoverPage({
       signals: JSON.parse(p.signalsJson),
       sources: JSON.parse(p.sourcesJson),
       relevance: JSON.parse(p.relevanceJson || "{}"),
+      contactLookup: Array.from(new Set((JSON.parse(p.sourcesJson || "[]") as { key: string }[]).map((s) => s.key).concat(p.source)))
+        .filter((k) => CONTACT_PROVIDERS[k]?.configured())
+        .map((k) => ({ label: CONTACT_PROVIDERS[k].label, cost: CONTACT_PROVIDERS[k].cost })),
       aiFit: p.aiFitJson ? JSON.parse(p.aiFitJson) : null,
       isDemo: p.source === "sample",
       savedCandidateId: app?.candidateId ?? null,

@@ -167,6 +167,29 @@ or little text are flagged *limited evidence*; duplicates are detected by email,
 name + company; exclusions are set aside, never deleted. Malformed records are skipped. Nothing is
 contacted, rejected or added to a pipeline automatically.
 
+### Licensed people-data providers (built in)
+
+Each is off until its key is set (Vercel → Settings → Environment Variables), and each is a paid,
+licensed API: Talyn never scrapes or automates logins.
+
+| Source | Key | What search returns | Contact details ("Get contact details", per person) |
+| --- | --- | --- | --- |
+| Coresignal | `CORESIGNAL_API_KEY` (+ `CORESIGNAL_MAX_PROFILES`, default 50) | Profiles by title/headline, skills, location, with work history. Search returns IDs; each profile read ("collect") uses credits. | Contact Enrichment API: work email (ask Coresignal to enable it). |
+| People Data Labs | `PDL_API_KEY` (+ `PDL_MAX_PROFILES`, default 50) | Profiles by title, skills, location, with work history. One credit per record. | Person Retrieve: work/personal email and phone, on paid plans. One credit. |
+| Apollo.io | `APOLLO_API_KEY` (+ `APOLLO_MAX_PROFILES`, default 100) | People by job title and where they live; first name and partly hidden last name; no skills. Free. | People Enrichment: full name, email, LinkedIn. 1 credit. Phones need Apollo's webhook flow and aren't requested. Confirm your Apollo terms cover recruiting. |
+
+Contact details are looked up only when a recruiter clicks **Get contact details** on a result, stored
+with the provider and date, and copied to the candidate only into empty fields. Nothing is sent.
+
+### Automatic searches
+
+When a role's skills are first approved, Talyn searches every connected source in the background
+using the confirmed Discover fields, or fields taken from the approved skills and the role. A daily
+job (`/api/cron/discover`) re-searches open roles not searched in the last 20 hours and adds only
+people not found before. Runs are recorded as "Talyn (automatic search)". `DISCOVER_AUTO=off`
+turns this off; `DISCOVER_AUTO_SOURCES` (e.g. `talyn,github,coresignal`) limits the sources, which
+matters for paid sources since every automatic run uses their credits.
+
 ### Authorized export import (available now)
 
 Role → Sourcing → *Import an authorized export*: a CSV (≤ 1,000 rows, ≤ 4 MB) with columns

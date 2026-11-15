@@ -3,6 +3,7 @@
   "crons": [
     { "path": "/api/cron/retention", "schedule": "17 3 * * *" },
     { "path": "/api/cron/outreach", "schedule": "7 14 * * *" },
-    { "path": "/api/cron/ats", "schedule": "37 4 * * *" }
+    { "path": "/api/cron/ats", "schedule": "37 4 * * *" },
+    { "path": "/api/cron/discover", "schedule": "43 1 * * *" }
   ]
 }
