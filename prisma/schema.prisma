@@ -92,6 +92,10 @@ model Role {
   employmentType     String           @default("full_time")
   description        String           @default("")
   status             String           @default("draft") // draft | open | on_hold | closed
+  // The company the role is hiring for (in-house: usually your own company; agencies: the client).
+  clientCompanyName    String?
+  clientCompanyWebsite String?
+  clientCompanyNotes   String?
   criteriaVersion    Int              @default(1) // bumped whenever the approved criteria set changes
   // Skill matching rubric (recruiter-configured; applied live, never used to reject or hide anyone)
   skillThreshold     Int? // minimum number of required skills with "Evidence found"
@@ -116,6 +120,7 @@ model Role {
   atsStageMaps       AtsStageMap[]
   discoveryBrief     DiscoveryBrief?
   scoringVersions    ScoringVersion[]
+  targetCompanies    TargetCompanySet?
 
   @@index([orgId])
 }
@@ -1242,4 +1247,22 @@ model AiHealth {
   lastErrorText   String?
   failuresSinceOk Int       @default(0)
   updatedAt       DateTime  @updatedAt
+}
+
+/// AI-proposed companies to source from for one role, with the client-company profile they were
+/// matched against. Stored so the popup doesn't regenerate on every open; "Regenerate" replaces it.
+model TargetCompanySet {
+  id                String   @id @default(cuid())
+  orgId             String
+  roleId            String   @unique
+  clientProfileJson String // ClientProfile: industry, domain, product, headcount band, revenue band, + edited flag
+  companiesJson     String   @default("[]") // TargetCompany[] after validation, dedupe and exclusions
+  droppedJson       String   @default("[]") // what was dropped and why (validation, duplicate, client, exclusion)
+  model             String // provider:model that generated it
+  webSearch         Boolean  @default(false) // the provider's web search was used; per-company source links are stored
+  generatedByName   String
+  generatedAt       DateTime @default(now())
+  role              Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
 }

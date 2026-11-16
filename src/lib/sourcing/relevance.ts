@@ -21,6 +21,8 @@ export type Relevance = {
   required: { matched: number; total: number; min: number };
   preferred: { matched: number; total: number };
   titleMatched: boolean;
+  /** Current company is one of the recruiter's target companies (+10, capped at 100). */
+  companyMatched: boolean;
   /** Units of public work mentioning each matched required skill. */
   depth: { term: string; units: number }[];
   unitLabel: string | null;
@@ -57,6 +59,7 @@ const recency = (iso: string | null, now: number) => {
  *   others using the work             5  (log scale of stars / downloads / citations)
  * Sources without work evidence (CV-style records) are scored on the first three and rescaled.
  * Location is a filter, never points. With no required skills, query keywords and titles stand in.
+ * A current company among the recruiter's target companies adds 10 (capped at 100).
  */
 export function computeRelevance(signals: SignalLike[], work: WorkEvidence | null, minRequired: number | null, now = Date.now()): Relevance {
   const of = (cat: string) => signals.filter((s) => s.category === cat);
@@ -79,7 +82,9 @@ export function computeRelevance(signals: SignalLike[], work: WorkEvidence | nul
   const reqWeight = pref.length ? 50 : 60;
   const text = reqWeight * reqCov + 10 * (titleMatched ? 1 : 0) + (pref.length ? 10 * prefCov : 0);
   const hasWork = units.length > 0;
-  const score = hasWork ? text + 15 * depthScore + 10 * recent + 5 * pop : (text / 70) * 100;
+  const companyMatched = of("company").some((s) => s.matched);
+  const base = hasWork ? text + 15 * depthScore + 10 * recent + 5 * pop : (text / 70) * 100;
+  const score = base + (companyMatched ? 10 : 0);
 
   const min = Math.min(minRequired ?? defaultMinRequired(req.length), req.length);
   return {
@@ -88,6 +93,7 @@ export function computeRelevance(signals: SignalLike[], work: WorkEvidence | nul
     required: { matched: reqMatched.length, total: req.length, min },
     preferred: { matched: pref.filter((s) => s.matched).length, total: pref.length },
     titleMatched,
+    companyMatched,
     depth,
     unitLabel: work?.unitLabel ?? null,
     lastActiveAt: work?.lastActiveAt ?? null,

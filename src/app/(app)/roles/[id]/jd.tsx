@@ -27,6 +27,8 @@ const SCALARS = [
   { field: "department", label: "Department" },
   { field: "location", label: "Location" },
   { field: "employment_type", label: "Employment type" },
+  { field: "client_company_name", label: "Company this role is for" },
+  { field: "client_company_website", label: "Company website" },
 ] as const;
 
 export function RoleReviewForm({
@@ -36,7 +38,7 @@ export function RoleReviewForm({
 }: {
   roleId: string;
   facts: FactView[];
-  current: { title: string; department: string; location: string; employmentType: string };
+  current: { title: string; department: string; location: string; employmentType: string; clientCompanyName?: string | null; clientCompanyWebsite?: string | null };
 }) {
   const [state, action, actionPending] = useServerForm(reviewRoleExtraction.bind(null, roleId));
   const scalar = new Map(facts.map((f) => [f.field, f]));
@@ -45,6 +47,8 @@ export function RoleReviewForm({
     department: current.department,
     location: current.location,
     employment_type: current.employmentType,
+    client_company_name: current.clientCompanyName ?? "",
+    client_company_website: current.clientCompanyWebsite ?? "",
   };
   return (
     <Card className="overflow-hidden border-[#f3cdbb]">

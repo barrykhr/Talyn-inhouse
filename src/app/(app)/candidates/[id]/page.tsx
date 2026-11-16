@@ -26,9 +26,9 @@ import { candidateInfoChanged, roleSkillConfig, skillMatch, THRESHOLD_LABEL } fr
 import { SkillCount } from "@/components/skill-match";
 import { ProfileScoreChip, ProfileScoreDetail, type ScoreSnapshot } from "@/components/profile-score";
 import { parseBands, type ProfileRow } from "@/lib/profile-score";
+import { relevanceBullets, topScoreFactors } from "@/lib/candidate-summary";
 import { AltRouteControl } from "./alt-route";
 import { OpenScoreDecisionButton, ScoreDecisionDialog } from "./score-dialog";
-import { ReviewActions } from "@/components/review-actions";
 import { roleFit, stageReadiness } from "@/lib/ranking";
 import { parseEvidence } from "@/lib/evidence";
 import { highlight } from "@/lib/highlight";
@@ -517,15 +517,22 @@ export default async function CandidatePage({
           CV
         </SectionTitle>
         {resume ? (
-          <div className="max-h-[640px] space-y-3 overflow-y-auto rounded-lg bg-[#fbfaf7] p-3">
-            {pages.map((p, i) => (
-              <div key={i} id={`resume-p${i + 1}`}>
-                {pages.length > 1 && <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-faint">Page {i + 1}</div>}
-                <div className="resume-text text-ink-2">{highlight(p, resumeQuotes)}</div>
+          pages.join("").trim() === "" ? (
+            <p className="text-[13px] text-faint">No text could be extracted from this file.</p>
+          ) : (
+            // The text Talyn read from the file. Evidence links open it highlighted; here it's one click away.
+            <details className="text-[12.5px]">
+              <summary className="cursor-pointer text-muted hover:text-ink">View processing details · text read from the CV{pages.length > 1 ? ` (${pages.length} pages)` : ""}</summary>
+              <div className="mt-2 max-h-[640px] space-y-3 overflow-y-auto rounded-lg bg-[#fbfaf7] p-3">
+                {pages.map((p, i) => (
+                  <div key={i} id={`resume-p${i + 1}`}>
+                    {pages.length > 1 && <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-faint">Page {i + 1}</div>}
+                    <div className="resume-text text-ink-2">{highlight(p, resumeQuotes)}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-            {pages.join("").trim() === "" && <p className="text-[13px] text-faint">No text could be extracted.</p>}
-          </div>
+            </details>
+          )
         ) : (
           <p className="mb-3 text-[13px] text-muted">No CV yet.</p>
         )}
@@ -668,12 +675,25 @@ export default async function CandidatePage({
     : [];
   const assessmentMain = app && (
     <div className="space-y-4">
-      <AgentRun
-        title={app.origin === "discovered" ? "Review for this role" : "Application review"}
-        summary="The assistant reads and compares; a recruiter confirms the evidence and makes the decision."
-        steps={applicantSteps}
-        controls={latest ? <Provenance kind={app.decision ? "human" : latest.generator === "ai" ? "ai" : "system"} who={app.decidedByName} at={app.decidedAt} /> : undefined}
-      />
+      {(() => {
+        const run = (
+          <AgentRun
+            title={app.origin === "discovered" ? "Review for this role" : "Application review"}
+            summary="The assistant reads and compares; a recruiter confirms the evidence and makes the decision."
+            steps={applicantSteps}
+            controls={latest ? <Provenance kind={app.decision ? "human" : latest.generator === "ai" ? "ai" : "system"} who={app.decidedByName} at={app.decidedAt} /> : undefined}
+          />
+        );
+        // Once assessed, show the result; the step-by-step log stays one click away.
+        return latest ? (
+          <details className="text-[12.5px]">
+            <summary className="cursor-pointer text-muted hover:text-ink">View processing details</summary>
+            <div className="mt-2">{run}</div>
+          </details>
+        ) : (
+          run
+        );
+      })()}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-[15px] font-semibold tracking-tight">Evidence for this role</h2>
@@ -747,17 +767,20 @@ export default async function CandidatePage({
                 <ReviewControls assessmentId={latest.id} reviewed={latest.status === "reviewed"} reviewedBy={latest.reviewedByName} />
               </span>
             </div>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2.5">
-              <span className="text-[13px] font-semibold">Evaluation criteria</span>
-              <EvidenceCounts counts={evidenceCounts(latest.items)} />
-              <SummaryLine summary={summarize(latest.items)} />
-            </div>
-            <div className="divide-y divide-line">
-              {criterionItems.length === 0 && <p className="px-4 py-3 text-[13px] text-muted">No evaluation criteria were part of this assessment.</p>}
-              {criterionItems.map((i) => (
-                <ItemCard key={i.id} item={i} />
-              ))}
-            </div>
+            {criterionItems.length > 0 && (
+              <>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2.5">
+                  <span className="text-[13px] font-semibold">Evaluation criteria</span>
+                  <EvidenceCounts counts={evidenceCounts(latest.items)} />
+                  <SummaryLine summary={summarize(latest.items)} />
+                </div>
+                <div className="divide-y divide-line">
+                  {criterionItems.map((i) => (
+                    <ItemCard key={i.id} item={i} />
+                  ))}
+                </div>
+              </>
+            )}
             <div className="border-t border-line px-4 py-4">
               <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-[13.5px] font-semibold">Questions for this candidate</h3>
@@ -766,20 +789,14 @@ export default async function CandidatePage({
                 </ActionButton>
               </div>
               <p className="mb-2 text-[12px] text-muted">For you to ask — Talyn never sends questions to candidates.</p>
-              <div className="text-[11.5px] font-semibold uppercase tracking-wide text-faint">Core (same for every candidate)</div>
-              {app.role.questions.length ? (
-                <QuestionList
-                  readOnly
-                  questions={app.role.questions.map((q) => ({ id: q.id, text: q.text, criterionName: q.criterionName, rationale: q.rationale, evidence: {}, origin: q.origin, status: q.status }))}
-                />
-              ) : (
-                <p className="py-1 text-[12.5px] text-faint">
-                  No approved core questions. Add them on the role&apos;s{" "}
-                  <Link className="underline" href={`/roles/${app.roleId}?tab=criteria`}>
-                    Criteria tab
-                  </Link>
-                  .
-                </p>
+              {app.role.questions.length > 0 && (
+                <>
+                  <div className="text-[11.5px] font-semibold uppercase tracking-wide text-faint">Core (same for every candidate)</div>
+                  <QuestionList
+                    readOnly
+                    questions={app.role.questions.map((q) => ({ id: q.id, text: q.text, criterionName: q.criterionName, rationale: q.rationale, evidence: {}, origin: q.origin, status: q.status }))}
+                  />
+                </>
               )}
               <div className="mt-3 text-[11.5px] font-semibold uppercase tracking-wide text-faint">Follow-ups (this candidate&apos;s gaps)</div>
               <QuestionList
@@ -989,66 +1006,100 @@ export default async function CandidatePage({
 
       {skills && skills.state !== "no_skills" && (
         <Card className="p-4">
-          <div className="mb-2 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Required skills</div>
+          <div className="mb-2 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Profile relevance</div>
           <SkillCount m={skills} />
-          <p className="mt-2 text-[12.5px] text-ink-2">{skills.reason}</p>
-          <p className="mt-1.5 text-[12px] text-faint">
-            {skills.threshold != null
-              ? `Threshold: at least ${skills.threshold} of ${skills.required} required skills with evidence found${skills.partialCredit ? " (partial evidence counts)" : ""}. `
-              : "No minimum is set for this role. "}
-            “{THRESHOLD_LABEL.meets}” describes the evidence only — it isn&apos;t a qualification or a decision, and nobody is hidden or rejected by it.{" "}
-            <Link href={`/roles/${app!.roleId}?tab=criteria#rubric`} className="underline-offset-2 hover:underline">
-              Edit skills and threshold
-            </Link>
-          </p>
+          {relevanceBullets(skillItems).length > 0 && (
+            <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[12.5px] text-ink-2">
+              {relevanceBullets(skillItems).map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          )}
+          <details className="mt-1.5 text-[12px]">
+            <summary className="cursor-pointer text-muted hover:text-ink">How this is counted</summary>
+            <p className="mt-1 text-ink-2">{skills.reason}</p>
+            <p className="mt-1 text-faint">
+              {skills.threshold != null
+                ? `Threshold: at least ${skills.threshold} of ${skills.required} required skills with evidence found${skills.partialCredit ? " (partial evidence counts)" : ""}. `
+                : "No minimum is set for this role. "}
+              “{THRESHOLD_LABEL.meets}” describes the evidence only — it isn&apos;t a qualification or a decision, and nobody is hidden or rejected by it.{" "}
+              <Link href={`/roles/${app!.roleId}?tab=criteria#rubric`} className="underline-offset-2 hover:underline">
+                Edit skills and threshold
+              </Link>
+            </p>
+          </details>
         </Card>
       )}
 
-      <Card className="p-4" data-profile-score>
-        <div className="mb-2 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Profile score</div>
-        {latestScore ? (
-          <>
-            <div className="flex flex-wrap items-center gap-2">
-              {latestScore.status === "ok" && latestScore.score !== null && <span className="text-2xl font-semibold tabular-nums tracking-tight">{latestScore.score}</span>}
-              <ProfileScoreChip s={snap(latestScore)} />
-            </div>
-            <p className="mt-1 text-[12.5px] text-muted">
-              Evidence coverage {Math.round(latestScore.coverage * 100)}% · advisory only · scoring v{latestScore.scoringVersion.version}
-            </p>
-            <div className="mt-2.5">
-              <OpenScoreDecisionButton label={app?.decision ? "Review score & decision" : "Review score & decide"} />
-            </div>
-            {scoreRows.length > 1 && (
-              <details className="mt-2 text-[12.5px]">
-                <summary className="cursor-pointer text-muted hover:text-ink">Score history ({scoreRows.length})</summary>
-                <ul className="mt-1 space-y-1">
-                  {scoreRows.map((r) => (
-                    <li key={r.id} className="flex flex-wrap items-center gap-2">
-                      <ProfileScoreChip s={snap(r)} />
-                      <span className="text-muted">
-                        v{r.scoringVersion.version} · {r.trigger} · {r.createdByName} · {r.createdAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                        {r.assessmentId !== latest?.id ? " · earlier assessment" : ""}
+      {latestScore || liveScore ? (
+        <Card className="p-4" data-profile-score>
+          <div className="mb-2 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Profile score</div>
+          {latestScore && (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                {latestScore.status === "ok" && latestScore.score !== null && <span className="text-2xl font-semibold tabular-nums tracking-tight">{latestScore.score}</span>}
+                <ProfileScoreChip s={snap(latestScore)} />
+              </div>
+              {scoreBreakdown && topScoreFactors(scoreBreakdown.rows).length > 0 && (
+                <ul className="mt-1.5 space-y-0.5 text-[12.5px]" aria-label="What moved the score most">
+                  {topScoreFactors(scoreBreakdown.rows).map((f) => (
+                    <li key={f.name} className="flex gap-1.5">
+                      <span className={clsx("w-9 shrink-0 text-right tabular-nums font-medium", f.direction === "up" ? "text-ok" : "text-warn")}>
+                        {f.direction === "up" ? "+" : "−"}
+                        {f.points}
+                      </span>
+                      <span className="text-ink-2">
+                        {f.name} <span className="text-muted">· {f.why}</span>
                       </span>
                     </li>
                   ))}
                 </ul>
-              </details>
-            )}
-          </>
-        ) : (
-          <p className="text-[13px] text-muted">
-            {latest ? "This assessment was made before profile scoring existed. Recalculate scores on the role's Criteria tab to add one." : "Appears after an assessment, with its calculation, weights and evidence coverage."}
-          </p>
-        )}
-        {liveScore && (
-          <details className="mt-3 border-t border-line pt-2 text-[12.5px]">
-            <summary className="cursor-pointer text-muted hover:text-ink">How role fit was calculated (same as the profile score, used for ranking)</summary>
-            <div className="mt-2">
-              <ScorePanel score={liveScore} adjusted={summarize(latest!.items).overrides > 0} editHref={`/roles/${app!.roleId}?tab=criteria#rubric`} />
+              )}
+              <div className="mt-2.5">
+                <OpenScoreDecisionButton label="Review score" />
+              </div>
+            </>
+          )}
+          <details className="mt-2 text-[12.5px]">
+            <summary className="cursor-pointer text-muted hover:text-ink">How this was calculated</summary>
+            <div className="mt-2 space-y-2">
+              {latestScore && (
+                <p className="text-muted">
+                  Evidence coverage {Math.round(latestScore.coverage * 100)}% · advisory only · scoring v{latestScore.scoringVersion.version}
+                </p>
+              )}
+              {liveScore && <ScorePanel score={liveScore} adjusted={summarize(latest!.items).overrides > 0} editHref={`/roles/${app!.roleId}?tab=criteria#rubric`} />}
+              {scoreRows.length > 1 && (
+                <div>
+                  <div className="text-muted">Score history ({scoreRows.length})</div>
+                  <ul className="mt-1 space-y-1">
+                    {scoreRows.map((r) => (
+                      <li key={r.id} className="flex flex-wrap items-center gap-2">
+                        <ProfileScoreChip s={snap(r)} />
+                        <span className="text-muted">
+                          v{r.scoringVersion.version} · {r.trigger} · {r.createdByName} · {r.createdAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                          {r.assessmentId !== latest?.id ? " · earlier assessment" : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </details>
-        )}
-        <div className="mt-3 border-t border-line pt-3">
+          <div className="mt-3 border-t border-line pt-3">
+            <AltRouteControl
+              applicationId={app!.id}
+              status={app!.altRoute}
+              note={app!.altRouteNote}
+              by={app!.altRouteBy}
+              at={app!.altRouteAt?.toISOString() ?? null}
+              accommodationText={org.accommodationText}
+            />
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-4">
           <AltRouteControl
             applicationId={app!.id}
             status={app!.altRoute}
@@ -1057,9 +1108,10 @@ export default async function CandidatePage({
             at={app!.altRouteAt?.toISOString() ?? null}
             accommodationText={org.accommodationText}
           />
-        </div>
-      </Card>
+        </Card>
+      )}
 
+      {latest && (
       <Card className="p-4" aria-live="polite">
         <div className="mb-3 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Recommendation</div>
         {latest ? (
@@ -1082,10 +1134,9 @@ export default async function CandidatePage({
               }}
             />
           </div>
-        ) : (
-          <p className="text-[13px] text-muted">Shown after the score, for you to accept, edit or override.</p>
-        )}
+        ) : null}
       </Card>
+      )}
 
       <Card className="p-4">
         <div className="mb-3 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Information requests</div>
@@ -1118,20 +1169,6 @@ export default async function CandidatePage({
         />
       </Card>
 
-      <Card className="p-4">
-        <div className="mb-1 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Your decision</div>
-        <p className="mb-3 text-[12.5px] text-muted">
-          {latest && !app.decision ? "The assessment is ready. Choose Shortlist, Hold or Reject — Talyn won't choose for you." : "Recorded separately from the pipeline stage, from how they were found, and from any AI output."}
-        </p>
-        <DecisionForm applicationId={app.id} decision={app.decision} note={app.decisionNote} reason={app.decisionReason} stage={app.stage} />
-        {app.decidedAt && (
-          <p className="mt-2 text-[12px] text-faint">
-            {app.decision ? `${DECISION_LABEL[app.decision as Decision]} · ` : ""}recorded {formatDateTime(app.decidedAt)}
-            {app.decidedByName ? ` by ${app.decidedByName}` : ""}
-            {app.decisionReason ? ` · reason: ${REJECT_REASON_LABEL[app.decisionReason] ?? app.decisionReason}` : ""}
-          </p>
-        )}
-      </Card>
     </>
   );
 
@@ -1173,6 +1210,39 @@ export default async function CandidatePage({
         }
       />
 
+      {app && (
+        <section
+          aria-label={`Your decision for ${app.role.title}`}
+          className="sticky top-0 z-20 -mx-1 mb-4 rounded-xl border border-line bg-surface/95 px-3 py-2.5 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-surface/85"
+        >
+          <div className="mb-1.5 flex flex-wrap items-baseline gap-x-2 text-[12px]">
+            <span className="font-semibold uppercase tracking-wide text-muted">Your decision · {app.role.title}</span>
+            <span className="text-faint">
+              {latest && !app.decision ? "Assessment ready. Talyn won't choose for you." : "Separate from the pipeline stage and from any AI output."}
+            </span>
+          </div>
+          <DecisionForm
+            compact
+            applicationId={app.id}
+            decision={app.decision}
+            note={app.decisionNote}
+            reason={app.decisionReason}
+            stage={app.stage}
+            summary={
+              app.decidedAt ? (
+                <>
+                  {app.decision ? `${DECISION_LABEL[app.decision as Decision]} · ` : ""}recorded {formatDateTime(app.decidedAt)}
+                  {app.decidedByName ? ` by ${app.decidedByName}` : ""}
+                  {app.decisionReason ? ` · reason: ${REJECT_REASON_LABEL[app.decisionReason] ?? app.decisionReason}` : ""}
+                </>
+              ) : (
+                "No decision yet"
+              )
+            }
+          />
+        </section>
+      )}
+
       {candidate.isSample && (
         <Notice tone="warn" className="mb-4">
           <strong>Sample profile.</strong> A fictional person from Talyn sample data, saved while exploring Discover. Not a real candidate; there is no one to contact.
@@ -1205,14 +1275,9 @@ export default async function CandidatePage({
               <p className="mt-1 text-[12.5px] text-ink-2">{skills.reason}</p>
             </div>
           )}
-          <div className="rounded-xl border border-brand/30 bg-brand-soft/40 p-4">
-            <div className="text-[14px] font-semibold">Your decision</div>
-            <p className="mb-3 text-[12.5px] text-muted">
-              The score and its label are advisory. Choose based on the evidence — nothing is decided, hidden or sent automatically. Reject asks for a job-related reason.
-            </p>
-            <ReviewActions applicationId={app.id} decision={app.decision} name={candidate.fullName} allowClear />
-            {app.decision && app.decidedByName && <p className="mt-2 text-[12px] text-muted">Current decision recorded by {app.decidedByName}{app.decidedAt ? ` on ${formatDate(app.decidedAt)}` : ""}.</p>}
-          </div>
+          <p className="rounded-lg border border-line bg-sunken/60 px-3 py-2 text-[12.5px] text-ink-2">
+            The score and its label are advisory. Record Shortlist, Hold or Reject in the decision bar at the top of the page — nothing is decided, hidden or sent automatically.
+          </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
             <a href="#skills" data-close-dialog className="font-medium text-brand hover:underline">
               Review the evidence first

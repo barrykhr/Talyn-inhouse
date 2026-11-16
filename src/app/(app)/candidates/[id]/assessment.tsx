@@ -8,6 +8,7 @@ import { EVIDENCE_TIER, EVIDENCE_TIER_LABEL, RECOMMENDATIONS, RECOMMENDATION_LAB
 import { useSourceViewer } from "@/components/source-viewer";
 import { SkillStatusBadge } from "@/components/skill-match";
 import { evidenceOriginLabel } from "@/lib/evidence";
+import { bestQuote, truncate } from "@/lib/candidate-summary";
 import { SKILL_STATUS_LABEL, SKILL_STATUS_RESULT, skillStatus } from "@/lib/skills";
 import { StagedProgress } from "@/components/staged-progress";
 import { useToast } from "@/components/toast";
@@ -185,26 +186,55 @@ function CitationButton({ evidence: e }: { evidence: Evidence }) {
   );
 }
 
+/** One line, status, best quote, source; everything else under "Show details". */
+function QuoteLine({ item }: { item: ItemView }) {
+  const best = bestQuote(item.evidence);
+  if (!best) return <span className="text-[12.5px] text-faint">No supporting text found</span>;
+  return (
+    <span className="min-w-0 text-[12.5px] text-ink-2">
+      <span className="quote">“{truncate(best.quote)}”</span>
+      <span className="ml-1.5 whitespace-nowrap text-[11.5px] text-muted">
+        <CitationButton evidence={best} />
+        {!best.verified && <span className="ml-1 text-warn">⚠ not matched</span>}
+      </span>
+    </span>
+  );
+}
+
+function DetailsToggle({ open, onClick, more }: { open: boolean; onClick: () => void; more?: number }) {
+  return (
+    <button type="button" onClick={onClick} aria-expanded={open} className="shrink-0 whitespace-nowrap text-[12px] font-medium text-muted underline-offset-2 hover:text-ink hover:underline">
+      {open ? "Hide details" : `Show details${more ? ` (+${more} quote${more === 1 ? "" : "s"})` : ""}`}
+    </button>
+  );
+}
+
 export function ItemCard({ item }: { item: ItemView }) {
   const [correcting, setCorrecting] = useState(false);
+  const [open, setOpen] = useState(false);
   const effective = item.overrideResult ?? item.result;
   return (
-    <div className="px-4 py-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-medium">{item.criterionName}</span>
-            <span className="text-[12px] text-muted">{item.importance === "essential" ? "Required" : item.importance === "preferred" ? "Preferred" : "Informational · not weighted"}</span>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <TierLabel result={effective} />
-          {item.overrideResult && <ResultBadge result={item.result} struck />}
-          <ResultBadge result={effective} />
-          {item.confidence && !item.overrideResult && (
-            <span className="text-[12px] text-muted" title="How certain the assessment is, given the available evidence">{item.confidence} confidence</span>
-          )}
-        </div>
+    <div className="px-4 py-2.5">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <ResultBadge result={effective} />
+        <span className="font-medium">{item.criterionName}</span>
+        <span className="text-[11.5px] text-muted">{item.importance === "essential" ? "Required" : item.importance === "preferred" ? "Preferred" : "Informational"}</span>
+        {item.overrideResult && <span className="text-[11.5px] text-muted">corrected by {item.overriddenBy}</span>}
+        <span className="ml-auto">
+          <DetailsToggle open={open} onClick={() => setOpen((v) => !v)} more={Math.max(0, item.evidence.length - 1)} />
+        </span>
+      </div>
+      <div className="mt-0.5">
+        <QuoteLine item={item} />
+      </div>
+      {open && (
+      <div className="motion-fade mt-2 border-t border-line pt-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <TierLabel result={effective} />
+        {item.overrideResult && <ResultBadge result={item.result} struck />}
+        {item.confidence && !item.overrideResult && (
+          <span className="text-[12px] text-muted" title="How certain the assessment is, given the available evidence">{item.confidence} confidence</span>
+        )}
       </div>
 
       {item.overrideResult && (
@@ -264,6 +294,8 @@ export function ItemCard({ item }: { item: ItemView }) {
         )}
         <CorrectionHistory item={item} label={(r) => RESULT_LABEL[r as AssessmentResult] ?? r} />
       </div>
+      </div>
+      )}
     </div>
   );
 }
@@ -463,26 +495,25 @@ export function SkillRow({ item }: { item: ItemView }) {
   return (
     <div className="px-4 py-2.5">
       <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden className={clsx("shrink-0 text-faint transition-transform", open && "rotate-90")}>
-            <path d="M3.5 2l3 3-3 3" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" />
-          </svg>
-          <span className="font-medium">{item.criterionName}</span>
-          <span className="truncate text-[12px] text-muted">
-            {item.evidence.length ? `${item.evidence.length} excerpt${item.evidence.length === 1 ? "" : "s"}` : "no excerpt"}
-          </span>
-        </button>
-        {item.overrideResult && original !== status && <SkillStatusBadge status={original} struck />}
         <SkillStatusBadge status={status} />
+        <span className="font-medium">{item.criterionName}</span>
         {item.overrideResult && <span className="text-[11.5px] text-muted">corrected by {item.overriddenBy}</span>}
+        <span className="ml-auto">
+          <DetailsToggle open={open} onClick={() => setOpen((v) => !v)} more={Math.max(0, item.evidence.length - 1)} />
+        </span>
       </div>
+      {item.evidence.length > 0 && (
+        <div className="mt-0.5">
+          <QuoteLine item={item} />
+        </div>
+      )}
       {open && (
-        <div className="motion-fade mt-2 space-y-2 pl-4">
+        <div className="motion-fade mt-2 space-y-2 border-t border-line pt-2">
+          {item.overrideResult && original !== status && (
+            <p className="text-[12px] text-muted">
+              Originally <SkillStatusBadge status={original} struck />
+            </p>
+          )}
           {item.evidence.length === 0 ? (
             <p className="text-[12.5px] text-muted">
               No excerpt in the CV, candidate-provided information or linked source mentions this skill. That is missing evidence — not proof the candidate lacks it.

@@ -138,7 +138,8 @@ POST $SOURCING_API_URL
 Authorization: Bearer $SOURCING_API_KEY
 
 { "filters": { "titles": [], "skills_required": [], "skills_preferred": [], "locations": [],
-               "seniority": [], "industries": [], "exclusions": [] },
+               "seniority": [], "industries": [], "exclusions": [],
+               "target_companies": [] },   // companies the recruiter chose to source from: rank, don't filter
   "booleanQuery": "(\"Backend Engineer\" OR …) AND …",
   "years": { "min": 5, "max": null },   // from the reviewed Discover fields; may be null
   "limit": 100 }

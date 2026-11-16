@@ -54,6 +54,7 @@ const CAT: Record<string, string> = {
   location: "Location",
   seniority: "Seniority",
   experience: "Experience",
+  company: "Target company",
 };
 const REASONS = ["Wrong title or function", "Missing key skills", "Wrong location", "Seniority mismatch", "Already known / contacted", "Other"];
 const FIT_LABEL: Record<string, string> = { strong: "Strong match", partial: "Partial match", unclear: "Unclear — little public work", weak: "Weak match" };
@@ -64,6 +65,7 @@ function relevanceLine(r: Partial<Relevance>) {
   const parts: string[] = [];
   if (r.required?.total) parts.push(`${r.required.matched} of ${r.required.total} required skills`);
   if (r.preferred?.total) parts.push(`${r.preferred.matched} of ${r.preferred.total} preferred`);
+  if (r.companyMatched) parts.push("at a target company");
   const deep = (r.depth ?? []).filter((d) => d.units > 0).sort((a, b) => b.units - a.units).slice(0, 3);
   const unit = r.unitLabel;
   const one = unit ? (unit.endsWith("ies") ? `${unit.slice(0, -3)}y` : unit.replace(/s$/, "")) : "";
@@ -89,6 +91,7 @@ function whyAppeared(p: ProfileView) {
     titles.length ? `title matches ${titles.map((t) => `“${t}”`).join(" / ")}` : null,
     skills.length ? `profile mentions ${skills.slice(0, 5).join(", ")}${skills.length > 5 ? ` +${skills.length - 5}` : ""}` : null,
     m.some((s) => s.category === "location") ? "location matches" : null,
+    m.some((s) => s.category === "company") ? `works at a target company (${m.find((s) => s.category === "company")!.term})` : null,
     m.some((s) => s.category === "experience") ? "stated experience is in range" : null,
   ].filter(Boolean);
   return parts.length ? `Appeared because the ${parts.join("; ")}.` : "Appeared on a weak match — check the evidence.";

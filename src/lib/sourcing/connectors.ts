@@ -6,6 +6,7 @@ import { checkEnv } from "../integrations/env";
 import type { SearchFilters } from "./filters";
 import { SAMPLE_PROFILES } from "./sample-profiles";
 import type { WorkEvidence } from "./relevance";
+import { companyMatches } from "../discovery/target-companies";
 import { makeGithubConnector } from "./github";
 import { makeGitlabConnector } from "./gitlab";
 import { makeHuggingFaceConnector } from "./huggingface";
@@ -121,6 +122,26 @@ export function buildSignals(filters: SearchFilters, find: (term: string) => { q
   ];
 }
 
+/**
+ * One "company" signal when the search has target companies: matched when the person's current
+ * company is one of them (case and suffixes like Pvt Ltd, Inc, Technologies ignored), with the line
+ * it was read from. Evidence and a ranking input, never a filter.
+ */
+export function companySignal(filters: SearchFilters, title: string | null | undefined, company: string | null | undefined): Signal[] {
+  if (!filters.target_companies?.length) return [];
+  const hit = companyMatches(company, filters.target_companies);
+  return [
+    {
+      category: "company",
+      term: hit ?? "Target companies",
+      matched: !!hit,
+      quote: hit ? [title, company].filter(Boolean).join(" at ") : null,
+      page: null,
+      note: hit ? null : company ? "Current company isn't one of the target companies" : "Current company not available from source",
+    },
+  ];
+}
+
 const CORE = new Set(["keyword", "title", "adjacent_title", "skill_required"]);
 /** Relevance gate: at least one core term matched with a quote. */
 export const isRelevant = (signals: Signal[]) => signals.some((s) => s.matched && CORE.has(s.category));
@@ -191,6 +212,7 @@ const talynRediscovery: SourcingConnector = {
           return hit ? { quote: hit.quote, page: hit.page && hit.page <= pages.length ? hit.page : null } : null;
         }),
         ...experienceSignal(years, yearsFromText(searchable)),
+        ...companySignal(filters, c.currentTitle, c.currentCompany),
       ];
       // Only return people with at least one matched core term: a relevance gate, not a judgement.
       if (!isRelevant(signals)) continue;
@@ -284,6 +306,7 @@ export async function profileFromRecord(
       return hit ? { quote: hit.quote, page: null } : null;
     }),
     ...experienceSignal(opts.years, yearsFromExperience(r.experience) ?? yearsFromText([r.summary ?? ""])),
+    ...companySignal(filters, r.title, r.company),
   ];
   if (opts.relevanceGate && !isRelevant(signals)) return null;
   const excl = filters.exclusions.find((e) => findTerm(text, e));

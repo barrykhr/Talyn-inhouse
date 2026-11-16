@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { topScoreFactors } from "@/lib/candidate-summary";
 import { MIN_MATERIAL_CHARS, bandRanges, type Band, type ProfileRow } from "@/lib/profile-score";
 import { RESULT_LABEL, type AssessmentResult } from "@/lib/domain";
 
@@ -98,15 +99,30 @@ export function ProfileScoreDetail({
           </div>
         </div>
       </div>
-      <p className="text-[12.5px] text-ink-2">{reason}</p>
-      <p className="text-[12px] text-faint">
-        Advisory only. The label is not a decision: nobody is rejected, advanced or hidden by it. Scoring v{s.version}
-        {s.version !== s.currentVersion ? ` (current is v${s.currentVersion} — recalculate on the role's Criteria tab)` : ""} · recorded {s.createdAt.toLocaleDateString()} by {s.createdByName} ({s.trigger}). It is
-        not a validated predictor and isn&apos;t claimed to be unbiased.
-      </p>
+      {topScoreFactors(rows).length > 0 && (
+        <ul className="space-y-0.5 text-[12.5px]" aria-label="What moved the score most">
+          {topScoreFactors(rows).map((f) => (
+            <li key={f.name} className="flex gap-1.5">
+              <span className={f.direction === "up" ? "w-9 shrink-0 text-right font-medium tabular-nums text-ok" : "w-9 shrink-0 text-right font-medium tabular-nums text-warn"}>
+                {f.direction === "up" ? "+" : "−"}
+                {f.points}
+              </span>
+              <span className="text-ink-2">
+                {f.name} <span className="text-muted">· {f.why}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       <details className="text-[12.5px]">
         <summary className="cursor-pointer font-medium text-muted hover:text-ink">How this score was calculated</summary>
         <div className="mt-2 space-y-2">
+          <p className="text-ink-2">{reason}</p>
+          <p className="text-[12px] text-faint">
+            Advisory only. The label is not a decision: nobody is rejected, advanced or hidden by it. Scoring v{s.version}
+            {s.version !== s.currentVersion ? ` (current is v${s.currentVersion} — recalculate on the role's Criteria tab)` : ""} · recorded {s.createdAt.toLocaleDateString()} by {s.createdByName} ({s.trigger}). It is
+            not a validated predictor and isn&apos;t claimed to be unbiased.
+          </p>
           <p className="text-muted">
             Weights: Required = {weights.required}, Preferred = {weights.preferred}; informational items aren&apos;t scored. Credit: supported = 1; partially
             supported, inferred or conflicting = 0.5; not shown in the material = 0; confirmed not present (by a recruiter) = 0. Score = points ÷ total weight × 100.

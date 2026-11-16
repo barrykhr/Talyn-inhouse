@@ -72,6 +72,8 @@ export async function extractJdDetails(pages: string[]): Promise<ExtractionOutco
       if (r.department) facts.push(fact(pages, ex, "department", r.department.value, r.department.source_quote));
       if (r.location) facts.push(fact(pages, ex, "location", r.location.value, r.location.source_quote));
       if (r.employment_type) facts.push(fact(pages, ex, "employment_type", r.employment_type.value, r.employment_type.source_quote));
+      if (r.company_name) facts.push(fact(pages, ex, "client_company_name", r.company_name.value, r.company_name.source_quote));
+      if (r.company_website) facts.push(fact(pages, ex, "client_company_website", r.company_website.value, r.company_website.source_quote));
       for (const x of r.responsibilities) facts.push(fact(pages, ex, "responsibility", x.value, x.source_quote));
       for (const x of r.qualifications) facts.push(fact(pages, ex, "qualification", x.value, x.source_quote));
       for (const x of r.experience_requirements) facts.push(fact(pages, ex, "experience_requirement", x.value, x.source_quote));
