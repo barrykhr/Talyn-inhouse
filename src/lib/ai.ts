@@ -134,10 +134,26 @@ async function runOpenAi<T extends z.ZodType>(model: string, opts: RunOpts<T>): 
 
 type WebResult<T> = { output: T; urls: string[]; webSearch: boolean };
 
+type OpenAiOutputItem = {
+  type: string;
+  content?: { type: string; annotations?: { type: string; url?: string }[] }[];
+  action?: { type?: string; url?: string | null; sources?: { type?: string; url?: string }[] | null } | null;
+};
+
+/**
+ * Pages the web search actually returned: the sources of each search call (requested with
+ * include: web_search_call.action.sources), pages it opened, and any url_citation annotations.
+ * Structured (JSON) answers usually carry no annotations, so the search calls are the main record.
+ */
 function collectOpenAiUrls(response: unknown): string[] {
   const urls = new Set<string>();
-  for (const item of (response as { output?: { type: string; content?: { type: string; annotations?: { type: string; url?: string }[] }[] }[] }).output ?? [])
+  for (const item of (response as { output?: OpenAiOutputItem[] }).output ?? []) {
     if (item.type === "message") for (const c of item.content ?? []) for (const a of c.annotations ?? []) if (a.type === "url_citation" && a.url) urls.add(a.url);
+    if (item.type === "web_search_call" && item.action) {
+      for (const s of item.action.sources ?? []) if (s.url) urls.add(s.url);
+      if (item.action.url) urls.add(item.action.url);
+    }
+  }
   return [...urls];
 }
 
@@ -166,6 +182,7 @@ async function runStructuredWithWeb<T extends z.ZodType>(opts: RunOpts<T>): Prom
         instructions: opts.system,
         input: opts.user,
         tools: [{ type: "web_search" }],
+        include: ["web_search_call.action.sources"],
         max_output_tokens: opts.maxTokens ?? 16000,
         text: { format: zodTextFormat(opts.schema, opts.name) },
         store: false,
