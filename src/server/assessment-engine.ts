@@ -7,6 +7,7 @@ import type { Evidence } from "@/lib/domain";
 import { locateQuote, type SourceDoc } from "@/lib/evidence";
 import { redactContact } from "@/lib/extraction";
 import { findSkillMentions, keywordMatch, keywordsFor, skillTerms } from "@/lib/heuristics";
+import { applyEchoGuard } from "@/lib/jd-echo";
 import { logError } from "@/lib/log";
 import { MIN_MATERIAL_CHARS } from "@/lib/profile-score";
 import { computeScore, scoreSummaryText, weightsOf } from "@/lib/score";
@@ -68,7 +69,7 @@ async function linkedSource(orgId: string, sourcedProfileId: string | null) {
 export async function assessApplication(auth: AuthContext, applicationId: string, mode: "ai" | "keyword", opts: { batch?: boolean } = {}): Promise<AssessOutcome> {
   const app = await db.application.findFirst({ where: { id: applicationId, orgId: auth.orgId } });
   if (!app) return { ok: false, error: "Application not found.", reason: "failed" };
-  const [role, candidate, criteria, resume, source] = await Promise.all([
+  const [role, candidate, criteria, resume, source, jd] = await Promise.all([
     db.role.findFirstOrThrow({ where: { id: app.roleId, orgId: auth.orgId } }),
     db.candidate.findFirstOrThrow({ where: { id: app.candidateId, orgId: auth.orgId } }),
     db.criterion.findMany({
@@ -77,6 +78,7 @@ export async function assessApplication(auth: AuthContext, applicationId: string
     }),
     db.resume.findFirst({ where: { candidateId: app.candidateId, orgId: auth.orgId, isCurrent: true } }),
     linkedSource(auth.orgId, app.sourcedProfileId),
+    db.jobDescription.findFirst({ where: { roleId: app.roleId, orgId: auth.orgId, isCurrent: true }, orderBy: { createdAt: "desc" }, select: { pagesJson: true } }),
   ]);
 
   if (criteria.length === 0) return { ok: false, error: "This role has no approved skills or criteria yet. Approve them on the role's Criteria tab first.", reason: "no_criteria" };
@@ -199,6 +201,18 @@ export async function assessApplication(auth: AuthContext, applicationId: string
     });
   }
 
+  // Evidence that only repeats the requirement (the criterion's own words, or a long run of the JD)
+  // is not counted as supported: those items go to a recruiter for review instead.
+  let jdText: string | null = null;
+  try {
+    jdText = jd ? (JSON.parse(jd.pagesJson) as string[]).join("\n") : null;
+  } catch {
+    jdText = null;
+  }
+  const guarded = applyEchoGuard(drafts, jdText);
+  drafts = guarded.drafts;
+  const echoed = guarded.echoed;
+
   // Role fit is computed by Talyn (same calculation as the profile score). The AI recommendation is
   // skipped in batch runs to keep them fast and cheap.
   const materialChars = doc.resumePages.join("").trim().length + doc.profileText.trim().length + (doc.sourceText?.trim().length ?? 0);
@@ -219,15 +233,20 @@ export async function assessApplication(auth: AuthContext, applicationId: string
       });
       recommendation = rec.recommendation;
       let adjustedNote: string | null = null;
+      // Guardrail: evidence that only repeats the job description can't support advancing.
+      if (rec.recommendation === "advance_to_review" && echoed.length) {
+        recommendation = "gather_more_info";
+        adjustedNote = "The AI suggested advancing, but Talyn changed this to “Gather more information” because some evidence only repeats the job description's wording.";
+      }
       // Guardrail: never suggest advancing when Talyn has withheld the score for lack of evidence.
       if (rec.recommendation === "advance_to_review" && score.status === "withheld") {
         recommendation = "gather_more_info";
         adjustedNote = "The AI suggested advancing, but Talyn changed this to “Gather more information” because the score is withheld for incomplete evidence.";
       }
-      recommendationJson = { rationale: rec.rationale, criteriaCited: rec.criteria_cited, questions: rec.questions, adjustedNote };
+      recommendationJson = { rationale: rec.rationale, criteriaCited: rec.criteria_cited, questions: rec.questions, adjustedNote, copiedFromJd: echoed };
     } catch (err) {
       if (!(err instanceof AiRequestError)) logError("assessment.recommend_failed", err, { applicationId });
-      recommendationJson = { unavailable: `The recommendation couldn't be generated${err instanceof AiRequestError ? ` (${err.message})` : ""}. The assessment and score are unaffected.` };
+      recommendationJson = { unavailable: `The recommendation couldn't be generated${err instanceof AiRequestError ? ` (${err.message})` : ""}. The assessment and score are unaffected.`, copiedFromJd: echoed };
     }
   } else {
     recommendationJson = {
@@ -237,6 +256,7 @@ export async function assessApplication(auth: AuthContext, applicationId: string
           : opts.batch
             ? "Not generated during “Reassess candidates”. Re-assess this candidate individually to get one."
             : "No weighted evaluation criteria to base a recommendation on.",
+      copiedFromJd: echoed,
     };
   }
   const ai = aiStatus();
