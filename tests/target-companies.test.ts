@@ -113,6 +113,13 @@ describe("keepSeenUrls", () => {
     const seen = new Set(["https://razorpay.com/about/", "http://news.example.com/x"]);
     assert.deepEqual(keepSeenUrls(["https://razorpay.com/about", "https://made-up.example.com", "http://news.example.com/x"], seen), ["https://razorpay.com/about", "https://news.example.com/x"]);
   });
+  it("matches links that differ only by tracking parameters, www, fragment or trailing slash", () => {
+    const seen = new Set(["https://www.cashfree.com/about-us/?utm_source=openai", "https://example.com/report?id=7&utm_medium=x#top"]);
+    assert.deepEqual(keepSeenUrls(["https://cashfree.com/about-us", "https://example.com/report?id=7"], seen), ["https://cashfree.com/about-us", "https://example.com/report?id=7"]);
+  });
+  it("drops anything that isn't a web address", () => {
+    assert.deepEqual(keepSeenUrls(["javascript:alert(1)", "not a url", "ftp://x.com/a"], new Set(["ftp://x.com/a"])), []);
+  });
 });
 
 describe("targetCompaniesPrompt", () => {

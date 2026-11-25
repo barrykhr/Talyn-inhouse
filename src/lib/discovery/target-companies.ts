@@ -148,11 +148,31 @@ export function filterByReasons<T extends { match_reasons: string[] }>(companies
   return companies.filter((c) => reasons.every((r) => c.match_reasons.includes(r)));
 }
 
+/**
+ * One spelling per page, so a link the model wrote matches the page the web search returned:
+ * https, lower-case host without "www.", no fragment, no tracking parameters (utm_*, which OpenAI
+ * adds to cited links) and no trailing slash. "" when it isn't a web address.
+ */
+export function normalizeSourceUrl(raw: string): string {
+  let u: URL;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return "";
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return "";
+  u.protocol = "https:";
+  u.hostname = u.hostname.toLowerCase().replace(/^www\./, "");
+  u.hash = "";
+  for (const k of [...u.searchParams.keys()]) if (/^utm_/i.test(k)) u.searchParams.delete(k);
+  u.pathname = u.pathname.replace(/\/+$/, "");
+  return u.toString().replace(/\/$/, "").replace(/\/\?/, "?");
+}
+
 /** Source links kept only when the provider's web search actually returned them (no invented links). */
 export function keepSeenUrls(urls: string[], seen: Set<string>): string[] {
-  const norm = (u: string) => u.trim().replace(/\/+$/, "").replace(/^http:/, "https:");
-  const seenNorm = new Set([...seen].map(norm));
-  return Array.from(new Set(urls.map(norm).filter((u) => /^https:\/\//.test(u) && seenNorm.has(u)))).slice(0, 5);
+  const seenNorm = new Set([...seen].map(normalizeSourceUrl).filter(Boolean));
+  return Array.from(new Set(urls.map(normalizeSourceUrl).filter((u) => u && seenNorm.has(u)))).slice(0, 5);
 }
 
 export type TargetCompanyInput = {
