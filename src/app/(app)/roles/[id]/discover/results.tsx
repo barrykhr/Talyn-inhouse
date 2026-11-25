@@ -8,6 +8,7 @@ import { ActionButton } from "@/components/client";
 import { SampleBadge } from "@/components/role-workspace";
 import { useToast } from "@/components/toast";
 import type { Relevance } from "@/lib/sourcing/relevance";
+import { MEANING_LABEL, meaningBand } from "@/lib/semantic/core";
 import { revealContact, reviewProfile, saveProfileToRole } from "@/server/sourcing-actions";
 
 export type ProfileView = {
@@ -66,6 +67,7 @@ function relevanceLine(r: Partial<Relevance>) {
   if (r.required?.total) parts.push(`${r.required.matched} of ${r.required.total} required skills`);
   if (r.preferred?.total) parts.push(`${r.preferred.matched} of ${r.preferred.total} preferred`);
   if (r.companyMatched) parts.push("at a target company");
+  if (r.meaning && r.meaning.points > 0) parts.push(`${MEANING_LABEL[meaningBand(r.meaning.similarity)].toLowerCase()} in meaning to the role`);
   const deep = (r.depth ?? []).filter((d) => d.units > 0).sort((a, b) => b.units - a.units).slice(0, 3);
   const unit = r.unitLabel;
   const one = unit ? (unit.endsWith("ies") ? `${unit.slice(0, -3)}y` : unit.replace(/s$/, "")) : "";
@@ -109,7 +111,7 @@ export function ResultCard({ p, outreachHref }: { p: ProfileView; outreachHref: 
   const sources = p.sources.length ? p.sources : [{ key: p.source, label: p.sourceLabel, url: p.sourceUrl, recordId: "", retrievedAt: p.retrievedAt }];
 
   return (
-    <article aria-labelledby={`${id}-name`} className={clsx("px-4 py-4", p.status === "dismissed" && "opacity-60")}>
+    <article id={`p-${p.id}`} aria-labelledby={`${id}-name`} className={clsx("scroll-mt-6 px-4 py-4", p.status === "dismissed" && "opacity-60")}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-0.5">
           <div className="flex flex-wrap items-center gap-2">
