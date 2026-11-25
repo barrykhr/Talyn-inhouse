@@ -49,6 +49,9 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
         meta={<span>{total} in workspace</span>}
         actions={
           <>
+            <LinkButton href="/candidates/search" variant="secondary">
+              Search by meaning
+            </LinkButton>
             {openDuplicates > 0 && (
               <LinkButton href="/candidates/duplicates" variant="ghost">
                 Possible duplicates ({openDuplicates})

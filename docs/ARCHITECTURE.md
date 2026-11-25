@@ -426,3 +426,26 @@ Each is No issues / Check with a person / Not enough to check, with quotes.
 `src/lib/interviews/gaps.ts`: the kit page lists the candidate's unproven required and preferred
 items (missing, unclear, conflicting) with a question: their follow-up question if one exists, the
 hiring team's question, or a neutral template.
+
+## Search by meaning (embeddings)
+
+`src/lib/semantic/core.ts` (pure), `src/lib/semantic/embed.ts` (OpenAI), `src/server/semantic.ts`.
+- **What is embedded:** for a candidate, current title, company, location, confirmed skills, their own
+  summary and the CV; for a Discover result, title, company, location and the profile text the source
+  returned (`SourcedProfile.profileText`, new). Never the name; emails, phone numbers and links are stripped.
+- **Model:** OpenAI `text-embedding-3-small` at 256 dimensions (`EMBEDDING_MODEL` to change). Anthropic
+  has no embeddings API, so this needs `OPENAI_API_KEY` whichever AI provider is chosen. Without it
+  the page says so and nothing else changes. `TALYN_FAKE_EMBEDDINGS=1` is a word-overlap stand-in for
+  local development only, labelled on screen.
+- **Storage and search:** `Embedding` (one per candidate or sourced profile, `textHash` to re-embed on
+  change). Vectors are unit length; similarity is a dot product in SQL over `float8[]`, so no
+  database extension is required. Fine for tens of thousands of people per workspace; pgvector can
+  replace it later without changing callers.
+- **Indexing:** new Discover results are embedded during the search and stored; anything new or
+  changed is embedded when someone searches (up to 150 at a time) and by the daily `/api/cron/discover`.
+- **Where it shows:** Candidates → "Search by meaning" (`/candidates/search`): plain-English search
+  across candidates and Discover results, each with the line closest in meaning; "People like this" on
+  every result and candidate page, never listing the same person again. In Discover, closeness in
+  meaning to the role (the recruiter's description, else fields and approved criteria) adds up to 10
+  relevance points and the card says "strong / good / some match in meaning to the role".
+- Ordering only: nobody is filtered out, hidden or contacted by meaning.

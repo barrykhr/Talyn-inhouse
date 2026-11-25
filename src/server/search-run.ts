@@ -8,6 +8,8 @@ import { redactContact } from "@/lib/extraction";
 import { logError } from "@/lib/log";
 import { SourceError, connector, type RawProfile } from "@/lib/sourcing/connectors";
 import { EMPTY_FILTERS, parseSynonyms, type SearchFilters } from "@/lib/sourcing/filters";
+import { cosine, hashText, sourcedText, stripContact } from "@/lib/semantic/core";
+import { embedTexts, embeddingStatus } from "@/lib/semantic/embed";
 import { mergeAcrossSources, type MergedProfile } from "@/lib/sourcing/merge";
 import { computeRelevance, type Relevance } from "@/lib/sourcing/relevance";
 
@@ -148,11 +150,13 @@ export async function executeSearch(
   }
   const fresh = merged;
   // Relevance: required skills evidenced, depth and recency of public work. Ordering only.
-  const brief2 = await db.discoveryBrief.findUnique({ where: { roleId }, select: { minRequiredSkills: true, aiRankTop: true } });
-  const scored = merged.map((p) => ({ p, rel: computeRelevance(p.signals, p.work, brief2?.minRequiredSkills ?? null) }));
+  const brief2 = await db.discoveryBrief.findUnique({ where: { roleId }, select: { minRequiredSkills: true, aiRankTop: true, describedAs: true } });
+  // Closeness in meaning to the role: up to 10 relevance points. If it can't run, nothing else changes.
+  const meaning = await meaningFor(auth.orgId, roleId, f, brief2?.describedAs ?? null, merged);
+  const scored = merged.map((p) => ({ p, rel: computeRelevance(p.signals, p.work, brief2?.minRequiredSkills ?? null, Date.now(), meaning.sims.get(p) ?? null) }));
   const role = await db.role.findUnique({ where: { id: roleId }, select: { title: true } });
   const ai = brief2?.aiRankTop && scored.length ? await rankWithAi(auth, roleId, role?.title ?? f.roleName, scored) : { ranks: new Map(), outcome: { status: "off", ranked: 0 } as AiRankOutcome };
-  await db.searchStrategy.update({ where: { id: strategy.id }, data: { planJson: JSON.stringify({ years, workArrangement: f.workArrangement, minRequiredSkills: brief2?.minRequiredSkills ?? null, aiRank: ai.outcome }) } });
+  await db.searchStrategy.update({ where: { id: strategy.id }, data: { planJson: JSON.stringify({ years, workArrangement: f.workArrangement, minRequiredSkills: brief2?.minRequiredSkills ?? null, aiRank: ai.outcome, meaning: meaning.outcome }) } });
   const excluded = merged.filter((p) => p.excludedBy).length;
   const anyOk = statuses.some((s) => s.status === "ok");
   const run = await db.searchRun.create({
@@ -188,6 +192,7 @@ export async function executeSearch(
         location: p.location,
         fieldsJson: JSON.stringify(p.fields),
         signalsJson: JSON.stringify(p.signals),
+        profileText: p.text ? stripContact(p.text).slice(0, 8000) : null,
         matchedSignals: p.signals.filter((s) => s.matched).length,
         relevanceScore: scored.find((x) => x.p === p)!.rel.score,
         relevanceJson: JSON.stringify(scored.find((x) => x.p === p)!.rel),
@@ -205,6 +210,22 @@ export async function executeSearch(
         status: p.excludedBy ? "excluded" : "new",
       })),
     });
+  // Keep the embeddings computed above so search by meaning doesn't pay for them again.
+  if (meaning.vectors.size) {
+    try {
+      const saved = await db.sourcedProfile.findMany({ where: { runId: run.id }, select: { id: true, source: true, sourceRecordId: true, currentTitle: true, currentCompany: true, location: true, profileText: true, signalsJson: true } });
+      const st = embeddingStatus();
+      for (const sp of saved) {
+        const p = merged.find((m) => m.sourceKey === sp.source && m.sourceRecordId === sp.sourceRecordId);
+        const vec = p ? meaning.vectors.get(p) : undefined;
+        if (!vec) continue;
+        const data = { orgId: auth.orgId, textHash: hashText(sourcedText(sp)), model: st.model, vector: vec };
+        await db.embedding.upsert({ where: { kind_refId: { kind: "sourced", refId: sp.id } }, create: { kind: "sourced", refId: sp.id, ...data }, update: data });
+      }
+    } catch (err) {
+      logError("semantic.store_failed", err, { runId: run.id });
+    }
+  }
   await audit(auth, "discover.searched", {
     subjectType: "sourcing",
     subjectId: run.id,
@@ -213,4 +234,33 @@ export async function executeSearch(
   });
   return { anyOk, runId: run.id, statuses, added: fresh.length, found: merged.length };
 
+}
+
+type MeaningOutcome = { status: "off" | "ok" | "failed"; scored: number; model?: string; note?: string };
+
+/**
+ * Embeds the role (the recruiter's description, or its fields and approved criteria) and each found
+ * person, and returns each person's cosine similarity to the role. At most 250 people per search.
+ */
+async function meaningFor(orgId: string, roleId: string, f: BriefFields, describedAs: string | null, people: MergedProfile[]): Promise<{ sims: Map<MergedProfile, number>; vectors: Map<MergedProfile, number[]>; outcome: MeaningOutcome }> {
+  const sims = new Map<MergedProfile, number>();
+  const vectors = new Map<MergedProfile, number[]>();
+  const st = embeddingStatus();
+  if (!st.configured || !people.length) return { sims, vectors, outcome: { status: "off", scored: 0, note: st.reason ?? undefined } };
+  try {
+    const criteria = await db.criterion.findMany({ where: { orgId, roleId, status: "approved" }, select: { name: true }, orderBy: { position: "asc" }, take: 30 });
+    const roleText = (describedAs?.trim() || [f.roleName, f.altTitles.join(", "), `Skills: ${[...f.skillsRequired, ...f.skillsPreferred].join(", ")}`, ...criteria.map((c) => c.name)].filter(Boolean).join("\n")).slice(0, 4000);
+    const batch = people.slice(0, 250);
+    const texts = batch.map((p) => sourcedText({ currentTitle: p.currentTitle, currentCompany: p.currentCompany, location: p.location, profileText: p.text ? stripContact(p.text).slice(0, 8000) : null, signalsJson: JSON.stringify(p.signals) }));
+    const [roleVec, ...vecs] = await embedTexts([roleText, ...texts]);
+    batch.forEach((p, i) => {
+      if (texts[i].length < 20) return;
+      vectors.set(p, vecs[i]);
+      sims.set(p, cosine(roleVec, vecs[i]));
+    });
+    return { sims, vectors, outcome: { status: "ok", scored: sims.size, model: st.model } };
+  } catch (err) {
+    logError("semantic.discover_failed", err, { roleId });
+    return { sims, vectors, outcome: { status: "failed", scored: 0, note: err instanceof Error ? err.message : "Embeddings failed" } };
+  }
 }

@@ -650,6 +650,7 @@ model SourcedProfile {
   relevanceJson        String    @default("{}") // Relevance breakdown: required/preferred matches, work depth, recency, minimum bar
   aiRank               Int? // 1 = best, when the recruiter asked AI to rank the top results against the role's approved criteria
   aiFitJson            String? // { fit, summary, evidence: [{ criterion, quote }], model } — quotes verified against the profile text
+  profileText          String? // the profile text the source returned (no contact details), for evidence quotes and search by meaning
 
   @@index([orgId, roleId, status])
   @@index([runId])
@@ -1307,4 +1308,22 @@ model HiringFeedback {
 
   @@unique([applicationId, userId])
   @@index([orgId])
+}
+
+// Search by meaning: one embedding per candidate or sourced profile, from work-related text only
+// (no name or contact details). Similarity is computed in SQL over plain float arrays, so no
+// database extension is required. Recomputed when the text changes (textHash).
+model Embedding {
+  id        String   @id @default(cuid())
+  orgId     String
+  kind      String // candidate | sourced
+  refId     String // Candidate.id or SourcedProfile.id
+  textHash  String
+  model     String // e.g. openai:text-embedding-3-small@256
+  vector    Float[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([kind, refId])
+  @@index([orgId, kind])
 }

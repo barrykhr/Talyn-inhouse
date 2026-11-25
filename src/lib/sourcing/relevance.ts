@@ -1,6 +1,7 @@
 // Relevance of a Discover result to the role's search fields: which required skills have evidence,
 // how much public work shows them, and how recent that work is. A review aid for ordering results;
 // it never hides, rejects or contacts anyone. Pure functions (no database, no AI).
+import { meaningPoints } from "../semantic/core";
 
 export type WorkEvidence = {
   /** One line per piece of public work (repository, project, model, paper, answer tag). */
@@ -23,6 +24,8 @@ export type Relevance = {
   titleMatched: boolean;
   /** Current company is one of the recruiter's target companies (+10, capped at 100). */
   companyMatched: boolean;
+  /** Closeness in meaning to the role (cosine similarity of embeddings) and the points it added (0–10). */
+  meaning: { similarity: number; points: number } | null;
   /** Units of public work mentioning each matched required skill. */
   depth: { term: string; units: number }[];
   unitLabel: string | null;
@@ -59,9 +62,10 @@ const recency = (iso: string | null, now: number) => {
  *   others using the work             5  (log scale of stars / downloads / citations)
  * Sources without work evidence (CV-style records) are scored on the first three and rescaled.
  * Location is a filter, never points. With no required skills, query keywords and titles stand in.
- * A current company among the recruiter's target companies adds 10 (capped at 100).
+ * A current company among the recruiter's target companies adds 10, and closeness in meaning to the
+ * role adds up to 10 (both capped at 100). Neither ever hides anyone.
  */
-export function computeRelevance(signals: SignalLike[], work: WorkEvidence | null, minRequired: number | null, now = Date.now()): Relevance {
+export function computeRelevance(signals: SignalLike[], work: WorkEvidence | null, minRequired: number | null, now = Date.now(), meaningSimilarity: number | null = null): Relevance {
   const of = (cat: string) => signals.filter((s) => s.category === cat);
   let req = of("skill_required");
   if (!req.length) req = of("keyword");
@@ -84,7 +88,8 @@ export function computeRelevance(signals: SignalLike[], work: WorkEvidence | nul
   const hasWork = units.length > 0;
   const companyMatched = of("company").some((s) => s.matched);
   const base = hasWork ? text + 15 * depthScore + 10 * recent + 5 * pop : (text / 70) * 100;
-  const score = base + (companyMatched ? 10 : 0);
+  const mPoints = meaningPoints(meaningSimilarity);
+  const score = base + (companyMatched ? 10 : 0) + mPoints;
 
   const min = Math.min(minRequired ?? defaultMinRequired(req.length), req.length);
   return {
@@ -94,6 +99,7 @@ export function computeRelevance(signals: SignalLike[], work: WorkEvidence | nul
     preferred: { matched: pref.filter((s) => s.matched).length, total: pref.length },
     titleMatched,
     companyMatched,
+    meaning: meaningSimilarity === null || !Number.isFinite(meaningSimilarity) ? null : { similarity: Math.round(meaningSimilarity * 1000) / 1000, points: mPoints },
     depth,
     unitLabel: work?.unitLabel ?? null,
     lastActiveAt: work?.lastActiveAt ?? null,

@@ -19,7 +19,7 @@ import { SourceViewerProvider } from "@/components/source-viewer";
 import { StatusLine, type StatusItem } from "@/components/status-line";
 import { SummaryLine } from "@/components/summary";
 import { ReviewPanelShell, Tabs } from "@/components/workspace";
-import { Badge, Breadcrumbs, Card, EmptyState, Notice, PageHeader, SectionTitle, formatDate, formatDateTime } from "@/components/ui";
+import { Badge, Breadcrumbs, Card, EmptyState, LinkButton, Notice, PageHeader, SectionTitle, formatDate, formatDateTime } from "@/components/ui";
 import { aiStatus } from "@/lib/ai";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -1299,6 +1299,9 @@ export default async function CandidatePage({
         meta={contactMeta}
         actions={
           <>
+            <LinkButton href={`/candidates/search?like=candidate:${candidate.id}`} variant="ghost">
+              People like this
+            </LinkButton>
             <EditProfile
               candidateId={candidate.id}
               values={{
