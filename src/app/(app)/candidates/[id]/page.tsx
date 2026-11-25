@@ -1,3 +1,4 @@
+import { echoSummary } from "@/lib/jd-echo";
 import { INTEREST_CHANNEL_LABEL, INTEREST_LABEL } from "@/lib/domain";
 import { auditAccess } from "@/lib/audit";
 import clsx from "clsx";
@@ -134,6 +135,7 @@ export default async function CandidatePage({
     questions?: string[];
     adjustedNote?: string | null;
     unavailable?: string;
+    copiedFromJd?: string[];
   };
 
   const items: ItemView[] = (latest?.items ?? []).map((i) => ({
@@ -295,6 +297,8 @@ export default async function CandidatePage({
       else status.push({ tone: "neutral", text: `Not yet assessed against ${app.role.criteria.length} criteria for ${app.role.title}` });
     } else {
       if (stale) status.push({ tone: "attention", text: "The role's criteria changed since this assessment — re-run it to update" });
+      const copied = echoSummary(recJson.copiedFromJd ?? []);
+      if (copied) status.push({ tone: "attention", text: copied });
       if (latest.status !== "reviewed") status.push({ tone: "ai", text: "Assessment drafted — review the evidence" });
       if (latest.recommendation && latest.recommendationStatus === "pending") status.push({ tone: "ai", text: "AI recommendation awaiting your review" });
       if (app.tasks.length) status.push({ tone: "attention", text: `${app.tasks.length} open information request${app.tasks.length > 1 ? "s" : ""}` });

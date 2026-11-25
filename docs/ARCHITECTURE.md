@@ -352,3 +352,20 @@ predictive validity.
   the rest is under "Show details". Relevance bullets and the top score factors come from
   `src/lib/candidate-summary.ts`. The processing log and the text read from the CV sit behind
   "View processing details". Presentation only: no data, provenance or audit is removed.
+
+## Evidence that repeats the job description
+
+`src/lib/jd-echo.ts` (pure) runs after every assessment. For an evaluation criterion (not a single
+skill, which CVs legitimately list) marked supported or partially supported, if every verified quote
+either contains the whole criterion name (3+ words) word for word or shares 8+ consecutive words with
+the role's current JD, the item becomes `inferred` (needs review, 0.5 credit) with a note asking for a
+specific example. The names go to `recommendationJson.copiedFromJd`; the candidate page shows one
+status line, and an AI "advance" recommendation becomes "gather more information" with an
+`adjustedNote`. Nobody is rejected or hidden. Engine version `assess-v4`.
+
+## Outreach for applicants vs people found in Discover
+
+`src/lib/outreach/prompt.ts` (pure) picks the wording from `Application.origin`. Applicants get a
+reply to their application (thanks, the next step, an easy way to withdraw) and the AI is told not to
+write a first approach ("noticed your profile", "open to hearing about"). People found in Discover get
+the first-contact rules as before. The plain fallback follows the same split. Engine `outreach-v2`.

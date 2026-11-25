@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { EMPLOYMENT_TYPE_LABEL, type EmploymentType } from "@/lib/domain";
 import { logError } from "@/lib/log";
 import { OPT_OUT_FOOTER, fillTemplate, personalizationFacts, type PersonalizationFact } from "@/lib/outreach/facts";
+import { audienceOf, plainOutreach, type OutreachAudience } from "@/lib/outreach/prompt";
 import { waNumber, whatsappConfigured } from "@/lib/outreach/whatsapp";
 import { applyOutcome } from "@/lib/outreach/outcomes";
 import { getEmailProvider } from "@/lib/outreach/provider";
@@ -42,14 +43,16 @@ async function draftStep(input: {
   facts: PersonalizationFact[];
   role: { title: string; location: string; employmentType: string; criteria: { name: string }[] };
   company: string;
+  audience: OutreachAudience;
 }): Promise<Draft & { fallback?: string }> {
-  const { auth, channel, step, facts, role, company } = input;
+  const { auth, channel, step, facts, role, company, audience } = input;
   const byKey = new Map(facts.map((f) => [f.key, f]));
   const ai = aiStatus();
   try {
     if (!ai.configured) throw new AiUnavailableError();
     const r = await draftOutreachWithAi({
       channel,
+      audience,
       company,
       role: { title: role.title, location: role.location, employmentType: EMPLOYMENT_TYPE_LABEL[role.employmentType as EmploymentType] ?? role.employmentType, highlights: role.criteria.map((c) => c.name) },
       facts: facts.map(({ key, label, value }) => ({ key, label, value })),
@@ -62,23 +65,14 @@ async function draftStep(input: {
     return { subject: channel === "whatsapp" ? "WhatsApp" : r.subject.slice(0, 200), body: r.body.slice(0, channel === "whatsapp" ? 1000 : 5000), used, generator: `ai:${ai.provider}:${ai.model}/${OUTREACH_ENGINE_VERSION}` };
   } catch (err) {
     if (!(err instanceof AiUnavailableError || err instanceof AiRequestError)) logError("outreach.draft_failed", err);
-    const firstName = byKey.get("first_name")?.value;
-    const hi = firstName ? `Hi ${firstName},` : "Hi,";
-    const ev = facts.filter((f) => f.key.startsWith("evidence_")).slice(0, 2);
-    const why = ev.length ? ` Your profile mentions ${ev.map((f) => f.label.replace(/^Profile mentions /, "")).join(" and ")}, which is relevant to the role.` : "";
-    const body =
-      channel === "whatsapp"
-        ? step === 1
-          ? `${hi} I'm ${auth.userName}, a recruiter at ${company}. We're hiring a ${role.title}.${why} Would you be open to a short chat?`
-          : `${hi} just following up on the ${role.title} role at ${company}. No problem if the timing isn't right.`
-        : step === 1
-          ? `${hi}\n\nI'm ${auth.userName}, recruiting at ${company}. We're hiring a ${role.title}${role.location ? ` (${role.location})` : ""}.${why} Would you be open to a short conversation?\n\nBest,\n${auth.userName}`
-          : `${hi}\n\nFollowing up on my note about the ${role.title} role at ${company}. Happy to share more, or no worries if the timing isn't right.\n\nBest,\n${auth.userName}`;
+    const firstName = byKey.get("first_name")?.value ?? null;
+    const ev = audience === "discovered" ? facts.filter((f) => f.key.startsWith("evidence_")).slice(0, 2) : [];
+    const plain = plainOutreach({ channel, audience, step, firstName, sender: auth.userName, company, role, evidenceTerms: ev.map((f) => f.label.replace(/^Profile mentions /, "")) });
     return {
-      subject: channel === "whatsapp" ? "WhatsApp" : step === 1 ? `${role.title} at ${company}` : `Re: ${role.title} at ${company}`,
-      body,
+      subject: plain.subject,
+      body: plain.body,
       used: [...(firstName ? facts.filter((f) => f.key === "first_name") : []), ...ev],
-      generator: "recruiter-template:plain-v1",
+      generator: "recruiter-template:plain-v2",
       fallback: err instanceof AiUnavailableError ? "AI is off — drafts use a plain starting message built from the evidence. Edit before approving." : "AI drafting failed — drafts use a plain starting message.",
     };
   }
@@ -124,7 +118,7 @@ export async function draftSequence(applicationId: string, _prev: ActionState, f
       drafts.push({ subject: fillTemplate(template.subject, vars), body: fillTemplate(template.body, vars), used, generator: `template:${template.id}` });
       continue;
     }
-    const d = await draftStep({ auth, channel, step, previous: drafts[step - 2]?.body ?? null, facts, role, company: org.name });
+    const d = await draftStep({ auth, channel, step, previous: drafts[step - 2]?.body ?? null, facts, role, company: org.name, audience: audienceOf(app.origin) });
     if (d.fallback) notice = d.fallback;
     drafts.push(d);
   }
@@ -169,9 +163,9 @@ export async function regenerateMessage(messageId: string): Promise<ActionState>
   if (!m) return { error: "Message not found." };
   if (m.sentAt) return { error: "This message was already sent." };
   if (!["draft", "paused"].includes(m.sequence.status)) return { error: "Pause the sequence before regenerating." };
-  const { org, role, facts } = await draftContext(auth, m.applicationId);
+  const { app, org, role, facts } = await draftContext(auth, m.applicationId);
   const prev = m.step > 1 ? await db.outreachMessage.findFirst({ where: { sequenceId: m.sequenceId, step: m.step - 1 }, select: { body: true } }) : null;
-  const d = await draftStep({ auth, channel: m.sequence.channel === "whatsapp" ? "whatsapp" : "email", step: m.step, previous: prev?.body ?? null, facts, role, company: org.name });
+  const d = await draftStep({ auth, channel: m.sequence.channel === "whatsapp" ? "whatsapp" : "email", step: m.step, previous: prev?.body ?? null, facts, role, company: org.name, audience: audienceOf(app.origin) });
   const body = d.body + OPT_OUT_FOOTER;
   await db.outreachMessage.update({
     where: { id: messageId },
