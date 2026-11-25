@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { topScoreFactors } from "@/lib/candidate-summary";
-import { MIN_MATERIAL_CHARS, bandRanges, type Band, type ProfileRow } from "@/lib/profile-score";
+import { GRADE_HELP, MIN_MATERIAL_CHARS, bandRanges, talentGrade, type Band, type ProfileRow } from "@/lib/profile-score";
 import { RESULT_LABEL, type AssessmentResult } from "@/lib/domain";
 
 export type ScoreSnapshot = {
@@ -38,11 +38,12 @@ export function ProfileScoreChip({ s, className }: { s: ScoreSnapshot | null; cl
   return (
     <span
       className={clsx("inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11.5px] font-semibold", BAND_CLS[s.band ?? ""] ?? "bg-sunken text-ink-2", className)}
-      title={`Advisory only — profile score ${s.score}/100 (scoring v${s.version}${outdated ? `, current is v${s.currentVersion}` : ""}); evidence coverage ${Math.round(s.coverage * 100)}%. A person decides.`}
+      title={`Advisory only — profile score ${s.score}/100 (scoring v${s.version}${outdated ? `, current is v${s.currentVersion}` : ""}); evidence coverage ${Math.round(s.coverage * 100)}%. ${GRADE_HELP} A person decides.`}
     >
       <span aria-hidden>{BAND_ICON[s.band ?? ""]}</span>
       <span className="tabular-nums">{s.score}</span>
       <span className="font-medium">· {s.bandLabel}</span>
+      <span className="font-semibold" aria-label={`Grade ${talentGrade(s.score)}`}>· {talentGrade(s.score)}</span>
       {outdated && <span className="font-normal opacity-70">· v{s.version}</span>}
     </span>
   );
@@ -78,6 +79,7 @@ export function ProfileScoreDetail({
             <div className="mt-0.5 flex items-baseline gap-2">
               <span className="text-3xl font-semibold tabular-nums tracking-tight">{s.score}</span>
               <span className="text-[13px] text-faint">/ 100</span>
+              <span className="text-[15px] font-semibold" title={GRADE_HELP}>Grade {talentGrade(s.score)}</span>
             </div>
           ) : (
             <div className="mt-0.5 text-[15px] font-semibold text-muted">{s.status === "alternative" ? "Not used — alternative route" : "Insufficient evidence"}</div>

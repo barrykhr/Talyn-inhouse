@@ -113,6 +113,7 @@ model Role {
   criteria           Criterion[]
   applications       Application[]
   documents          JobDescription[]
+  insight            RoleInsight?
   extracted          ExtractedField[]
   icps               Icp[]
   searches           SearchStrategy[]
@@ -861,6 +862,8 @@ model DiscoveryBrief {
   confirmedByName     String?
   minRequiredSkills   Int? // Discover: profiles with fewer required skills evidenced go to "Limited evidence"; null = half, rounded up
   aiRankTop           Boolean   @default(false) // Discover: rank the top results against the role's approved criteria with AI
+  synonymsJson        String    @default("{}") // { term: [alternatives] } the recruiter kept; count as evidence for that title or skill
+  describedAs         String? // the plain-English description the fields were filled from, if any
   updatedByName       String    @default("")
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -1262,7 +1265,27 @@ model TargetCompanySet {
   webSearch         Boolean  @default(false) // the provider's web search was used; per-company source links are stored
   generatedByName   String
   generatedAt       DateTime @default(now())
+  selectedJson      String   @default("[]") // company names the recruiter chose (suggested or added by hand); used by searches
+  selectedByName    String?
+  selectedAt        DateTime?
   role              Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+// Role Insights: JD quality checks (AI + rules, quotes verified against the JD) and the usual career
+// path into and out of the role. One per role, replaced on regenerate.
+model RoleInsight {
+  id              String   @id @default(cuid())
+  orgId           String
+  roleId          String   @unique
+  checksJson      String   @default("[]") // InsightCheck[]: kind, quote, issue, suggestion, verified, by (ai | rule)
+  growthJson      String? // { from_titles, next_titles, note } or null without AI
+  model           String // provider:model, or "rules" when only the rule-based check ran
+  jdFileName      String? // which JD was checked
+  generatedByName String
+  generatedAt     DateTime @default(now())
+  role            Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
 }

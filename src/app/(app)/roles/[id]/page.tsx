@@ -17,6 +17,8 @@ import { generateCoreQuestions } from "@/server/question-actions";
 import { ApplicantsTab } from "./applicants";
 import { ShortlistTab } from "./shortlist";
 import { RoleOverview } from "./overview";
+import { RoleInsights } from "./role-insights";
+import type { InsightCheck } from "@/lib/role-insights";
 import { RoleTabs } from "@/components/role-workspace";
 import { THRESHOLD_FILTERS, matchForApplication, roleSkillConfig } from "@/lib/skills";
 import { weightsOf } from "@/lib/score";
@@ -76,6 +78,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
         orderBy: { updatedAt: "desc" },
       },
       documents: { orderBy: { createdAt: "desc" }, select: { id: true, fileName: true, createdAt: true, isCurrent: true, parserVersion: true } },
+      insight: true,
       extracted: { where: { status: { not: "rejected" } }, orderBy: { position: "asc" } },
       questions: { where: { kind: "core" }, orderBy: [{ status: "asc" }, { createdAt: "asc" }] },
     },
@@ -474,6 +477,23 @@ export default async function RolePage({ params, searchParams }: { params: Promi
               </ul>
             )}
           </Card>
+
+          <RoleInsights
+            roleId={role.id}
+            hasJd={role.documents.length > 0 || !!role.description.trim()}
+            insight={
+              role.insight
+                ? {
+                    checks: JSON.parse(role.insight.checksJson) as InsightCheck[],
+                    growth: role.insight.growthJson ? JSON.parse(role.insight.growthJson) : null,
+                    model: role.insight.model,
+                    jdFileName: role.insight.jdFileName,
+                    generatedByName: role.insight.generatedByName,
+                    generatedAt: role.insight.generatedAt,
+                  }
+                : null
+            }
+          />
 
           {reviewedFacts.length > 0 && (
             <Card className="p-5">

@@ -13,7 +13,7 @@ export type WorkEvidence = {
   popularityLabel: string | null;
 };
 
-type SignalLike = { category: string; term: string; matched: boolean };
+type SignalLike = { category: string; term: string; matched: boolean; matchedAs?: string };
 
 export type Relevance = {
   score: number; // 0–100
@@ -74,7 +74,7 @@ export function computeRelevance(signals: SignalLike[], work: WorkEvidence | nul
   const titleMatched = titles.some((s) => s.matched);
 
   const units = work?.units ?? [];
-  const depth = reqMatched.map((s) => ({ term: s.term, units: units.filter((u) => mentions(u, s.term)).length }));
+  const depth = reqMatched.map((s) => ({ term: s.term, units: units.filter((u) => mentions(u, s.term) || (!!s.matchedAs && mentions(u, s.matchedAs))).length }));
   const depthScore = depth.length ? depth.reduce((n, d) => n + Math.min(d.units, 5) / 5, 0) / depth.length : 0;
   const recent = recency(work?.lastActiveAt ?? null, now);
   const pop = work?.popularity ? Math.min(Math.log10(1 + work.popularity) / 3, 1) : 0;

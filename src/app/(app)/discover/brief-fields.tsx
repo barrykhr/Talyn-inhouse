@@ -2,7 +2,10 @@
 
 import clsx from "clsx";
 import { useId, useMemo, useState } from "react";
-import { Input, Select } from "@/components/ui";
+import { Spinner } from "@/components/client";
+import { AiMark, Input, Select, buttonClass } from "@/components/ui";
+import { describeToFields, suggestSynonyms } from "@/server/discovery-actions";
+import type { DescribedFields } from "@/lib/discovery/semantic";
 import {
   PROV_LABEL,
   WORK_ARRANGEMENTS,
@@ -74,6 +77,7 @@ export function BriefFieldsEditor({
   initialBooleanEdited = false,
   initialBooleanKey = null,
   showProvenance = true,
+  meaning,
 }: {
   initial: BriefFields;
   provenance?: Provenance;
@@ -81,6 +85,8 @@ export function BriefFieldsEditor({
   initialBooleanEdited?: boolean;
   initialBooleanKey?: string | null;
   showProvenance?: boolean;
+  /** Search by meaning on a role: describe the person, and other names for titles and skills. */
+  meaning?: { roleId: string; aiConfigured: boolean; synonyms: Record<string, string[]>; describedAs: string | null };
 }) {
   const id = useId();
   const [v, setV] = useState({
@@ -115,7 +121,28 @@ export function BriefFieldsEditor({
   const query = edited ? manualQuery : generated;
   const stale = edited && keyAtGen !== booleanKey(fields);
   const problem = query.trim() ? checkBoolean(query) : null;
-  const p = (k: keyof BriefFields) => (showProvenance ? provenance[k] : undefined);
+  const [aiFilled, setAiFilled] = useState<Set<keyof BriefFields>>(new Set());
+  const p = (k: keyof BriefFields): Prov | undefined => (aiFilled.has(k) ? ({ status: "inferred" } as Prov) : showProvenance ? provenance[k] : undefined);
+  const applyDescribed = (d: DescribedFields) => {
+    const next = { ...v };
+    const filled = new Set<keyof BriefFields>();
+    const put = (k: keyof typeof v & keyof BriefFields, val: string) => {
+      if (val) {
+        next[k] = val;
+        filled.add(k);
+      }
+    };
+    put("roleName", d.roleName);
+    put("altTitles", join(d.altTitles));
+    put("skillsRequired", join(d.skillsRequired));
+    put("skillsPreferred", join(d.skillsPreferred));
+    put("minYears", d.minYears?.toString() ?? "");
+    put("maxYears", d.maxYears?.toString() ?? "");
+    put("location", d.location ?? "");
+    put("workArrangement", d.workArrangement ?? "");
+    setV(next);
+    setAiFilled(filled);
+  };
   const items = (k: "skillsRequired" | "skillsPreferred") => {
     const it = provenance[k]?.items;
     return showProvenance && it ? fields[k].map((s) => ({ value: s, quote: it[s]?.quote ?? null })).filter((x) => it[x.value]) : undefined;
@@ -125,6 +152,7 @@ export function BriefFieldsEditor({
 
   return (
     <div className="space-y-4">
+      {meaning && <DescribePanel roleId={meaning.roleId} aiConfigured={meaning.aiConfigured} initialText={meaning.describedAs} onUse={applyDescribed} />}
       <div className="grid gap-4 md:grid-cols-2">
         <FieldRow id={`${id}-rn`} label="Role name" prov={p("roleName")}>
           <Input id={`${id}-rn`} name="roleName" value={v.roleName} onChange={set("roleName")} required maxLength={200} placeholder="e.g. Senior Backend Engineer" />
@@ -164,6 +192,7 @@ export function BriefFieldsEditor({
           </FieldRow>
         </div>
       </div>
+      {meaning && <AlsoMatch roleId={meaning.roleId} aiConfigured={meaning.aiConfigured} initial={meaning.synonyms} titles={[fields.roleName, ...fields.altTitles].filter(Boolean)} skills={[...fields.skillsRequired, ...fields.skillsPreferred]} />}
       <details className="text-[13px]" open={fields.exclusions.length > 0}>
         <summary className="cursor-pointer text-muted hover:text-ink">Exclusions</summary>
         <div className="mt-2">
@@ -250,5 +279,227 @@ function BooleanPreview({ query }: { query: string }) {
         ),
       )}
     </p>
+  );
+}
+
+/** "Describe the person": the AI fills the fields; the recruiter sees what it understood first. */
+function DescribePanel({ roleId, aiConfigured, initialText, onUse }: { roleId: string; aiConfigured: boolean; initialText: string | null; onUse: (d: DescribedFields) => void }) {
+  const id = useId();
+  const [text, setText] = useState(initialText ?? "");
+  const [used, setUsed] = useState(initialText ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<DescribedFields | null>(null);
+  const run = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await describeToFields(roleId, text);
+      if (r.error) setError(r.error);
+      else if (r.fields) setPreview(r.fields);
+    } catch {
+      setError("Couldn't reach Talyn. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const row = (label: string, value: string) =>
+    value ? (
+      <div className="flex gap-2">
+        <dt className="w-32 shrink-0 text-muted">{label}</dt>
+        <dd className="min-w-0">{value}</dd>
+      </div>
+    ) : null;
+  return (
+    <div className="space-y-2 rounded-lg border border-line bg-sunken/40 p-3">
+      <label htmlFor={`${id}-d`} className="text-[13px] font-medium">
+        Describe the person
+      </label>
+      <p className="text-[12px] text-muted">In plain English or Hinglish, the way you would brief a recruiter. Talyn fills the fields below; you check them before searching.</p>
+      <textarea
+        id={`${id}-d`}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={2}
+        maxLength={2000}
+        placeholder="e.g. Senior backend engineer in Bengaluru, 5+ years, Go or Java, has scaled a payments system"
+        className="w-full rounded-md border border-line-strong bg-surface px-2.5 py-2 text-[13px] focus:border-ink focus:outline-none"
+      />
+      <input type="hidden" name="describedAs" value={used} />
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className={buttonClass("secondary", "sm")} onClick={run} disabled={busy || text.trim().length < 10 || !aiConfigured}>
+          {busy ? (
+            <>
+              <Spinner /> Reading…
+            </>
+          ) : (
+            "Fill the fields"
+          )}
+        </button>
+        {!aiConfigured && <span className="text-[12px] text-muted">Needs an AI provider. You can fill the fields yourself.</span>}
+        {error && (
+          <span role="alert" className="text-[12px] text-danger">
+            {error}
+          </span>
+        )}
+      </div>
+      {preview && (
+        <div className="rounded-md border border-line bg-surface p-3 text-[13px]" role="status">
+          <p className="mb-2 flex items-center gap-2 font-medium">
+            <AiMark /> Talyn understood
+          </p>
+          <dl className="space-y-1">
+            {row("Role", preview.roleName)}
+            {row("Other titles", preview.altTitles.join(", "))}
+            {row("Required skills", preview.skillsRequired.join(", "))}
+            {row("Preferred skills", preview.skillsPreferred.join(", "))}
+            {row("Experience", preview.minYears !== null || preview.maxYears !== null ? `${preview.minYears ?? "?"}–${preview.maxYears ?? "any"} years` : "")}
+            {row("Location", [preview.location, preview.workArrangement].filter(Boolean).join(" · "))}
+          </dl>
+          {preview.otherNeeds.length > 0 && (
+            <p className="mt-2 text-[12px] text-muted">
+              Not searched as keywords: {preview.otherNeeds.map((n) => `“${n}”`).join(", ")}. Add them as criteria on the Criteria tab so assessments and AI ranking check for them.
+            </p>
+          )}
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              className={buttonClass("primary", "sm")}
+              onClick={() => {
+                onUse(preview);
+                setUsed(text.trim());
+                setPreview(null);
+              }}
+            >
+              Use these
+            </button>
+            <button type="button" className={buttonClass("ghost", "sm")} onClick={() => setPreview(null)}>
+              Discard
+            </button>
+          </div>
+          <p className="mt-1 text-[11.5px] text-faint">Filled fields are marked “Suggested” until you save. Nothing is searched yet.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Other names that count as evidence for a title or skill. Suggested by AI or typed; the recruiter removes any. */
+function AlsoMatch({ roleId, aiConfigured, initial, titles, skills }: { roleId: string; aiConfigured: boolean; initial: Record<string, string[]>; titles: string[]; skills: string[] }) {
+  const id = useId();
+  const [syn, setSyn] = useState<Record<string, string[]>>(initial);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [term, setTerm] = useState("");
+  const [alt, setAlt] = useState("");
+  const terms = Array.from(new Set([...titles, ...skills]));
+  const live = Object.fromEntries(terms.filter((t) => syn[t]?.length).map((t) => [t, syn[t]]));
+  const add = (t: string, a: string) => {
+    const x = a.trim().slice(0, 40);
+    if (!t || !x || x.toLowerCase() === t.toLowerCase()) return;
+    setSyn((s) => ({ ...s, [t]: Array.from(new Set([...(s[t] ?? []), x])).slice(0, 4) }));
+  };
+  const suggest = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await suggestSynonyms(roleId, { titles, skills });
+      if (r.error) setError(r.error);
+      else if (r.synonyms) {
+        const found = r.synonyms;
+        setSyn((s) => {
+          const next = { ...s };
+          for (const [t, alts] of Object.entries(found)) next[t] = Array.from(new Set([...(next[t] ?? []), ...alts])).slice(0, 4);
+          return next;
+        });
+        if (!Object.keys(found).length) setError("No true alternative names found for these terms.");
+      }
+    } catch {
+      setError("Couldn't reach Talyn. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-2 rounded-lg border border-line p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[13px] font-medium">Also match</span>
+        <span className="text-[12px] text-muted">Other names for the same title or skill. A match counts as evidence, and the card says which word matched.</span>
+        <button type="button" className={clsx(buttonClass("secondary", "sm"), "ml-auto")} onClick={suggest} disabled={busy || !aiConfigured || !terms.length}>
+          {busy ? (
+            <>
+              <Spinner /> Suggesting…
+            </>
+          ) : (
+            "Suggest alternatives"
+          )}
+        </button>
+      </div>
+      <input type="hidden" name="synonyms" value={JSON.stringify(live)} />
+      {Object.keys(live).length === 0 ? (
+        <p className="text-[12px] text-faint">None yet.{aiConfigured ? " Suggest them, or add your own below." : " Add your own below."}</p>
+      ) : (
+        <ul className="space-y-1 text-[12.5px]">
+          {Object.entries(live).map(([t, alts]) => (
+            <li key={t} className="flex flex-wrap items-center gap-1.5">
+              <span className="font-medium">{t}</span>
+              <span className="text-faint">also matches</span>
+              {alts.map((a) => (
+                <span key={a} className="inline-flex items-center gap-1 rounded-md border border-line bg-sunken px-1.5 py-px">
+                  {a}
+                  <button type="button" aria-label={`Remove ${a} for ${t}`} className="text-muted hover:text-ink" onClick={() => setSyn((s) => ({ ...s, [t]: (s[t] ?? []).filter((x) => x !== a) }))}>
+                    ×
+                  </button>
+                </span>
+              ))}
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && (
+        <p role="alert" className="text-[12px] text-danger">
+          {error}
+        </p>
+      )}
+      {terms.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+          <label htmlFor={`${id}-t`} className="text-muted">
+            Add for
+          </label>
+          <select id={`${id}-t`} value={term} onChange={(e) => setTerm(e.target.value)} className="h-7 rounded-md border border-line-strong bg-surface px-1.5">
+            <option value="">Choose a title or skill</option>
+            {terms.map((t) => (
+              <option key={t}>{t}</option>
+            ))}
+          </select>
+          <input
+            aria-label="Alternative name"
+            value={alt}
+            onChange={(e) => setAlt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                add(term, alt);
+                setAlt("");
+              }
+            }}
+            maxLength={40}
+            placeholder="e.g. Golang"
+            className="h-7 w-40 rounded-md border border-line-strong bg-surface px-2"
+          />
+          <button
+            type="button"
+            className={buttonClass("secondary", "sm")}
+            disabled={!term || !alt.trim()}
+            onClick={() => {
+              add(term, alt);
+              setAlt("");
+            }}
+          >
+            Add
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

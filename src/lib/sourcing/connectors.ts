@@ -22,7 +22,7 @@ import { makeApolloConnector } from "./apollo";
  * automated access to sites without an authorized data path.
  */
 
-export type Signal = { category: string; term: string; matched: boolean; quote: string | null; page: number | null; note?: string | null; source?: string };
+export type Signal = { category: string; term: string; matched: boolean; quote: string | null; page: number | null; note?: string | null; source?: string; matchedAs?: string };
 export type YearsFilter = { min: number | null; max: number | null };
 export type YearsEstimate = { years: number; basis: string } | null;
 export type FieldFact = { value: string; source: string; asOf: string };
@@ -107,9 +107,17 @@ export function yearsFromText(texts: string[]): YearsEstimate {
 }
 
 export function buildSignals(filters: SearchFilters, find: (term: string) => { quote: string; page: number | null } | null): Signal[] {
+  const ALT = new Set(["title", "adjacent_title", "skill_required", "skill_preferred"]);
   const sig = (category: string, term: string): Signal => {
     const hit = find(term);
-    return { category, term, matched: !!hit, quote: hit?.quote ?? null, page: hit?.page ?? null };
+    if (hit) return { category, term, matched: true, quote: hit.quote, page: hit.page };
+    // A recruiter-approved alternative name ("Golang" for "Go") counts, and the card says which word matched.
+    if (ALT.has(category))
+      for (const alt of filters.synonyms?.[term] ?? []) {
+        const h = find(alt);
+        if (h) return { category, term, matched: true, quote: h.quote, page: h.page, note: `Matched as “${alt}”`, matchedAs: alt };
+      }
+    return { category, term, matched: false, quote: null, page: null };
   };
   return [
     ...filters.keywords.map((t) => sig("keyword", t)),

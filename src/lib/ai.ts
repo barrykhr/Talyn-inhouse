@@ -7,6 +7,7 @@ import { z } from "zod";
 import { recordAiFailure, recordAiOk, type AiErrorKind } from "./ai-health";
 import { logError } from "./log";
 import { outreachSystemPrompt, type OutreachAudience } from "./outreach/prompt";
+import { RoleInsightsSchema, roleInsightsPrompt } from "./role-insights";
 import { HEADCOUNT_BANDS, MATCH_REASONS, REVENUE_BANDS, clientProfilePrompt, targetCompaniesPrompt, type ClientProfile, type TargetCompanyInput } from "./discovery/target-companies";
 
 // Two interchangeable providers. AI_PROVIDER picks one explicitly; otherwise whichever
@@ -819,4 +820,18 @@ ${input.competencies.map((c) => `- id: ${c.id}\n  name: ${c.name}\n  description
 ${input.passages.map((p) => `[${p.n}] (${p.at}) ${p.speaker}${p.role !== "unknown" ? ` — ${p.role}` : ""}: ${p.text}`).join("\n")}
 </transcript>`;
   return runStructured({ system, user, schema: ConversationAnalysis, name: "conversation_analysis" });
+}
+
+// ---------- Role Insights: JD quality check and growth path ----------
+
+export const ROLE_INSIGHTS_VERSION = "role-insights-v1";
+
+export async function roleInsightsWithAi(input: { title: string; jdText: string; criteria: string[]; location: string | null }) {
+  const { system, user } = roleInsightsPrompt(input);
+  return runStructured({ system, user, schema: RoleInsightsSchema, name: "role_insights", maxTokens: 6000 });
+}
+
+/** Structured output for small one-off calls (search by meaning). Same provider, errors and health tracking as the rest. */
+export async function runStructuredFor<T extends z.ZodType>(opts: { system: string; user: string; schema: T; name: string; maxTokens?: number }): Promise<z.infer<T>> {
+  return runStructured(opts);
 }

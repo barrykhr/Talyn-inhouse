@@ -6,6 +6,7 @@ import { briefColumns, briefFields } from "@/lib/discovery/store";
 import { logError } from "@/lib/log";
 import { CONNECTORS } from "@/lib/sourcing/connectors";
 import { executeSearch } from "./search-run";
+import { parseSelection } from "@/lib/discovery/target-companies";
 
 /**
  * Automatic Discover searches: when a role's criteria are first approved, and daily for open roles.
@@ -78,7 +79,10 @@ export async function autoSearchRole(orgId: string, roleId: string, opts: { only
     if (!actor) return { roleId, status: "skipped", note: "no admin" };
     const got = await fieldsFor(orgId, roleId);
     if (!got) return { roleId, status: "skipped", note: "no search fields or approved skills" };
-    const out = await executeSearch(actor, roleId, got.brief, got.fields, { demo: false, keys, onlyNew: true });
+    // The recruiter's saved target companies raise matching people; they never hide anyone.
+    const targets = await db.targetCompanySet.findUnique({ where: { roleId }, select: { orgId: true, selectedJson: true } });
+    const targetCompanies = targets && targets.orgId === orgId ? parseSelection(targets.selectedJson) : [];
+    const out = await executeSearch(actor, roleId, got.brief, got.fields, { demo: false, keys, onlyNew: true, targetCompanies });
     if ("error" in out) return { roleId, status: "skipped", note: out.error };
     return { roleId, status: out.anyOk ? "searched" : "failed", added: out.added };
   } catch (err) {

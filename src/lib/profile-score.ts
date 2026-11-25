@@ -140,6 +140,24 @@ export function computeProfileScore(
   return { ...base, status: "ok", score, band, limited, reason: parts.filter(Boolean).join(" ") };
 }
 
+/**
+ * Talent grade from the profile score: A+ 95–100, A 80–94, B 65–79, C under 65. Derived from the
+ * score, never instead of it, and never a decision. No score (insufficient evidence or an
+ * alternative route) means no grade.
+ */
+export type TalentGrade = "A+" | "A" | "B" | "C";
+export const GRADE_BANDS: { grade: TalentGrade; min: number }[] = [
+  { grade: "A+", min: 95 },
+  { grade: "A", min: 80 },
+  { grade: "B", min: 65 },
+  { grade: "C", min: 0 },
+];
+export function talentGrade(score: number | null | undefined): TalentGrade | null {
+  if (score === null || score === undefined || Number.isNaN(score)) return null;
+  return GRADE_BANDS.find((b) => score >= b.min)!.grade;
+}
+export const GRADE_HELP = "Grade from the profile score: A+ 95–100 · A 80–94 · B 65–79 · C under 65. It summarises the score; it never replaces the evidence or a person's decision.";
+
 export function parseBands(json: string | null | undefined): Band[] {
   try {
     const b = JSON.parse(json ?? "") as Band[];
@@ -167,7 +185,14 @@ const PROTECTED = new RegExp(
   ].join("|"),
   "i",
 );
-const PROXY = /\b(career gaps?|employment gaps?|gaps? in (employment|career)|no gaps|continuous employment|resume format\w*|cv format\w*|writing polish|well[- ]written|top[- ]tier (university|school|college|institute)|tier[- ]?1 (university|college|institute)|IIT|IIM|ivy league|prestigious|elite (university|school|college)|recent graduate|fresh graduate|digital native|culture fit|cultural fit|linear career|energetic team)\b/i;
+const PROXY = /\b(career gaps?|employment gaps?|gaps? in (employment|career)|no gaps|continuous employment|resume format\w*|cv format\w*|writing polish|well[- ]written|top[- ]tier (universit(y|ies)|schools?|colleges?|institutes?)|tier[- ]?1 (universit(y|ies)|colleges?|institutes?)|IITs?|IIMs?|ivy league|prestigious|elite (universit(y|ies)|schools?|colleges?)|recent graduate|fresh graduate|digital native|culture fit|cultural fit|linear career|energetic team)\b/i;
+
+/** Whether text names a protected characteristic, a common proxy for one, or neither. */
+export function fairnessKind(text: string): "protected" | "proxy" | null {
+  if (PROTECTED.test(text)) return "protected";
+  if (PROXY.test(text)) return "proxy";
+  return null;
+}
 
 /** Returns a reason to refuse a criterion, or null when it can be used. */
 export function criterionFairnessIssue(name: string, description: string): string | null {

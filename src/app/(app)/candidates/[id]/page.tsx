@@ -1,4 +1,7 @@
 import { echoSummary } from "@/lib/jd-echo";
+import { HEALTH_HELP } from "@/lib/health";
+import { HealthPill } from "@/components/health";
+import { loadHealth } from "@/server/health";
 import { INTEREST_CHANNEL_LABEL, INTEREST_LABEL } from "@/lib/domain";
 import { auditAccess } from "@/lib/audit";
 import clsx from "clsx";
@@ -244,6 +247,7 @@ export default async function CandidatePage({
   const atsConflicts = await db.atsConflict.findMany({ where: { orgId: auth.orgId, candidateId: candidate.id, status: "open" }, orderBy: { createdAt: "asc" } });
 
   // Profile checks: specific, explained flags only — never an overall "fake" judgement.
+  const health = app ? (await loadHealth(auth.orgId, [app.id])).get(app.id) ?? null : null;
   const [dupReviews, linkedSources] = await Promise.all([
     db.duplicateReview.findMany({
       where: { orgId: auth.orgId, status: { not: "dismissed" }, OR: [{ candidateAId: candidate.id }, { candidateBId: candidate.id }] },
@@ -926,6 +930,23 @@ export default async function CandidatePage({
           )}
         </div>
       </Card>
+
+      {health && (
+        <Card className="p-4" aria-labelledby="health-h">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span id="health-h" className="text-[11.5px] font-semibold uppercase tracking-wide text-muted">
+              Candidate health
+            </span>
+            <HealthPill score={health.score} band={health.band} />
+          </div>
+          <ul className="space-y-0.5 text-[12.5px] text-ink-2">
+            {health.reasons.slice(0, 4).map((r) => (
+              <li key={r}>· {r}</li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[11.5px] text-faint">{HEALTH_HELP}</p>
+        </Card>
+      )}
 
       <Card className="p-4" aria-labelledby="src-h">
         <div id="src-h" className="mb-2 text-[11.5px] font-semibold uppercase tracking-wide text-muted">
