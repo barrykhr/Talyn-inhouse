@@ -26,6 +26,9 @@ import { GenerateIcpButton, IcpApprovedView, IcpDraftEditor, type IcpView } from
 import { ImportExportForm } from "./import-export";
 import { ResultCard, type ProfileView } from "./results";
 import { PoolEstimatePanel } from "./pool-estimate";
+import { TargetCompaniesSection } from "./target-companies-section";
+import { parseSelection } from "@/lib/discovery/target-companies";
+import { parseSynonyms } from "@/lib/sourcing/filters";
 
 export const metadata = { title: "Discover" };
 // Searches, JD extraction and outreach drafting run as server actions on this page.
@@ -75,6 +78,19 @@ export default async function DiscoverPage({
   const view = VIEWS.some(([k]) => k === viewParam) ? viewParam : "review";
   const ai = aiStatus();
 
+  const targetSet = await db.targetCompanySet.findUnique({ where: { roleId: id } });
+  const targetSummary =
+    targetSet && targetSet.orgId === auth.orgId
+      ? {
+          suggested: (JSON.parse(targetSet.companiesJson) as unknown[]).length,
+          selected: parseSelection(targetSet.selectedJson),
+          generatedAt: targetSet.model === "none" ? null : targetSet.generatedAt.toISOString(),
+          generatedByName: targetSet.model === "none" ? null : targetSet.generatedByName,
+          webSearch: targetSet.webSearch,
+          selectedByName: targetSet.selectedByName,
+          selectedAt: targetSet.selectedAt?.toISOString() ?? null,
+        }
+      : null;
   const [criteria, icps, apps, strategies, rediscoverable, brief, jd] = await Promise.all([
     db.criterion.findMany({ where: { roleId: id, orgId: auth.orgId }, select: { id: true, status: true, kind: true, importance: true, updatedAt: true } }),
     loadIcps(auth.orgId, id),
@@ -364,6 +380,8 @@ export default async function DiscoverPage({
           </details>
         </Card>
 
+        <TargetCompaniesSection roleId={role.id} aiConfigured={ai.configured} clientName={role.clientCompanyName} summary={targetSummary} />
+
         <Card className="p-4 sm:p-5">
           <DiscoverSetupForm
             key={brief?.updatedAt.toISOString() ?? "new"}
@@ -378,6 +396,8 @@ export default async function DiscoverPage({
             aiRankTop={brief?.aiRankTop ?? false}
             aiConfigured={aiStatus().configured}
             confirmed={!!brief?.confirmedAt}
+            synonyms={parseSynonyms(brief?.synonymsJson)}
+            describedAs={brief?.describedAs ?? null}
           />
         </Card>
       </section>

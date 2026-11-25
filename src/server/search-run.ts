@@ -7,7 +7,7 @@ import type { BriefFields } from "@/lib/discovery/brief";
 import { redactContact } from "@/lib/extraction";
 import { logError } from "@/lib/log";
 import { SourceError, connector, type RawProfile } from "@/lib/sourcing/connectors";
-import { EMPTY_FILTERS, type SearchFilters } from "@/lib/sourcing/filters";
+import { EMPTY_FILTERS, parseSynonyms, type SearchFilters } from "@/lib/sourcing/filters";
 import { mergeAcrossSources, type MergedProfile } from "@/lib/sourcing/merge";
 import { computeRelevance, type Relevance } from "@/lib/sourcing/relevance";
 
@@ -86,7 +86,7 @@ export type SearchRunResult = { error: string } | { anyOk: boolean; runId: strin
 export async function executeSearch(
   auth: AuthContext,
   roleId: string,
-  brief: { booleanQuery: string },
+  brief: { booleanQuery: string; synonymsJson?: string | null },
   f: BriefFields,
   opts: { demo: boolean; keys: string[]; onlyNew?: boolean; targetCompanies?: string[] },
 ): Promise<SearchRunResult> {
@@ -103,6 +103,7 @@ export async function executeSearch(
     locations: f.location && f.workArrangement !== "remote" ? [f.location] : [],
     exclusions: f.exclusions,
     target_companies: (opts.targetCompanies ?? []).map((t) => t.trim()).filter(Boolean).slice(0, 60),
+    synonyms: parseSynonyms(brief.synonymsJson, [f.roleName, ...f.altTitles, ...f.skillsRequired, ...f.skillsPreferred]),
   };
   const years = { min: f.minYears, max: f.maxYears };
   const last = await db.searchStrategy.findFirst({ where: { roleId }, orderBy: { version: "desc" } });

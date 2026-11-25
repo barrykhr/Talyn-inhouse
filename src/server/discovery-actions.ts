@@ -8,9 +8,11 @@ import { BRIEF_FIELD_LABEL, WORK_ARRANGEMENTS, booleanKey, buildBoolean, checkBo
 import { suggestBriefFromJd } from "@/lib/discovery/extract";
 import { briefColumns, briefFields, briefProvenance } from "@/lib/discovery/store";
 import { logError } from "@/lib/log";
-import { AiRequestError, AiUnavailableError, aiStatus, generateClientProfileWithAi, generateTargetCompaniesWithAi } from "@/lib/ai";
-import { ClientProfileSchema, cleanTargetCompanies, keepSeenUrls, type ClientProfile, type DroppedCompany, type TargetCompany, type TargetCompanyInput } from "@/lib/discovery/target-companies";
+import { AiRequestError, AiUnavailableError, aiStatus, generateClientProfileWithAi, generateTargetCompaniesWithAi, runStructuredFor } from "@/lib/ai";
+import { ClientProfileSchema, EMPTY_PROFILE, cleanSelection, cleanTargetCompanies, keepSeenUrls, parseSelection, type ClientProfile, type DroppedCompany, type TargetCompany, type TargetCompanyInput } from "@/lib/discovery/target-companies";
 import { executeSearch } from "./search-run";
+import { parseSynonyms } from "@/lib/sourcing/filters";
+import { DescribeSchema, SynonymsSchema, describePrompt, synonymsPrompt, toDescribedFields, type DescribedFields } from "@/lib/discovery/semantic";
 import { goTo, str, type ActionState } from "./form";
 import { ownRole } from "./scope";
 
@@ -182,6 +184,9 @@ async function saveFields(auth: AuthContext, roleId: string, fd: FormData) {
     confirmedAt: new Date(),
     confirmedByName: auth.userName,
     updatedByName: auth.userName,
+    // Alternative names the recruiter kept, only for terms still in the fields.
+    ...(fd.has("synonyms") ? { synonymsJson: JSON.stringify(parseSynonyms(str(fd, "synonyms", 20000), [f.roleName, ...f.altTitles, ...f.skillsRequired, ...f.skillsPreferred])) } : {}),
+    ...(fd.has("describedAs") ? { describedAs: str(fd, "describedAs", 2000) || null } : {}),
   };
   const brief = await db.discoveryBrief.upsert({ where: { roleId }, create: { orgId: auth.orgId, roleId, origin: "manual", ...data }, update: data });
   // A role created from an upload starts as "Untitled role (…)": adopt the confirmed name.
@@ -203,15 +208,21 @@ export async function saveBriefAndSearch(roleId: string, _prev: ActionState, fd:
   return runSearch(auth, roleId, saved.brief, saved.fields, fd);
 }
 
-async function runSearch(auth: AuthContext, roleId: string, brief: { booleanQuery: string }, f: BriefFields, fd: FormData): Promise<ActionState> {
+async function runSearch(auth: AuthContext, roleId: string, brief: { booleanQuery: string; synonymsJson?: string | null }, f: BriefFields, fd: FormData): Promise<ActionState> {
   const demo = str(fd, "mode", 10) === "demo";
   const keys = demo ? ["sample"] : fd.getAll("source").map(String);
   let targetCompanies: string[] = [];
-  try {
-    const raw = JSON.parse(str(fd, "targetCompanies", 20000) || "[]") as unknown;
-    if (Array.isArray(raw)) targetCompanies = raw.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 160));
-  } catch {
-    /* no selection */
+  const chosen = str(fd, "targetCompanies", 20000);
+  if (!chosen) {
+    // No choice made in the popup: use the selection saved on the role, if any.
+    const saved = await db.targetCompanySet.findUnique({ where: { roleId }, select: { orgId: true, selectedJson: true } });
+    if (saved && saved.orgId === auth.orgId) targetCompanies = parseSelection(saved.selectedJson);
+  } else {
+    try {
+      targetCompanies = cleanSelection(JSON.parse(chosen));
+    } catch {
+      /* unreadable: search without target companies */
+    }
   }
   const out = await executeSearch(auth, roleId, brief, f, { demo, keys, targetCompanies });
   if ("error" in out) return { error: out.error };
@@ -225,7 +236,19 @@ async function runSearch(auth: AuthContext, roleId: string, brief: { booleanQuer
 export type TargetCompaniesView = {
   aiConfigured: boolean;
   client: { name: string | null; website: string | null };
-  set: { clientProfile: ClientProfile; companies: TargetCompany[]; dropped: DroppedCompany[]; model: string; webSearch: boolean; generatedAt: string; generatedByName: string } | null;
+  set: {
+    clientProfile: ClientProfile;
+    companies: TargetCompany[];
+    dropped: DroppedCompany[];
+    model: string;
+    webSearch: boolean;
+    generatedAt: string;
+    generatedByName: string;
+    /** Names the recruiter chose and saved; searches use them. */
+    selected: string[];
+    selectedByName: string | null;
+    selectedAt: string | null;
+  } | null;
   error?: string;
 };
 
@@ -249,8 +272,22 @@ async function targetInput(auth: AuthContext, roleId: string): Promise<{ input: 
   };
 }
 
-function setView(row: { clientProfileJson: string; companiesJson: string; droppedJson: string; model: string; webSearch: boolean; generatedAt: Date; generatedByName: string }): NonNullable<TargetCompaniesView["set"]> {
+function setView(row: {
+  clientProfileJson: string;
+  companiesJson: string;
+  droppedJson: string;
+  model: string;
+  webSearch: boolean;
+  generatedAt: Date;
+  generatedByName: string;
+  selectedJson: string;
+  selectedByName: string | null;
+  selectedAt: Date | null;
+}): NonNullable<TargetCompaniesView["set"]> {
   return {
+    selected: parseSelection(row.selectedJson),
+    selectedByName: row.selectedByName,
+    selectedAt: row.selectedAt?.toISOString() ?? null,
     clientProfile: JSON.parse(row.clientProfileJson),
     companies: JSON.parse(row.companiesJson),
     dropped: JSON.parse(row.droppedJson),
@@ -261,13 +298,37 @@ function setView(row: { clientProfileJson: string; companiesJson: string; droppe
   };
 }
 
+/** Saves which companies the recruiter chose. Searches, including the daily automatic one, use them. */
+export async function saveTargetSelection(roleId: string, names: unknown): Promise<TargetCompaniesView> {
+  const auth = await requireAuth();
+  const { client } = await targetInput(auth, roleId);
+  const configured = aiStatus().configured;
+  const stored = await db.targetCompanySet.findUnique({ where: { roleId } });
+  const list = cleanSelection(names);
+  if (!stored || stored.orgId !== auth.orgId) {
+    if (!list.length) return { aiConfigured: configured, client, set: null };
+    // Companies added by hand before any AI list exists: keep them in an empty set.
+    const row = await db.targetCompanySet.create({
+      data: { orgId: auth.orgId, roleId, clientProfileJson: JSON.stringify(EMPTY_PROFILE), model: "none", generatedByName: auth.userName, selectedJson: JSON.stringify(list), selectedByName: auth.userName, selectedAt: new Date() },
+    });
+    await audit(auth, "discover.target_companies_selected", { subjectType: "role", subjectId: roleId, roleId, meta: { selected: list.length } });
+    revalidatePath(`/roles/${roleId}/discover`);
+    return { aiConfigured: configured, client, set: setView(row) };
+  }
+  const row = await db.targetCompanySet.update({ where: { roleId }, data: { selectedJson: JSON.stringify(list), selectedByName: auth.userName, selectedAt: new Date() } });
+  await audit(auth, "discover.target_companies_selected", { subjectType: "role", subjectId: roleId, roleId, meta: { selected: list.length } });
+  revalidatePath(`/roles/${roleId}/discover`);
+  return { aiConfigured: configured, client, set: setView(row) };
+}
+
 /** Opens the popup: the stored list, or a new one when there is none yet. */
 export async function getTargetCompanies(roleId: string): Promise<TargetCompaniesView> {
   const auth = await requireAuth();
   const { client } = await targetInput(auth, roleId);
   const configured = aiStatus().configured;
   const stored = await db.targetCompanySet.findUnique({ where: { roleId } });
-  if (stored && stored.orgId === auth.orgId) return { aiConfigured: configured, client, set: setView(stored) };
+  // A set holding only hand-added companies gets an AI list on first open (the selection is kept).
+  if (stored && stored.orgId === auth.orgId && (stored.model !== "none" || !configured)) return { aiConfigured: configured, client, set: setView(stored) };
   if (!configured) return { aiConfigured: false, client, set: null };
   return generateTargets(auth, roleId, null);
 }
@@ -326,5 +387,44 @@ async function generateTargets(auth: AuthContext, roleId: string, corrected: Cli
     if (!(err instanceof AiRequestError)) logError("discover.target_companies_failed", err, { roleId });
     const stored = await db.targetCompanySet.findUnique({ where: { roleId } });
     return { aiConfigured: true, client, set: stored ? setView(stored) : null, error: `${message} Try again, or search without target companies.` };
+  }
+}
+
+// ---------- Search by meaning: a plain-English description and alternative names ----------
+
+/** Turns "describe the person" into search fields for the recruiter to check. Nothing is saved. */
+export async function describeToFields(roleId: string, text: string): Promise<{ fields?: DescribedFields; error?: string }> {
+  const auth = await requireAuth();
+  const role = await ownRole(auth, roleId);
+  const t = (text ?? "").trim().slice(0, 2000);
+  if (t.length < 10) return { error: "Describe the person in a sentence or two first." };
+  if (!aiStatus().configured) return { error: "This needs an AI provider. Fill in the fields yourself, or connect one under Integrations." };
+  try {
+    const { system, user } = describePrompt(t, role.title);
+    const out = await runStructuredFor({ system, user, schema: DescribeSchema, name: "describe_person", maxTokens: 3000 });
+    await audit(auth, "discover.described", { subjectType: "role", subjectId: roleId, roleId, meta: { chars: t.length } });
+    return { fields: toDescribedFields(out) };
+  } catch (err) {
+    if (!(err instanceof AiRequestError || err instanceof AiUnavailableError)) logError("discover.describe_failed", err, { roleId });
+    return { error: err instanceof AiRequestError ? err.message : "Talyn couldn't read that description. Try again, or fill in the fields yourself." };
+  }
+}
+
+/** Suggests other names for the role's titles and skills ("Go" → "Golang"). The recruiter keeps or removes each. */
+export async function suggestSynonyms(roleId: string, terms: { titles: string[]; skills: string[] }): Promise<{ synonyms?: Record<string, string[]>; error?: string }> {
+  const auth = await requireAuth();
+  await ownRole(auth, roleId);
+  const titles = (terms?.titles ?? []).filter((x) => typeof x === "string" && x.trim()).slice(0, 10);
+  const skills = (terms?.skills ?? []).filter((x) => typeof x === "string" && x.trim()).slice(0, 30);
+  if (!titles.length && !skills.length) return { error: "Add a role name or skills first." };
+  if (!aiStatus().configured) return { error: "This needs an AI provider. You can still type alternatives yourself." };
+  try {
+    const { system, user } = synonymsPrompt(titles, skills);
+    const out = await runStructuredFor({ system, user, schema: SynonymsSchema, name: "search_synonyms", maxTokens: 3000 });
+    const raw = Object.fromEntries(out.items.map((i) => [i.term, i.alternatives]));
+    return { synonyms: parseSynonyms(JSON.stringify(raw), [...titles, ...skills]) };
+  } catch (err) {
+    if (!(err instanceof AiRequestError || err instanceof AiUnavailableError)) logError("discover.synonyms_failed", err, { roleId });
+    return { error: err instanceof AiRequestError ? err.message : "Talyn couldn't suggest alternatives this time." };
   }
 }

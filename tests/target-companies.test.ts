@@ -138,3 +138,14 @@ describe("targetCompaniesPrompt", () => {
     assert.match(user, /Headcount: 201-1,000/);
   });
 });
+
+describe("cleanSelection", () => {
+  it("trims, drops duplicates by normalized name and non-strings, and caps at 60", async () => {
+    const { cleanSelection, parseSelection } = await import("../src/lib/discovery/target-companies");
+    assert.deepEqual(cleanSelection([" Cashfree Payments ", "cashfree payments pvt ltd", 7, "", "PayU India"]), ["Cashfree Payments", "PayU India"]);
+    assert.equal(cleanSelection(Array.from({ length: 80 }, (_, i) => `Company ${i}`)).length, 60);
+    assert.deepEqual(cleanSelection("nope"), []);
+    assert.deepEqual(parseSelection("not json"), []);
+    assert.deepEqual(parseSelection('["Juspay"]'), ["Juspay"]);
+  });
+});

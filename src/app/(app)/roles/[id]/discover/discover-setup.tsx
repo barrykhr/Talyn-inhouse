@@ -29,6 +29,8 @@ export function DiscoverSetupForm({
   minRequiredSkills,
   aiRankTop,
   aiConfigured,
+  synonyms,
+  describedAs,
 }: {
   roleId: string;
   fields: BriefFields;
@@ -41,6 +43,8 @@ export function DiscoverSetupForm({
   minRequiredSkills: number | null;
   aiRankTop: boolean;
   aiConfigured: boolean;
+  synonyms: Record<string, string[]>;
+  describedAs: string | null;
 }) {
   const [state, action, pending] = useServerForm(saveBriefAndSearch.bind(null, roleId));
   const live = sources.filter((s) => s.kind !== "sample");
@@ -61,7 +65,14 @@ export function DiscoverSetupForm({
   return (
     <>
       <ActionForm action={action} pending={pending} className="space-y-5">
-        <BriefFieldsEditor initial={fields} provenance={provenance} initialBoolean={booleanQuery} initialBooleanEdited={booleanEdited} initialBooleanKey={booleanKey} />
+        <BriefFieldsEditor
+          initial={fields}
+          provenance={provenance}
+          initialBoolean={booleanQuery}
+          initialBooleanEdited={booleanEdited}
+          initialBooleanKey={booleanKey}
+          meaning={{ roleId, aiConfigured, synonyms, describedAs }}
+        />
 
         <fieldset className="space-y-2 rounded-lg border border-line px-3 py-2.5">
           <legend className="px-1 text-[13px] font-medium">Relevance</legend>
@@ -161,7 +172,7 @@ export function DiscoverSetupForm({
         )}
         <FormMessage state={state} />
         <div className="flex flex-wrap items-center gap-2">
-          <input ref={targetsInput} type="hidden" name="targetCompanies" defaultValue="[]" />
+          <input ref={targetsInput} type="hidden" name="targetCompanies" defaultValue="" />
           {askForTargets ? (
             <>
               <button type="button" className={buttonClass("primary")} disabled={pending || !liveCount} aria-busy={pending} onClick={() => setTargetsOpen(true)}>

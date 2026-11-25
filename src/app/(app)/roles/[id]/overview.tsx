@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { HealthPill } from "@/components/health";
+import { HEALTH_HELP, pipelineHealth } from "@/lib/health";
+import { loadHealth } from "@/server/health";
 import { Badge, Card, LinkButton, SectionTitle, formatDateTime } from "@/components/ui";
 import type { StatusItem } from "@/components/status-line";
 import { AUDIT_LABEL } from "@/lib/audit";
@@ -25,6 +28,18 @@ export async function RoleOverview({
   next: StatusItem[];
   skills: SkillSummary;
 }) {
+  const roleApps = await db.application.findMany({
+    where: { orgId, roleId: role.id, stage: { notIn: ["hired", "rejected"] }, candidate: { isSample: false } },
+    select: { id: true, stage: true, candidate: { select: { id: true, fullName: true } } },
+    take: 500,
+  });
+  const healthMap = await loadHealth(orgId, roleApps.map((a) => a.id));
+  const pipeline = pipelineHealth(roleApps.map((a) => ({ stage: a.stage, health: healthMap.get(a.id) ?? null })));
+  const drifting = roleApps
+    .map((a) => ({ a, h: healthMap.get(a.id) }))
+    .filter((x): x is { a: (typeof roleApps)[number]; h: NonNullable<typeof x.h> } => !!x.h && x.h.band !== "healthy")
+    .sort((x, y) => x.h.score - y.h.score)
+    .slice(0, 6);
   const [owner, kits, activity, discoverToReview, unscheduled] = await Promise.all([
     role.createdById ? db.user.findUnique({ where: { id: role.createdById }, select: { name: true } }) : null,
     db.interviewKit.findMany({
@@ -80,6 +95,47 @@ export async function RoleOverview({
             </Card>
           ) : (
             <Card className="px-4 py-3 text-[13.5px] text-muted">Nothing is waiting on a person for this role right now.</Card>
+          )}
+        </section>
+
+        <section aria-labelledby="pipe-h">
+          <SectionTitle hint={HEALTH_HELP}>
+            <span id="pipe-h">Pipeline health</span>
+          </SectionTitle>
+          {!pipeline ? (
+            <Card className="px-4 py-3 text-[13.5px] text-muted">No active candidates in this role yet.</Card>
+          ) : (
+            <Card className="space-y-3 p-4 text-[13.5px]">
+              <div className="flex flex-wrap items-center gap-3">
+                <HealthPill score={pipeline.score} band={pipeline.band} />
+                <span className="text-muted">
+                  {pipeline.active} active · {pipeline.counts.healthy} healthy · {pipeline.counts.watch} to watch · {pipeline.counts.at_risk} at risk
+                </span>
+              </div>
+              <ul className="space-y-0.5 text-[12.5px] text-ink-2">
+                {pipeline.reasons.map((r) => (
+                  <li key={r}>· {r}</li>
+                ))}
+              </ul>
+              {drifting.length > 0 && (
+                <div>
+                  <div className="mb-1 text-[11.5px] font-semibold uppercase tracking-wide text-muted">Follow up first</div>
+                  <ul className="divide-y divide-line rounded-lg border border-line">
+                    {drifting.map(({ a, h }) => (
+                      <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                        <Link href={`/candidates/${a.candidate.id}?role=${role.id}`} className="font-medium hover:underline">
+                          {a.candidate.fullName}
+                        </Link>
+                        <span className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
+                          {h.reasons[0]}
+                          <HealthPill score={h.score} band={h.band} />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </Card>
           )}
         </section>
 

@@ -12,10 +12,26 @@ import {
   type ClientProfile,
   type TargetCompany,
 } from "@/lib/discovery/target-companies";
-import { getTargetCompanies, regenerateTargetCompanies, type TargetCompaniesView } from "@/server/discovery-actions";
+import { getTargetCompanies, regenerateTargetCompanies, saveTargetSelection, type TargetCompaniesView } from "@/server/discovery-actions";
 import { Spinner } from "./client";
 
 type Row = TargetCompany & { key: string };
+
+const manualRow = (name: string, rank: number): Row => ({
+  key: normalizeCompanyName(name),
+  name,
+  website: "",
+  industry: "",
+  domain: "",
+  product: "",
+  headcount_band: "not known",
+  revenue_band: "not known",
+  match_reasons: [],
+  reason: "",
+  source_urls: [],
+  rank,
+  manual: true,
+});
 
 /**
  * Before an outbound search: the AI proposes up to 30 companies to source from, measured against
@@ -27,12 +43,18 @@ export function TargetCompaniesDialog({
   open,
   onClose,
   onSearch,
+  onSaved,
+  mode = "search",
 }: {
   roleId: string;
   open: boolean;
   onClose: () => void;
-  /** Called with the chosen company names ([] = search without target companies). */
-  onSearch: (companies: string[]) => void;
+  /** Search mode: called with the chosen company names ([] = search without target companies). */
+  onSearch?: (companies: string[]) => void;
+  /** Manage mode: called after the selection is saved on the role. */
+  onSaved?: (selected: string[]) => void;
+  /** "search" opens before a search; "manage" edits and saves the role's selection. */
+  mode?: "search" | "manage";
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -43,13 +65,19 @@ export function TargetCompaniesDialog({
   const [chips, setChips] = useState<string[]>([]);
   const [profile, setProfile] = useState<ClientProfile | null>(null);
   const [manual, setManual] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const apply = (v: TargetCompaniesView) => {
     setView(v);
     if (v.set) {
-      setRows(v.set.companies.map((c) => ({ ...c, key: normalizeCompanyName(c.name) })));
-      setProfile(v.set.clientProfile);
-      setPicked(new Set());
+      const base = v.set.companies.map((c) => ({ ...c, key: normalizeCompanyName(c.name) }));
+      const keys = new Set(base.map((r) => r.key));
+      // Saved choices that aren't in the AI list (added by hand, or dropped by a regenerate) stay visible.
+      const extra = v.set.selected.filter((n) => !keys.has(normalizeCompanyName(n))).map((n, i) => manualRow(n, base.length + i + 1));
+      setRows([...base, ...extra]);
+      setProfile(v.set.model === "none" ? null : v.set.clientProfile);
+      // Only the recruiter's own saved choice is pre-ticked; nothing is selected for them.
+      setPicked(new Set(v.set.selected.map(normalizeCompanyName)));
     }
   };
 
@@ -83,8 +111,7 @@ export function TargetCompaniesDialog({
     const name = manual.trim().slice(0, 160);
     const key = normalizeCompanyName(name);
     if (!key) return;
-    if (!rows.some((r) => r.key === key))
-      setRows((r) => [...r, { key, name, website: "", industry: "", domain: "", product: "", headcount_band: "not known", revenue_band: "not known", match_reasons: [], reason: "", source_urls: [], rank: r.length + 1, manual: true }]);
+    if (!rows.some((r) => r.key === key)) setRows((r) => [...r, manualRow(name, r.length + 1)]);
     setPicked((p) => new Set([...p, key]));
     setManual("");
   };
@@ -126,8 +153,10 @@ export function TargetCompaniesDialog({
             </div>
           )}
 
-          {set && profile && (
+          {set && (profile || rows.length > 0) && (
             <>
+              {profile && (
+                <>
               <p className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
                 <AiMark /> AI-generated; check before relying on headcount or revenue.
                 <span className="text-faint">
@@ -189,6 +218,9 @@ export function TargetCompaniesDialog({
                   </p>
                 )}
               </section>
+                </>
+              )}
+              {!profile && <p className="text-[12.5px] text-muted">Companies you added by hand. {view?.aiConfigured ? "Open again to get AI suggestions." : "AI suggestions need an AI provider; you can still add companies yourself."}</p>}
 
               <div role="group" aria-label="Show companies matched on" className="flex flex-wrap items-center gap-1.5 text-[12.5px]">
                 <span className="mr-1 text-muted">Matched on:</span>
@@ -267,7 +299,7 @@ export function TargetCompaniesDialog({
             </>
           )}
 
-          {(set || view?.error) && (
+          {(set || view?.error || mode === "manage" || (view && !view.aiConfigured)) && (
             <div className="flex flex-wrap items-center gap-2 text-[13px]">
               <label htmlFor={`${titleId}-add`} className="text-muted">
                 Add a company
@@ -297,27 +329,55 @@ export function TargetCompaniesDialog({
           <button type="button" className={buttonClass("ghost")} onClick={() => dialog.current?.close()}>
             Cancel
           </button>
-          <button
-            type="button"
-            className={buttonClass("secondary")}
-            onClick={() => {
-              dialog.current?.close();
-              onSearch([]);
-            }}
-          >
-            Search without target companies
-          </button>
-          <button
-            type="button"
-            className={buttonClass("primary")}
-            disabled={!chosenNames.length}
-            onClick={() => {
-              dialog.current?.close();
-              onSearch(chosenNames);
-            }}
-          >
-            Search these companies{chosenNames.length ? ` (${chosenNames.length})` : ""}
-          </button>
+          {mode === "manage" ? (
+            <button
+              type="button"
+              className={buttonClass("primary")}
+              disabled={saving || loading}
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  const v = await saveTargetSelection(roleId, chosenNames);
+                  if (v.error) setView(v);
+                  else {
+                    apply(v);
+                    onSaved?.(v.set?.selected ?? []);
+                    dialog.current?.close();
+                  }
+                } catch {
+                  setView((v) => (v ? { ...v, error: "Couldn't save the selection. Check your connection and try again." } : v));
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            >
+              {saving ? "Saving…" : `Save selection${chosenNames.length ? ` (${chosenNames.length})` : ""}`}
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className={buttonClass("secondary")}
+                onClick={() => {
+                  dialog.current?.close();
+                  onSearch?.([]);
+                }}
+              >
+                Search without target companies
+              </button>
+              <button
+                type="button"
+                className={buttonClass("primary")}
+                disabled={!chosenNames.length}
+                onClick={() => {
+                  dialog.current?.close();
+                  onSearch?.(chosenNames);
+                }}
+              >
+                Search these companies{chosenNames.length ? ` (${chosenNames.length})` : ""}
+              </button>
+            </>
+          )}
         </footer>
       </div>
     </dialog>

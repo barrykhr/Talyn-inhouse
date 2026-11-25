@@ -369,3 +369,60 @@ status line, and an AI "advance" recommendation becomes "gather more information
 reply to their application (thanks, the next step, an easy way to withdraw) and the AI is told not to
 write a first approach ("noticed your profile", "open to hearing about"). People found in Discover get
 the first-contact rules as before. The plain fallback follows the same split. Engine `outreach-v2`.
+
+## Talent grades
+
+`talentGrade(score)` in `src/lib/profile-score.ts`: A+ 95–100, A 80–94, B 65–79, C under 65. Shown in
+the score chip and the score detail. Derived from the score, never instead of it; no score, no grade.
+
+## Target companies on the role
+
+`TargetCompanySet.selectedJson` holds the companies the recruiter chose (suggested or added by hand).
+The Discover tab shows them in a section with "Review and choose" (the same dialog in `manage` mode).
+A search without a popup choice, and the daily automatic search, use the saved selection; the popup's
+"Search without target companies" sends an explicit empty choice.
+
+## Role insights
+
+`src/lib/role-insights.ts` + `src/server/role-insight-actions.ts`, stored in `RoleInsight`. A
+rule-based check for exclusionary wording (`fairnessKind`, the same rules that refuse criteria) always
+runs; with AI, a JD quality check (vague, conflicting, exclusionary, missing) and a growth path are
+added. AI quotes are marked unverified unless found in the JD. Suggestions only.
+
+## Search by meaning
+
+`src/lib/discovery/semantic.ts`. "Describe the person" turns plain English into the Discover fields
+via AI; the recruiter sees "Talyn understood" and chooses "Use these" (fields are marked Suggested).
+Requirements that aren't single skills are listed, not searched. "Also match" keeps alternative names
+per title or skill (`DiscoveryBrief.synonymsJson`, `SearchFilters.synonyms`): a match on an
+alternative counts as evidence for the original term, the card says "Matched as …", depth counts
+it, and the Boolean query ORs it in.
+
+## Candidate and pipeline health
+
+`src/lib/health.ts` (pure) + `src/server/health.ts` (loader). From recorded activity only: time in
+stage against a usual number of days, last contact, unanswered messages, replies, overdue requests,
+expressed interest, bounces and opt-outs. Bands: Healthy 75+, Watch 50–74, At risk under 50, each
+with reasons. Shown on the candidate page and, per role, on the Overview with who to follow up first.
+Informational only.
+
+## Hiring manager review
+
+`/roles/[id]/review`: the shortlist with grade, strongest quoted evidence and gaps. Interested / Not a
+fit / Question (a note is required for the last two), one per person (`HiringFeedback`). Shown to the
+recruiter on the candidate page and, as questions, in the candidate's interview plan. Never changes a
+stage or decision.
+
+## Answer checks
+
+`src/lib/authenticity.ts`: six rule-based checks of a candidate's recorded answers (the "Candidate's
+answers (…)" blocks in candidate-provided information) against the CV, the linked public profile, the
+JD and the questions asked: timeline, specificity, cross-channel consistency, public evidence,
+generated or copied text (stock phrases, copied wording — not proof), and skill claims vs the CV.
+Each is No issues / Check with a person / Not enough to check, with quotes.
+
+## Interview gaps per candidate
+
+`src/lib/interviews/gaps.ts`: the kit page lists the candidate's unproven required and preferred
+items (missing, unclear, conflicting) with a question: their follow-up question if one exists, the
+hiring team's question, or a neutral template.
