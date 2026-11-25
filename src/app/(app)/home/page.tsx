@@ -1,20 +1,25 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { AUDIT_LABEL } from "@/lib/audit";
-import { Card, EmptyState, LinkButton, PageHeader, formatDateTime } from "@/components/ui";
+import { Card, EmptyState, LinkButton, formatDateTime } from "@/components/ui";
 import { aiStatus } from "@/lib/ai";
 import { aiHealth } from "@/lib/ai-health";
 import { attention } from "@/lib/attention";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { isLiveSourceConnected } from "@/lib/sourcing/connectors";
+import { embeddingStatus } from "@/lib/semantic/embed";
+import { HomeSearch } from "./home-search";
 
 export const metadata = { title: "Home" };
 
 type StepState = "done" | "todo" | "optional" | "blocked";
 const STATE_LABEL: Record<StepState, string> = { done: "Done", todo: "To do", optional: "Optional", blocked: "Blocked" };
 
-/** Home: what needs a person now, then setup for new workspaces. Real counts only. */
+/**
+ * Home: one box to describe who you're looking for (search by meaning across the talent pool, or
+ * jump to a role or candidate by name), then what needs a person now and setup for new workspaces.
+ */
 export default async function HomePage() {
   const auth = await requireAuth();
   const [groups, roles, approved, members, assignments, decided, inPipelines, openRoles, recent] = await Promise.all([
@@ -28,6 +33,22 @@ export default async function HomePage() {
     db.role.count({ where: { orgId: auth.orgId, status: "open" } }),
     db.auditEvent.findMany({ where: { orgId: auth.orgId, action: { not: "candidate.viewed" } }, orderBy: { createdAt: "desc" }, take: 8 }),
   ]);
+  const openRoleList = await db.role.findMany({
+    where: { orgId: auth.orgId, status: "open" },
+    orderBy: { updatedAt: "desc" },
+    take: 3,
+    select: { title: true, location: true, criteria: { where: { status: "approved", kind: "skill", importance: "required" }, orderBy: { position: "asc" }, take: 2, select: { name: true } } },
+  });
+  // Suggested searches from the workspace's own open roles, then two general ones.
+  const suggestions = Array.from(
+    new Set([
+      ...openRoleList.map((r) => [r.title, r.criteria.length ? `with ${r.criteria.map((c) => c.name).join(" and ")}` : "", r.location ? `in ${r.location}` : ""].filter(Boolean).join(" ")),
+      "Someone who has led a migration to the cloud",
+      "Data people who have run A/B tests end to end",
+    ]),
+  ).slice(0, 4);
+  const meaning = embeddingStatus();
+  const firstName = auth.userName.split(/\s+/)[0] || auth.userName;
   const sourcing = isLiveSourceConnected();
   const ai = aiStatus();
   const health = ai.configured ? await aiHealth(ai.provider) : null;
@@ -72,23 +93,30 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader
-        title="Home"
-        meta={
-          <span>
-            {auth.orgName} · {total ? `${total} item${total === 1 ? "" : "s"} need${total === 1 ? "s" : ""} a person` : "nothing waiting on you"}
-            {roles > 0 && ` · ${openRoles} open role${openRoles === 1 ? "" : "s"} · ${inPipelines} candidate${inPipelines === 1 ? "" : "s"} in active pipelines`}
+      <section aria-labelledby="home-h" className="flex flex-col items-center px-1 pb-4 pt-[8vh] text-center">
+        <h1 id="home-h" className="mb-1.5 text-balance text-[28px] font-semibold tracking-tight sm:text-[32px]">
+          Hi {firstName}, who are you looking for?
+        </h1>
+        <p className="mb-6 max-w-[60ch] text-[13.5px] text-muted">
+          Describe the person in plain words. Talyn searches your candidates and everyone found in Discover by meaning, and shows the line behind each match.
+        </p>
+        <HomeSearch suggestions={suggestions} meaningReady={meaning.configured} meaningNote={meaning.reason} />
+        <nav aria-label="Quick actions" className="mt-6 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[13px]">
+          <Link href="/roles/new" className="font-medium text-brand hover:underline">
+            New role
+          </Link>
+          <Link href="/discover/new" className="text-muted hover:text-ink hover:underline">
+            Start a Discover search
+          </Link>
+          <Link href="/queue" className="text-muted hover:text-ink hover:underline">
+            Review queue{total ? ` (${total})` : ""}
+          </Link>
+          <span className="text-faint">
+            {auth.orgName}
+            {roles > 0 && ` · ${openRoles} open role${openRoles === 1 ? "" : "s"} · ${inPipelines} in active pipelines`}
           </span>
-        }
-        actions={
-          <>
-            <LinkButton href="/discover/new">Start a search</LinkButton>
-            <LinkButton href="/roles/new" variant="primary">
-              New role
-            </LinkButton>
-          </>
-        }
-      />
+        </nav>
+      </section>
 
       {!setupDone && (
         <section aria-labelledby="start-h">

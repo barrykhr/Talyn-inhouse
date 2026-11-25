@@ -234,6 +234,12 @@ async function selfOf(orgId: string, kind: "candidate" | "sourced", refId: strin
       select: { source: true, sourceRecordId: true },
     });
     for (const l of linked) sourceKeys.add(`${l.source}|${l.sourceRecordId}`);
+    // Records flagged as possible duplicates of this candidate are the same person too.
+    const dups = await db.duplicateReview.findMany({ where: { orgId, status: { not: "dismissed" }, OR: [{ candidateAId: refId }, { candidateBId: refId }] }, select: { candidateAId: true, candidateBId: true } });
+    for (const d of dups) {
+      candidateIds.add(d.candidateAId);
+      candidateIds.add(d.candidateBId);
+    }
   } else {
     const sp = await db.sourcedProfile.findFirst({ where: { orgId, id: refId }, select: { source: true, sourceRecordId: true, duplicateCandidateId: true } });
     if (sp) {

@@ -71,17 +71,19 @@ export type MeaningBand = "strong" | "good" | "some" | "weak";
 export const MEANING_LABEL: Record<MeaningBand, string> = { strong: "Strong match", good: "Good match", some: "Some match", weak: "Weak match" };
 
 /**
- * Plain-language band for a cosine similarity from text-embedding-3 models, where unrelated text
- * sits around 0.1–0.2 and close paraphrases above 0.5. Bands are for reading, not decisions.
+ * Plain-language band for a cosine similarity from text-embedding-3-small at 256 dimensions.
+ * Calibrated on live searches (Nov 2026): unrelated searches scored 0.32–0.42, relevant ones
+ * 0.50–0.62, near-identical profiles 0.75+. Bands are for reading, not decisions.
  */
 export function meaningBand(sim: number): MeaningBand {
-  return sim >= 0.55 ? "strong" : sim >= 0.45 ? "good" : sim >= 0.35 ? "some" : "weak";
+  return sim >= 0.58 ? "strong" : sim >= 0.5 ? "good" : sim >= 0.45 ? "some" : "weak";
 }
 
 /** Relevance points (0–10) for closeness in meaning to the role. Ordering only. */
 export function meaningPoints(sim: number | null | undefined): number {
   if (sim === null || sim === undefined || !Number.isFinite(sim)) return 0;
-  return Math.round(Math.max(0, Math.min(1, (sim - 0.25) / 0.35)) * 10);
+  // Nothing below what unrelated text scores (about 0.42); full points from 0.60.
+  return Math.round(Math.max(0, Math.min(1, (sim - 0.42) / 0.18)) * 10);
 }
 
 /**
