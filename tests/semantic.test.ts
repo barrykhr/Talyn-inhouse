@@ -39,9 +39,9 @@ describe("evidenceLines", () => {
 });
 
 describe("bands and points", () => {
-  it("maps similarity to plain-language bands", () => assert.deepEqual([0.6, 0.5, 0.4, 0.2].map(meaningBand), ["strong", "good", "some", "weak"]));
+  it("maps similarity to plain-language bands, with unrelated text (about 0.32–0.42) as weak", () => assert.deepEqual([0.6, 0.52, 0.47, 0.42, 0.2].map(meaningBand), ["strong", "good", "some", "weak", "weak"]));
   it("adds 0–10 relevance points, 0 without a similarity", () => {
-    assert.deepEqual([null, 0.2, 0.25, 0.425, 0.6, 0.9].map(meaningPoints), [0, 0, 0, 5, 10, 10]);
+    assert.deepEqual([null, 0.2, 0.42, 0.51, 0.6, 0.9].map(meaningPoints), [0, 0, 0, 5, 10, 10]);
   });
   it("feeds relevance without changing the minimum bar", () => {
     const signals = [{ category: "skill_required", term: "Go", matched: false }, { category: "skill_required", term: "Kafka", matched: false }];
