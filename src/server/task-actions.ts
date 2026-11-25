@@ -36,7 +36,7 @@ export async function createInfoRequest(applicationId: string, _prev: ActionStat
   });
   await audit(auth, "task.created", { subjectType: "application", subjectId: task.id, candidateId: app.candidateId, roleId: app.roleId, applicationId, meta: { type: "gather_info", questions: questions.length } });
   revalidatePath(`/candidates/${app.candidateId}`);
-  revalidatePath("/queue");
+  revalidatePath("/inbox");
   return { ok: true, message: "Information request added to your queue" };
 }
 
@@ -58,6 +58,6 @@ export async function resolveTask(taskId: string, outcome: "done" | "cancelled",
     meta: { type: task.type, status },
   });
   revalidatePath(`/candidates/${task.application.candidateId}`);
-  revalidatePath("/queue");
+  revalidatePath("/inbox");
   return { ok: true };
 }

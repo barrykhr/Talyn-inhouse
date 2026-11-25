@@ -14,7 +14,7 @@ const refresh = (app: { candidateId: string; roleId: string }) => {
   revalidatePath(`/candidates/${app.candidateId}`);
   revalidatePath(`/roles/${app.roleId}`);
   revalidatePath(`/roles/${app.roleId}/discover`);
-  revalidatePath("/queue");
+  revalidatePath("/inbox");
 };
 
 /**
@@ -97,7 +97,7 @@ export async function bulkDecision(_prev: ActionState, fd: FormData): Promise<Ac
     revalidatePath(`/roles/${roleId}`);
     revalidatePath(`/roles/${roleId}/discover`);
   }
-  revalidatePath("/queue");
+  revalidatePath("/inbox");
   const label = d.data === "advance" ? "shortlisted" : d.data === "hold" ? "put on hold" : "rejected";
   return { ok: true, message: `${apps.length} applicant${apps.length === 1 ? "" : "s"} ${label}${moved ? `, ${moved} moved to the Rejected stage` : ""}. Each is recorded in their history.` };
 }

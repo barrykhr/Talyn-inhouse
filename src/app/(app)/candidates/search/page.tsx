@@ -5,6 +5,8 @@ import { requireAuth } from "@/lib/auth";
 import { MEANING_LABEL, type MeaningBand } from "@/lib/semantic/core";
 import { embeddingStatus } from "@/lib/semantic/embed";
 import { searchByMeaning, similarTo, type SemanticResult } from "@/server/semantic";
+import { aiStatus } from "@/lib/ai";
+import { SearchUnderstood } from "./understood";
 
 export const metadata = { title: "Search by meaning" };
 // The first search may embed many profiles.
@@ -73,6 +75,7 @@ export default async function SemanticSearchPage({ searchParams }: { searchParam
         </button>
       </form>
 
+      {!likeId && query.length >= 3 && st.configured && aiStatus().configured && <SearchUnderstood query={query} scope={inParam} />}
       {result?.name && (
         <p className="mb-3 text-[13.5px]">
           People like <strong>{result.name}</strong>, closest first.{" "}

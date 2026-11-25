@@ -27,7 +27,7 @@ async function ownMessage(auth: AuthContext, id: string) {
 }
 const refresh = (candidateId: string) => {
   revalidatePath(`/candidates/${candidateId}`);
-  revalidatePath("/queue");
+  revalidatePath("/inbox");
 };
 const event = (orgId: string, sequenceId: string, type: string, actorName: string, extra: { messageId?: string; note?: string } = {}) =>
   db.outreachEvent.create({ data: { orgId, sequenceId, type, actorName, providerConfirmed: false, messageId: extra.messageId ?? null, note: extra.note ?? null } });
@@ -325,7 +325,7 @@ export async function sendDueNow(): Promise<ActionState> {
   if (auth.membershipRole !== "admin") return { error: "Only workspace admins can do this." };
   const r = await sendDueMessages({ orgId: auth.orgId, triggeredBy: auth.userName });
   if (!r) return { error: "No email provider is connected." };
-  revalidatePath("/queue");
+  revalidatePath("/inbox");
   revalidatePath("/integrations");
   return { ok: true, message: r.due ? `${r.sent} sent${r.skipped ? ` · ${r.skipped} skipped (opt-out, no email or no longer active)` : ""}${r.failed ? ` · ${r.failed} failed, will retry` : ""}.` : "Nothing is due." };
 }

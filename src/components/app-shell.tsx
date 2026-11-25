@@ -9,22 +9,22 @@ import { createWorkspace, switchWorkspace } from "@/server/team-actions";
 import { logout } from "@/server/auth-actions";
 import { ActionForm, FormMessage, SubmitButton, useServerForm } from "./client";
 import { OpenPaletteButton } from "./command-palette";
+import { InboxBell } from "./inbox-bell";
 import { Logo } from "./logo";
 
 type Workspace = { id: string; name: string; role: string };
 const ROLE_LABEL: Record<string, string> = { admin: "Admin", recruiter: "Recruiter", hiring_manager: "Hiring manager" };
 
+// Four places to work. What needs you lives in the bell (top right); Discover lives in each role.
 const PRIMARY = [
   { href: "/home", label: "Home", icon: "home" },
-  { href: "/queue", label: "Queue", icon: "queue" },
   { href: "/roles", label: "Roles", icon: "roles" },
-  { href: "/discover", label: "Discover", icon: "discover" },
   { href: "/candidates", label: "Candidates", icon: "people" },
   { href: "/interviews", label: "Interviews", icon: "interviews" },
-  { href: "/integrations", label: "Integrations", icon: "plug" },
 ] as const;
 const SECONDARY = [
   { href: "/settings", label: "Workspace settings" },
+  { href: "/integrations", label: "Integrations" },
   { href: "/settings#team", label: "Team & permissions" },
   { href: "/settings/calibration", label: "Calibration" },
   { href: "/import", label: "Import & export" },
@@ -41,8 +41,7 @@ export function AppShell({
   orgName,
   user,
   ai,
-  attention,
-  queueCount,
+  inboxCount,
   children,
 }: {
   workspaces: Workspace[];
@@ -50,8 +49,7 @@ export function AppShell({
   orgName: string;
   user: { name: string; email: string; role: string };
   ai: { configured: boolean; model: string | null; failing?: string | null };
-  attention: number;
-  queueCount: number;
+  inboxCount: number;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -81,14 +79,6 @@ export function AppShell({
             >
               <NavIcon name={i.icon} />
               {i.label}
-              {i.href === "/home" && attention > 0 && (
-                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brand" title={`${attention} items need attention`} aria-label={`${attention} items need attention`} />
-              )}
-              {i.href === "/queue" && queueCount > 0 && (
-                <span className="ml-auto rounded-full bg-brand px-1.5 text-[11px] font-semibold tabular-nums text-white" aria-label={`${queueCount} items waiting in your queue`}>
-                  {queueCount > 99 ? "99+" : queueCount}
-                </span>
-              )}
             </Link>
           );
         })}
@@ -138,6 +128,7 @@ export function AppShell({
         </button>
         <Logo />
         <span className="ml-auto truncate text-[12.5px] font-medium text-ink-2">{orgName}</span>
+        <InboxBell initialCount={inboxCount} />
       </div>
       {open && (
         <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
@@ -146,8 +137,14 @@ export function AppShell({
         </div>
       )}
       <aside className="hidden border-r border-line bg-surface md:sticky md:top-0 md:block md:h-screen md:w-60 md:shrink-0">{sidebar}</aside>
-      <main id="main" className="min-w-0 flex-1 px-4 py-6 md:px-10 md:py-8">
-        <div className="mx-auto max-w-[1240px]">{children}</div>
+      <main id="main" className="min-w-0 flex-1 px-4 pb-6 pt-4 md:px-10 md:pb-8 md:pt-4">
+        <div className="mx-auto max-w-[1240px]">
+          {/* Top bar: the inbox bell, top right, on every page. */}
+          <div className="mb-2 hidden items-center justify-end gap-2 md:flex">
+            <InboxBell initialCount={inboxCount} />
+          </div>
+          {children}
+        </div>
       </main>
     </div>
   );
@@ -259,7 +256,7 @@ function AccountMenu({ user }: { user: { name: string; email: string; role: stri
   );
 }
 
-function NavIcon({ name }: { name: (typeof PRIMARY)[number]["icon"] }) {
+function NavIcon({ name }: { name: string }) {
   const p = { width: 16, height: 16, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
   switch (name) {
     case "home":

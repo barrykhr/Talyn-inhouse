@@ -6,6 +6,10 @@ const nextConfig: NextConfig = {
   experimental: {
     serverActions: { bodySizeLimit: "4.5mb" },
   },
+  // The Queue became the Inbox; send old links there before any page renders.
+  async redirects() {
+    return [{ source: "/queue", destination: "/inbox", permanent: false }];
+  },
   async headers() {
     return [
       {

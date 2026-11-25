@@ -236,7 +236,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
           {atsConn && isAdmin && !otherLinked && <AtsButtons linked={!!org.atsLinkedAt} />}
           {conflicts > 0 && (
             <p>
-              <Link href="/queue#q-ats" className="font-medium text-signal hover:underline">
+              <Link href="/inbox" className="font-medium text-signal hover:underline">
                 {conflicts} field conflict{conflicts === 1 ? "" : "s"} to review →
               </Link>
             </p>

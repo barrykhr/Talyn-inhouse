@@ -11,7 +11,7 @@ const COMMANDS: Item[] = [
   { key: "c-home", label: "Go to Home", hint: "G then H", href: "/home", group: "Go to" },
   { key: "c-integrations", label: "Go to integrations", hint: "", href: "/integrations", group: "Go to" },
   { key: "c-guide", label: "Open the guide", hint: "", href: "/guide", group: "Go to" },
-  { key: "c-queue", label: "Go to full review queue", hint: "G then Q", href: "/queue", group: "Go to" },
+  { key: "c-queue", label: "Go to inbox", hint: "G then Q", href: "/inbox", group: "Go to" },
   { key: "c-discover", label: "Go to Discover", hint: "G then D", href: "/discover", group: "Go to" },
   { key: "c-interviews", label: "Go to interviews", hint: "G then I", href: "/interviews", group: "Go to" },
   { key: "c-roles", label: "Go to roles", hint: "G then R", href: "/roles", group: "Go to" },
@@ -60,7 +60,7 @@ export function CommandPalette() {
       if (e.key === "g") g = Date.now();
       else if (Date.now() - g < 900 && (e.key === "r" || e.key === "c" || e.key === "q" || e.key === "d" || e.key === "i" || e.key === "h")) {
         g = 0;
-        router.push(e.key === "r" ? "/roles" : e.key === "c" ? "/candidates" : e.key === "d" ? "/discover" : e.key === "i" ? "/interviews" : e.key === "h" ? "/home" : "/queue");
+        router.push(e.key === "r" ? "/roles" : e.key === "c" ? "/candidates" : e.key === "d" ? "/discover" : e.key === "i" ? "/interviews" : e.key === "h" ? "/home" : "/inbox");
       }
     };
     const onOpen = () => open();
