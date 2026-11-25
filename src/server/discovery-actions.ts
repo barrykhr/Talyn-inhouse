@@ -250,6 +250,8 @@ export type TargetCompaniesView = {
     selectedAt: string | null;
   } | null;
   error?: string;
+  /** The popup should generate a list now (none stored yet). */
+  needsGeneration?: boolean;
 };
 
 async function targetInput(auth: AuthContext, roleId: string): Promise<{ input: TargetCompanyInput; client: { name: string | null; website: string | null } }> {
@@ -322,7 +324,7 @@ export async function saveTargetSelection(roleId: string, names: unknown): Promi
 }
 
 /** Opens the popup: the stored list, or a new one when there is none yet. */
-export async function getTargetCompanies(roleId: string): Promise<TargetCompaniesView> {
+export async function getTargetCompanies(roleId: string, opts: { generate?: boolean } = {}): Promise<TargetCompaniesView> {
   const auth = await requireAuth();
   const { client } = await targetInput(auth, roleId);
   const configured = aiStatus().configured;
@@ -330,7 +332,42 @@ export async function getTargetCompanies(roleId: string): Promise<TargetCompanie
   // A set holding only hand-added companies gets an AI list on first open (the selection is kept).
   if (stored && stored.orgId === auth.orgId && (stored.model !== "none" || !configured)) return { aiConfigured: configured, client, set: setView(stored) };
   if (!configured) return { aiConfigured: false, client, set: null };
+  // The popup generates in two visible steps (profile, then companies); other callers generate in one.
+  if (opts.generate === false) return { aiConfigured: true, client, set: stored && stored.orgId === auth.orgId ? setView(stored) : null, needsGeneration: true };
   return generateTargets(auth, roleId, null);
+}
+
+/** Step 1 of generating: a profile of the client company (not saved until step 2 succeeds). */
+export async function draftClientProfile(roleId: string): Promise<{ profile: ClientProfile } | { error: string }> {
+  const auth = await requireAuth();
+  const { input } = await targetInput(auth, roleId);
+  if (!aiStatus().configured) return { error: "Suggestions need an AI provider." };
+  try {
+    const step1 = await generateClientProfileWithAi(input);
+    const seen = new Set(step1.urls);
+    return {
+      profile: {
+        industry: step1.output.industry.slice(0, 120),
+        domain: step1.output.domain.slice(0, 120),
+        product: step1.output.product.slice(0, 240),
+        headcount_band: step1.output.headcount_band,
+        revenue_band: step1.output.revenue_band,
+        source_urls: keepSeenUrls(step1.output.source_urls, seen),
+      },
+    };
+  } catch (err) {
+    if (!(err instanceof AiRequestError)) logError("discover.client_profile_failed", err, { roleId });
+    return { error: `${err instanceof AiRequestError || err instanceof AiUnavailableError ? err.message : "The AI couldn't profile the client company this time."} Try again, or search without target companies.` };
+  }
+}
+
+/** Step 2: companies like the client, measured against the profile from step 1 (kept as the AI wrote it). */
+export async function suggestCompaniesFrom(roleId: string, profile: unknown): Promise<TargetCompaniesView> {
+  const auth = await requireAuth();
+  const p = ClientProfileSchema.safeParse(profile);
+  if (!p.success) return { aiConfigured: aiStatus().configured, client: { name: null, website: null }, set: null, error: "The client company profile was incomplete. Try again." };
+  const urls = Array.isArray((profile as { source_urls?: unknown }).source_urls) ? ((profile as { source_urls: unknown[] }).source_urls.filter((u) => typeof u === "string").slice(0, 5) as string[]) : [];
+  return generateTargets(auth, roleId, { ...p.data, source_urls: urls });
 }
 
 /** "Regenerate", or "Update profile and regenerate" with the recruiter's corrected profile. */
@@ -426,5 +463,34 @@ export async function suggestSynonyms(roleId: string, terms: { titles: string[];
   } catch (err) {
     if (!(err instanceof AiRequestError || err instanceof AiUnavailableError)) logError("discover.synonyms_failed", err, { roleId });
     return { error: err instanceof AiRequestError ? err.message : "Talyn couldn't suggest alternatives this time." };
+  }
+}
+
+export type SearchChip = { kind: "role" | "title" | "skill" | "years" | "location" | "work" | "need"; label: string };
+
+/**
+ * How a plain-English people search was read, as chips the recruiter can remove. Display only:
+ * the search itself compares meaning, so a wrong reading never filters anyone out.
+ */
+export async function interpretSearch(text: string): Promise<{ chips: SearchChip[] } | { error: string }> {
+  await requireAuth();
+  const t = (text ?? "").trim().slice(0, 500);
+  if (t.length < 3) return { chips: [] };
+  if (!aiStatus().configured) return { error: "AI isn't set up, so the search can't show how it read your words." };
+  try {
+    const { system, user } = describePrompt(t, "(not given: a people search across all roles)");
+    const d = toDescribedFields(await runStructuredFor({ system, user, schema: DescribeSchema, name: "describe_person", maxTokens: 2000 }));
+    const chips: SearchChip[] = [];
+    if (d.roleName) chips.push({ kind: "role", label: d.roleName });
+    for (const x of d.altTitles.slice(0, 2)) chips.push({ kind: "title", label: x });
+    for (const x of [...d.skillsRequired, ...d.skillsPreferred].slice(0, 8)) chips.push({ kind: "skill", label: x });
+    if (d.minYears !== null || d.maxYears !== null) chips.push({ kind: "years", label: d.maxYears === null ? `${d.minYears}+ years` : d.minYears === null ? `Up to ${d.maxYears} years` : `${d.minYears}–${d.maxYears} years` });
+    if (d.location) chips.push({ kind: "location", label: d.location });
+    if (d.workArrangement) chips.push({ kind: "work", label: d.workArrangement === "onsite" ? "On-site" : d.workArrangement === "hybrid" ? "Hybrid" : "Remote" });
+    for (const x of d.otherNeeds.slice(0, 3)) chips.push({ kind: "need", label: x });
+    return { chips };
+  } catch (err) {
+    if (!(err instanceof AiRequestError || err instanceof AiUnavailableError)) logError("search.interpret_failed", err);
+    return { error: "Couldn't show how the search was read this time. Results aren't affected." };
   }
 }

@@ -12,7 +12,8 @@ import {
   type ClientProfile,
   type TargetCompany,
 } from "@/lib/discovery/target-companies";
-import { getTargetCompanies, regenerateTargetCompanies, saveTargetSelection, type TargetCompaniesView } from "@/server/discovery-actions";
+import { draftClientProfile, getTargetCompanies, regenerateTargetCompanies, saveTargetSelection, suggestCompaniesFrom, type TargetCompaniesView } from "@/server/discovery-actions";
+import { StagedProgress } from "./staged-progress";
 import { Spinner } from "./client";
 
 type Row = TargetCompany & { key: string };
@@ -81,6 +82,32 @@ export function TargetCompaniesDialog({
     }
   };
 
+  // Generating runs in two real steps, each shown as it happens: profile the client, then find companies.
+  const [step, setStep] = useState<0 | 1 | 2>(0);
+  const generate = async (opts: { profile?: ClientProfile } = {}) => {
+    setLoading(true);
+    setView((v) => (v ? { ...v, error: undefined } : v));
+    try {
+      let profileForStep2 = opts.profile;
+      if (!profileForStep2) {
+        setStep(1);
+        const p = await draftClientProfile(roleId);
+        if ("error" in p) {
+          setView((v) => ({ aiConfigured: true, client: v?.client ?? { name: null, website: null }, set: v?.set ?? null, error: p.error }));
+          return;
+        }
+        profileForStep2 = p.profile;
+      }
+      setStep(2);
+      apply(await (opts.profile ? regenerateTargetCompanies(roleId, opts.profile) : suggestCompaniesFrom(roleId, profileForStep2)));
+    } catch {
+      setView((v) => ({ aiConfigured: true, client: v?.client ?? { name: null, website: null }, set: v?.set ?? null, error: "Couldn't reach Talyn. Check your connection and try again." }));
+    } finally {
+      setLoading(false);
+      setStep(0);
+    }
+  };
+
   const load = async (fn: () => Promise<TargetCompaniesView>) => {
     setLoading(true);
     try {
@@ -97,7 +124,19 @@ export function TargetCompaniesDialog({
     if (!d) return;
     if (open && !d.open) {
       d.showModal();
-      if (!view) void load(() => getTargetCompanies(roleId));
+      if (!view)
+        void (async () => {
+          setLoading(true);
+          try {
+            const v = await getTargetCompanies(roleId, { generate: false });
+            apply(v);
+            setLoading(false);
+            if (v.needsGeneration) await generate();
+          } catch {
+            setView({ aiConfigured: true, client: { name: null, website: null }, set: null, error: "Couldn't reach Talyn. Check your connection and try again." });
+            setLoading(false);
+          }
+        })();
     } else if (!open && d.open) d.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -139,15 +178,25 @@ export function TargetCompaniesDialog({
         </header>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-          {loading && (
+          {loading && step > 0 && (
+            <div className="motion-fade rounded-lg border border-line bg-sunken/50 px-4 py-3">
+              <StagedProgress
+                stages={[
+                  { key: "profile", label: `Profiling ${view?.client.name || "the client company"}`, detail: "Industry, product, headcount and revenue bands", state: step === 1 ? "active" : "done", slow: true },
+                  { key: "companies", label: "Finding similar companies with web search", detail: "Up to 30, checked for duplicates and your exclusions. Usually 1–2 minutes.", state: step === 2 ? "active" : "pending", slow: true },
+                ]}
+              />
+            </div>
+          )}
+          {loading && step === 0 && (
             <div role="status" className="flex items-center gap-2 rounded-lg bg-sunken px-3 py-3 text-[13px]">
-              <Spinner /> {set ? "Regenerating…" : "Profiling the client company and suggesting companies…"} This can take up to a minute.
+              <Spinner /> Loading…
             </div>
           )}
           {view?.error && (
             <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-danger/40 bg-danger-soft px-3 py-2 text-[13px] text-danger">
               {view.error}
-              <button type="button" className={buttonClass("secondary", "sm")} onClick={() => load(() => (set ? regenerateTargetCompanies(roleId) : getTargetCompanies(roleId)))} disabled={loading}>
+              <button type="button" className={buttonClass("secondary", "sm")} onClick={() => generate()} disabled={loading}>
                 Try again
               </button>
             </div>
@@ -201,7 +250,7 @@ export function TargetCompaniesDialog({
                       type="button"
                       className={buttonClass(profileChanged ? "primary" : "secondary", "sm")}
                       disabled={loading}
-                      onClick={() => load(() => regenerateTargetCompanies(roleId, profileChanged ? { industry: profile.industry, domain: profile.domain, product: profile.product, headcount_band: profile.headcount_band, revenue_band: profile.revenue_band } : undefined))}
+                      onClick={() => generate(profileChanged ? { profile: { industry: profile.industry, domain: profile.domain, product: profile.product, headcount_band: profile.headcount_band, revenue_band: profile.revenue_band } } : {})}
                     >
                       {profileChanged ? "Update profile and regenerate" : "Regenerate"}
                     </button>

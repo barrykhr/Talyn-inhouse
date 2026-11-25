@@ -43,7 +43,7 @@ function blockers(t: T, channel: Channel): string[] {
 
 const refresh = (t: T) => {
   revalidatePath(`/candidates/${t.application.candidateId}`);
-  revalidatePath("/queue");
+  revalidatePath("/inbox");
   revalidatePath("/home");
 };
 

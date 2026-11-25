@@ -4,7 +4,7 @@ import type { ComponentProps, ReactNode } from "react";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "signal";
 const buttonBase =
-  "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap";
+  "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.97] disabled:active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap";
 const buttonVariants: Record<ButtonVariant, string> = {
   primary: "bg-brand text-white shadow-[0_1px_0_rgb(0_0_0/0.08)] hover:bg-brand-2",
   secondary: "bg-surface text-ink border border-line-strong hover:bg-sunken",

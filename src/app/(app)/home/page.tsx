@@ -4,7 +4,8 @@ import { AUDIT_LABEL } from "@/lib/audit";
 import { Card, EmptyState, LinkButton, formatDateTime } from "@/components/ui";
 import { aiStatus } from "@/lib/ai";
 import { aiHealth } from "@/lib/ai-health";
-import { attention } from "@/lib/attention";
+import { inboxFor } from "@/lib/inbox";
+import { InboxList } from "@/components/inbox-list";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { isLiveSourceConnected } from "@/lib/sourcing/connectors";
@@ -22,8 +23,8 @@ const STATE_LABEL: Record<StepState, string> = { done: "Done", todo: "To do", op
  */
 export default async function HomePage() {
   const auth = await requireAuth();
-  const [groups, roles, approved, members, assignments, decided, inPipelines, openRoles, recent] = await Promise.all([
-    attention(auth.orgId),
+  const [inbox, roles, approved, members, assignments, decided, inPipelines, openRoles, recent] = await Promise.all([
+    inboxFor(auth.orgId, auth.userId),
     db.role.count({ where: { orgId: auth.orgId } }),
     db.criterion.count({ where: { orgId: auth.orgId, status: "approved" } }),
     db.membership.count({ where: { orgId: auth.orgId } }),
@@ -89,7 +90,7 @@ export default async function HomePage() {
   ];
   const required = steps.filter((s) => s.state !== "optional");
   const setupDone = required.every((s) => s.state === "done");
-  const total = groups.reduce((n, g) => n + g.items.length, 0);
+  const total = inbox.count;
 
   return (
     <div className="space-y-8">
@@ -108,8 +109,8 @@ export default async function HomePage() {
           <Link href="/discover/new" className="text-muted hover:text-ink hover:underline">
             Start a Discover search
           </Link>
-          <Link href="/queue" className="text-muted hover:text-ink hover:underline">
-            Review queue{total ? ` (${total})` : ""}
+          <Link href="/inbox" className="text-muted hover:text-ink hover:underline">
+            Inbox{total ? ` (${total})` : ""}
           </Link>
           <span className="text-faint">
             {auth.orgName}
@@ -179,49 +180,20 @@ export default async function HomePage() {
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
           <div>
             <h2 id="att-h" className="text-[15px] font-semibold">
-              Needs your attention
+              Needs you
             </h2>
-            <p className="text-[13px] text-muted">Each item opens the exact place to act. Talyn never decides, sends or schedules on its own.</p>
+            <p className="text-[13px] text-muted">The oldest five from your inbox. Each opens the exact place to act; Talyn never decides, sends or schedules on its own.</p>
           </div>
-          <Link href="/queue" className="text-[13px] text-muted underline-offset-2 hover:text-ink hover:underline">
-            Full review queue
-          </Link>
+          {total > 5 && (
+            <Link href="/inbox" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
+              See all {total} →
+            </Link>
+          )}
         </div>
-        {groups.length === 0 ? (
-          <EmptyState
-            title={roles ? "You're caught up" : "Nothing to review yet"}
-            body={roles ? "New applicants, search results, drafts and interviews will appear here as they need you." : "Create a role to start — applicants, discovery and interviews all hang off a role."}
-            action={roles ? <LinkButton href="/roles">Go to roles</LinkButton> : <LinkButton href="/roles/new" variant="primary">New role</LinkButton>}
-          />
+        {roles === 0 && total === 0 ? (
+          <EmptyState title="Nothing to review yet" body="Create a role to start: applicants, discovery and interviews all hang off a role." action={<LinkButton href="/roles/new" variant="primary">New role</LinkButton>} />
         ) : (
-          <div className="space-y-5">
-            {groups.map((g) => (
-              <div key={g.key}>
-                <div className="mb-1.5 flex items-baseline gap-2">
-                  <h3 className="text-[13.5px] font-semibold">{g.label}</h3>
-                  <span className="text-[12px] tabular-nums text-muted">{g.items.length}</span>
-                  <span className="hidden text-[12px] text-faint md:inline">— {g.hint}</span>
-                </div>
-                <Card className="divide-y divide-line overflow-hidden">
-                  {g.items.slice(0, 6).map((it) => (
-                    <Link key={it.key} href={it.href} className="group flex items-center gap-3 px-4 py-2.5 hover:bg-sunken/50">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[13.5px] font-medium">{it.title}</div>
-                        <div className="truncate text-[12.5px] text-muted">{it.detail}</div>
-                      </div>
-                      {it.at && <span className="hidden text-[11.5px] text-faint sm:inline">since {it.at.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
-                      <span className="rounded-md border border-line-strong px-2 py-0.5 text-[12.5px] font-medium text-ink-2 group-hover:border-brand group-hover:text-brand">{it.action} →</span>
-                    </Link>
-                  ))}
-                  {g.items.length > 6 && (
-                    <Link href="/queue" className="block px-4 py-2 text-[12.5px] text-muted hover:text-ink">
-                      {g.items.length - 6} more in the review queue
-                    </Link>
-                  )}
-                </Card>
-              </div>
-            ))}
-          </div>
+          <InboxList groups={inbox.groups} limit={5} compact />
         )}
       </section>
 

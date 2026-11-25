@@ -1327,3 +1327,20 @@ model Embedding {
   @@unique([kind, refId])
   @@index([orgId, kind])
 }
+
+// One person's handling of an inbox item: Done (hidden until the item changes, since the item key
+// carries a fingerprint of its content) or Snoozed until a time. "__updates_seen" records when they
+// last opened Updates.
+model InboxState {
+  id        String    @id @default(cuid())
+  orgId     String
+  userId    String
+  itemKey   String
+  status    String // done | snoozed | seen
+  until     DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([userId, orgId, itemKey])
+  @@index([orgId, userId])
+}

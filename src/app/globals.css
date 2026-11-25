@@ -214,3 +214,77 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .group:hover .motion-lift, .motion-lift:hover { transform: none; }
 }
+
+/* Direction-aware page change: deeper arrives from the right, back up from the left. */
+@keyframes talyn-page-forward {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes talyn-page-back {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: none; }
+}
+.motion-page[data-dir="forward"] > * { animation-name: talyn-page-forward; }
+.motion-page[data-dir="back"] > * { animation-name: talyn-page-back; }
+
+/* Inbox panel: grows from the bell, top right. */
+@keyframes talyn-panel {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.motion-panel { animation: talyn-panel 180ms var(--ease-out) both; transform-origin: top right; }
+
+/* List rows settle in; a cleared row collapses and fades before it leaves. */
+.motion-row { animation: talyn-enter 220ms var(--ease-out) both; }
+@keyframes talyn-row-leave {
+  from { opacity: 1; max-height: 160px; }
+  to { opacity: 0; max-height: 0; transform: translateX(12px); }
+}
+.motion-row-leave { animation: talyn-row-leave 200ms var(--ease-out) forwards !important; overflow: hidden; pointer-events: none; }
+
+/* Counts and chips pop in. */
+@keyframes talyn-pop {
+  0% { opacity: 0; transform: scale(0.6); }
+  70% { opacity: 1; transform: scale(1.08); }
+  100% { transform: none; }
+}
+.motion-pop { animation: talyn-pop 240ms var(--ease-out) both; }
+
+/* The bell swings once when its count changes. Never loops. */
+@keyframes talyn-bell {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(14deg); }
+  40% { transform: rotate(-10deg); }
+  60% { transform: rotate(6deg); }
+  80% { transform: rotate(-3deg); }
+}
+.motion-bell { animation: talyn-bell 600ms ease-in-out 1; transform-origin: 50% 10%; }
+
+/* Placeholder shimmer while something real is loading. */
+@keyframes talyn-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.motion-shimmer {
+  background: linear-gradient(90deg, var(--color-sunken) 25%, var(--color-line) 50%, var(--color-sunken) 75%);
+  background-size: 200% 100%;
+  animation: talyn-shimmer 1.3s linear infinite;
+}
+
+/* Review mode: the next candidate slides in from the side you moved toward. */
+@keyframes talyn-slide-next {
+  from { opacity: 0; transform: translateX(28px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes talyn-slide-prev {
+  from { opacity: 0; transform: translateX(-28px); }
+  to { opacity: 1; transform: none; }
+}
+.motion-slide-next { animation: talyn-slide-next 260ms var(--ease-out) both; }
+.motion-slide-prev { animation: talyn-slide-prev 260ms var(--ease-out) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-shimmer { animation: none; }
+  .motion-bell { animation: none; }
+  [class*="active:scale"]:active { transform: none !important; }
+}

@@ -110,6 +110,9 @@ export function ApplicantsTab({
           ))}
         </div>
         <div className="flex flex-wrap gap-2">
+          <LinkButton href={`/roles/${roleId}/decide`} variant="secondary">
+            Review mode <kbd className="ml-1 rounded border border-line-strong px-1 text-[11px] text-muted">S H R</kbd>
+          </LinkButton>
           <AddExisting roleId={roleId} candidates={others} />
           <LinkButton href={`/import?role=${roleId}`}>Import CSV</LinkButton>
           <LinkButton href={`/candidates/new?role=${roleId}`} variant="primary">

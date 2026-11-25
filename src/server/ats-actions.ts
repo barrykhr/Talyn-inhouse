@@ -18,7 +18,7 @@ async function admin(): Promise<AuthContext | null> {
 }
 const refresh = () => {
   revalidatePath("/integrations");
-  revalidatePath("/queue");
+  revalidatePath("/inbox");
 };
 
 /** Links this workspace to the configured ATS. Only one workspace can be linked to an ATS. */

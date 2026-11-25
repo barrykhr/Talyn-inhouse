@@ -3,28 +3,21 @@ import { CommandPalette } from "@/components/command-palette";
 import { ToastProvider } from "@/components/toast";
 import { aiStatus } from "@/lib/ai";
 import { aiHealth } from "@/lib/ai-health";
-import { attentionCount } from "@/lib/attention";
 import { requireAuth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logError } from "@/lib/log";
-import { buildQueue } from "@/lib/queue";
+import { inboxCount } from "@/lib/inbox";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const auth = await requireAuth();
   const ai = aiStatus();
-  const [memberships, attention, queueCount, health] = await Promise.all([
+  const [memberships, inbox, health] = await Promise.all([
     db.membership.findMany({ where: { userId: auth.userId }, include: { org: { select: { id: true, name: true } } }, orderBy: { createdAt: "asc" } }),
     // The badge is a convenience: if counting fails, the shell still renders.
-    attentionCount(auth.orgId).catch((err) => {
-      logError("shell.attention_failed", err);
+    inboxCount(auth.orgId, auth.userId).catch((err) => {
+      logError("shell.inbox_count_failed", err);
       return 0;
     }),
-    buildQueue(auth.orgId)
-      .then((sections) => sections.reduce((n, s) => n + s.items.length, 0))
-      .catch((err) => {
-        logError("shell.queue_count_failed", err);
-        return 0;
-      }),
     ai.configured ? aiHealth(ai.provider) : null,
   ]);
   return (
@@ -35,8 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         orgName={auth.orgName}
         user={{ name: auth.userName, email: auth.email, role: auth.membershipRole }}
         ai={{ configured: ai.configured, model: ai.model ?? null, failing: health?.failing ? (health.text ?? "AI requests are failing") : null }}
-        attention={attention}
-        queueCount={queueCount}
+        inboxCount={inbox}
       >
         {children}
       </AppShell>
