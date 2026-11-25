@@ -11,6 +11,7 @@ import { eventViews } from "@/server/scheduling-store";
 import { calendarConfigured } from "@/lib/calendar/google";
 import { EventCard } from "@/components/calendar/event-card";
 import { KitHeader } from "../kit-header";
+import { gapProbes } from "@/lib/interviews/gaps";
 import { AddCompetencyForm, CompetencyCard, HiringManagerSelect, StageCard, type CompetencyView, type StageView } from "./kit-editor";
 
 export const metadata = { title: "Interview plan" };
@@ -25,11 +26,19 @@ export default async function KitPage({ params, searchParams }: { params: Promis
   const v = await loadKitForUser(auth, kitId);
   if (!v) notFound();
   const { kit } = v;
-  const [members, criteria] = await Promise.all([
+  const [members, criteria, latestAssessment, followUps, teamQs] = await Promise.all([
     db.membership.findMany({ where: { orgId: auth.orgId }, include: { user: { select: { id: true, name: true } } }, orderBy: { createdAt: "asc" } }),
     db.criterion.findMany({ where: { roleId: kit.roleId, orgId: auth.orgId, status: "approved" }, select: { id: true, name: true } }),
+    db.assessment.findFirst({
+      where: { orgId: auth.orgId, applicationId: kit.applicationId },
+      orderBy: { createdAt: "desc" },
+      select: { items: { select: { criterionId: true, criterionName: true, kind: true, importance: true, result: true, overrideResult: true, missingInfo: true } } },
+    }),
+    db.question.findMany({ where: { orgId: auth.orgId, applicationId: kit.applicationId, kind: "follow_up" }, select: { criterionId: true, criterionName: true, text: true, status: true } }),
+    db.hiringFeedback.findMany({ where: { orgId: auth.orgId, applicationId: kit.applicationId, verdict: "question" }, select: { comment: true } }),
   ]);
   const inKit = new Set(kit.competencies.map((c) => c.criterionId).filter(Boolean));
+  const probes = latestAssessment ? gapProbes(latestAssessment.items, followUps, teamQs.map((q) => ({ text: q.comment })), inKit as Set<string>) : [];
   const memberViews = members.map((m) => ({ userId: m.user.id, name: m.user.name, role: m.role }));
   const competencies: CompetencyView[] = kit.competencies.map((c) => ({
     id: c.id,
@@ -108,6 +117,34 @@ export default async function KitPage({ params, searchParams }: { params: Promis
         </span>
         <span className="text-muted">Owner: {kit.ownerName}</span>
       </div>
+
+      <section aria-labelledby="gaps-h" className="mb-6">
+        <SectionTitle hint="Requirements this candidate's material doesn't yet prove, each with a question to ask. From their latest assessment; questions come from their follow-ups, the hiring team, or a neutral template.">
+          <span id="gaps-h">Probe this candidate&apos;s gaps</span>
+        </SectionTitle>
+        {!latestAssessment ? (
+          <Card className="px-4 py-3 text-[13px] text-muted">Not assessed yet. Assess the candidate to see which requirements to probe.</Card>
+        ) : probes.length === 0 ? (
+          <Card className="px-4 py-3 text-[13px] text-muted">Every required and preferred item has evidence. Use the questions below to go deeper.</Card>
+        ) : (
+          <Card className="divide-y divide-line overflow-hidden">
+            {probes.map((g, i) => (
+              <div key={i} className="space-y-1 px-4 py-3 text-[13px]">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{g.criterionName}</span>
+                  <span className={g.status === "conflicting" ? "rounded bg-warn-soft px-1.5 py-px text-[11px] font-semibold text-warn" : "rounded bg-sunken px-1.5 py-px text-[11px] font-semibold text-muted"}>{g.why}</span>
+                  {g.inKit && <span className="text-[11.5px] text-faint">covered by a competency below</span>}
+                </div>
+                <p>
+                  <span className="text-muted">Ask: </span>
+                  {g.probe}
+                </p>
+                <p className="text-[11.5px] text-faint">{g.source === "follow_up" ? "From this candidate's follow-up questions" : g.source === "hiring_team" ? "From the hiring team" : "Template question"}</p>
+              </div>
+            ))}
+          </Card>
+        )}
+      </section>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <section aria-labelledby="comp-h" className="min-w-0 space-y-3">

@@ -344,6 +344,7 @@ model Application {
 
   @@unique([candidateId, roleId])
   @@index([orgId, roleId])
+  hiringFeedback   HiringFeedback[]
 }
 
 model StageEvent {
@@ -1287,5 +1288,23 @@ model RoleInsight {
   generatedAt     DateTime @default(now())
   role            Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
+  @@index([orgId])
+}
+
+// A hiring manager's (or panel member's) view on a shortlisted candidate. Advisory: the recruiter
+// still records the decision; feedback never changes the stage or decision.
+model HiringFeedback {
+  id            String      @id @default(cuid())
+  orgId         String
+  applicationId String
+  userId        String
+  userName      String
+  verdict       String // interested | not_a_fit | question
+  comment       String      @default("")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, userId])
   @@index([orgId])
 }

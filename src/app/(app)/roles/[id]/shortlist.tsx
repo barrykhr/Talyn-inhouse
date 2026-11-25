@@ -35,6 +35,12 @@ export function ShortlistTab({
       <ModeBanner mode="shortlist">
         People you want to progress — applicants you shortlisted and people you saved from Discover. Each keeps its origin. Stages still move only when you change them.
       </ModeBanner>
+      <div className="flex flex-wrap items-center gap-2 text-[13px]">
+        <LinkButton href={`/roles/${roleId}/review`} size="sm">
+          Hiring manager review →
+        </LinkButton>
+        <span className="text-muted">The shortlist with its evidence, for hiring managers to say Interested, Not a fit or ask a question.</span>
+      </div>
 
       <nav aria-label="Filter shortlist by origin" className="flex flex-wrap gap-1 text-[13px]">
         {(

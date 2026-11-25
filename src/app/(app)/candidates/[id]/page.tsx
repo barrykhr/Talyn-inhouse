@@ -1,5 +1,8 @@
 import { echoSummary } from "@/lib/jd-echo";
 import { HEALTH_HELP } from "@/lib/health";
+import { FEEDBACK_LABEL, feedbackSummary, type FeedbackVerdict } from "@/lib/feedback";
+import { CHECK_STATUS_LABEL, answerChecks, extractAnswers, type AnswerCheck } from "@/lib/authenticity";
+import { linkedSource } from "@/server/assessment-engine";
 import { HealthPill } from "@/components/health";
 import { loadHealth } from "@/server/health";
 import { INTEREST_CHANNEL_LABEL, INTEREST_LABEL } from "@/lib/domain";
@@ -248,6 +251,32 @@ export default async function CandidatePage({
 
   // Profile checks: specific, explained flags only — never an overall "fake" judgement.
   const health = app ? (await loadHealth(auth.orgId, [app.id])).get(app.id) ?? null : null;
+  const teamFeedback = app ? await db.hiringFeedback.findMany({ where: { orgId: auth.orgId, applicationId: app.id }, orderBy: { updatedAt: "desc" } }) : [];
+  // Answer checks: only when the candidate has recorded answers.
+  const answers = extractAnswers(candidate.candidateSummary);
+  let answerCheckList: AnswerCheck[] = [];
+  if (app && answers.length) {
+    const [linked, jdDoc, roleSkills, asked] = await Promise.all([
+      linkedSource(auth.orgId, app.sourcedProfileId),
+      db.jobDescription.findFirst({ where: { orgId: auth.orgId, roleId: app.roleId, isCurrent: true }, orderBy: { createdAt: "desc" }, select: { pagesJson: true } }),
+      db.criterion.findMany({ where: { orgId: auth.orgId, roleId: app.roleId, status: "approved", kind: "skill" }, select: { name: true } }),
+      db.task.findMany({ where: { orgId: auth.orgId, applicationId: app.id }, select: { detailsJson: true } }),
+    ]);
+    const prompts: string[] = [];
+    try {
+      if (jdDoc) prompts.push((JSON.parse(jdDoc.pagesJson) as string[]).join("\n"));
+    } catch {
+      /* unreadable JD: skip it */
+    }
+    for (const t of asked) {
+      try {
+        prompts.push(...((JSON.parse(t.detailsJson) as { questions?: string[] }).questions ?? []));
+      } catch {
+        /* skip */
+      }
+    }
+    answerCheckList = answerChecks({ answers, cv: pages.join("\n"), publicWork: linked?.text ?? "", prompts, skills: roleSkills.map((c) => c.name) });
+  }
   const [dupReviews, linkedSources] = await Promise.all([
     db.duplicateReview.findMany({
       where: { orgId: auth.orgId, status: { not: "dismissed" }, OR: [{ candidateAId: candidate.id }, { candidateBId: candidate.id }] },
@@ -930,6 +959,59 @@ export default async function CandidatePage({
           )}
         </div>
       </Card>
+
+      {answerCheckList.length > 0 && (
+        <Card className="p-4" aria-labelledby="ac-h">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span id="ac-h" className="text-[11.5px] font-semibold uppercase tracking-wide text-muted">
+              Answer checks
+            </span>
+            <span className="text-[12px] text-muted">
+              {answerCheckList.filter((c) => c.status === "flag").length} to check · {answerCheckList.filter((c) => c.status === "passed").length} no issues
+            </span>
+          </div>
+          <ul className="space-y-2 text-[12.5px]">
+            {answerCheckList.map((c) => (
+              <li key={c.key}>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className={clsx("rounded px-1.5 py-px text-[11px] font-semibold", c.status === "flag" ? "bg-warn-soft text-warn" : c.status === "passed" ? "bg-ok-soft text-ok" : "bg-sunken text-muted")}>
+                    {CHECK_STATUS_LABEL[c.status]}
+                  </span>
+                  <span className="font-medium">{c.label}</span>
+                </div>
+                <p className="text-ink-2">{c.detail}</p>
+                {c.quotes.map((q) => (
+                  <p key={q} className="quote text-[11.5px] text-muted">
+                    “{q}”
+                  </p>
+                ))}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[11.5px] text-faint">Rule-based checks of the recorded answers against the CV and public work. They flag things to ask about; they never reject anyone or prove who wrote an answer.</p>
+        </Card>
+      )}
+
+      {teamFeedback.length > 0 && (
+        <Card className="p-4" aria-labelledby="fb-h">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span id="fb-h" className="text-[11.5px] font-semibold uppercase tracking-wide text-muted">
+              Hiring team feedback
+            </span>
+            <span className="text-[12px] text-muted">{feedbackSummary(teamFeedback)}</span>
+          </div>
+          <ul className="space-y-1.5 text-[12.5px]">
+            {teamFeedback.map((f) => (
+              <li key={f.id}>
+                <span className="font-medium">{f.userName}</span>: {FEEDBACK_LABEL[f.verdict as FeedbackVerdict] ?? f.verdict}
+                {f.comment && <span className="text-ink-2"> — {f.comment}</span>}
+                <span className="block text-[11.5px] text-faint">{formatDate(f.updatedAt)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[11.5px] text-faint">Advisory. You record the decision.</p>
+        </Card>
+      )}
 
       {health && (
         <Card className="p-4" aria-labelledby="health-h">

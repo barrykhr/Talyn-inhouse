@@ -30,7 +30,7 @@ type ItemDraft = {
 export type AssessOutcome = { ok: true; generator: "ai" | "keyword" } | { ok: false; error: string; reason: "no_criteria" | "no_material" | "failed" };
 
 /** Text of the Discover source record a person was saved from, used as linked source evidence. */
-async function linkedSource(orgId: string, sourcedProfileId: string | null) {
+export async function linkedSource(orgId: string, sourcedProfileId: string | null) {
   if (!sourcedProfileId) return null;
   const p = await db.sourcedProfile.findFirst({
     where: { id: sourcedProfileId, orgId },

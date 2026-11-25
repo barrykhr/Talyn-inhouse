@@ -27,7 +27,7 @@ export function RoleInsights({ roleId, insight, hasJd }: { roleId: string; insig
       <SectionTitle
         hint="Checks the JD for vague, conflicting, exclusionary or missing points before you search, and shows the usual career path. Suggestions only: nothing about the role changes."
         action={
-          <ActionButton action={() => generateRoleInsights(roleId)} pendingLabel="Checking…" disabled={!hasJd}>
+          <ActionButton action={generateRoleInsights.bind(null, roleId)} pendingLabel="Checking…" disabled={!hasJd}>
             {insight ? "Check again" : "Check the JD"}
           </ActionButton>
         }

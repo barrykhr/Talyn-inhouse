@@ -52,6 +52,11 @@ export async function auditAccess(auth: Pick<AuthContext, "orgId" | "userId" | "
 }
 
 export const AUDIT_LABEL: Record<string, string> = {
+  "candidate.feedback": "Gave hiring team feedback",
+  "role.insights_generated": "Checked the JD (role insights)",
+  "discover.target_companies_generated": "Suggested target companies",
+  "discover.target_companies_selected": "Saved target companies",
+  "discover.described": "Filled search fields from a description",
   "candidate.viewed": "Viewed candidate",
   "candidate.created": "Created candidate",
   "candidate.updated": "Edited profile",
