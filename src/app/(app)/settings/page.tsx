@@ -1,3 +1,4 @@
+import { ATS_ENABLED } from "@/lib/features";
 import Link from "next/link";
 import { Badge, Card, PageHeader, SectionTitle, buttonClass } from "@/components/ui";
 import { eligibleForRetention } from "@/lib/retention";
@@ -53,7 +54,7 @@ export default async function SettingsPage() {
         <dl className="mb-4 grid gap-2 rounded-lg bg-sunken/60 p-3 text-[12.5px] sm:grid-cols-3">
           <div>
             <dt className="font-semibold">Admin</dt>
-            <dd className="text-muted">Everything a recruiter can do, plus members and invites, retention, the audit log, ATS linking and deleting the workspace.</dd>
+            <dd className="text-muted">Everything a recruiter can do, plus members and invites, retention, the audit log and deleting the workspace.</dd>
           </div>
           <div>
             <dt className="font-semibold">Recruiter</dt>
@@ -171,12 +172,14 @@ export default async function SettingsPage() {
                 : "Not connected — transcripts can still be imported from the meeting tool. To transcribe uploaded recordings set TRANSCRIPTION_ENABLED=true, TRANSCRIPTION_PROVIDER=openai and OPENAI_API_KEY."}
             </dd>
           </div>
+          {ATS_ENABLED && (
           <div>
             <dt className="font-medium">
               ATS <span className={getAtsConnector() ? "text-ok" : "text-faint"}>{getAtsConnector() ? "● Connected" : "○ Not connected"}</span>
             </dt>
             <dd className="text-muted">{getAtsConnector() ? `${getAtsConnector()!.label} — configured. Link and sync in Integrations.` : ATS_SETUP_HINT}</dd>
           </div>
+          )}
         </dl>
         <div className="mt-4 flex flex-wrap gap-2">
           <Link href="/integrations" className={buttonClass("primary")}>

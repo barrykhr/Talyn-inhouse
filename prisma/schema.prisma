@@ -29,6 +29,11 @@ model Organization {
   recordingPolicy       String       @default("")
   recordingEnabledBy    String?
   recordingEnabledAt    DateTime?
+  // Notetaker webhook: SHA-256 of the workspace's bearer token (the token itself is shown once).
+  notetakerTokenHash    String?      @unique
+  notetakerName         String?
+  notetakerTokenAt      DateTime?
+  notetakerTokenBy      String?
   createdAt             DateTime     @default(now())
   memberships           Membership[]
   sessions              Session[]
@@ -84,44 +89,46 @@ model Session {
 }
 
 model Role {
-  id                 String           @id @default(cuid())
-  orgId              String
-  title              String
-  department         String           @default("")
-  location           String           @default("")
-  employmentType     String           @default("full_time")
-  description        String           @default("")
-  status             String           @default("draft") // draft | open | on_hold | closed
+  id                   String            @id @default(cuid())
+  orgId                String
+  title                String
+  department           String            @default("")
+  location             String            @default("")
+  employmentType       String            @default("full_time")
+  description          String            @default("")
+  status               String            @default("draft") // draft | open | on_hold | closed
   // The company the role is hiring for (in-house: usually your own company; agencies: the client).
   clientCompanyName    String?
   clientCompanyWebsite String?
   clientCompanyNotes   String?
-  criteriaVersion    Int              @default(1) // bumped whenever the approved criteria set changes
+  criteriaVersion      Int               @default(1) // bumped whenever the approved criteria set changes
   // Skill matching rubric (recruiter-configured; applied live, never used to reject or hide anyone)
-  skillThreshold     Int? // minimum number of required skills with "Evidence found"
-  skillPartialCredit Boolean          @default(false) // count "Partial evidence" toward the threshold
-  weightRequired     Int              @default(2) // evaluation-criteria weights used in the alignment calculation
-  weightPreferred    Int              @default(1)
-  rubricUpdatedBy    String?
-  rubricUpdatedAt    DateTime?
-  extractionStatus   String? // null | needs_review | reviewed (when created from an uploaded JD)
-  atsExternalId      String? // job/requisition id in the connected ATS
-  createdById        String?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-  org                Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  criteria           Criterion[]
-  applications       Application[]
-  documents          JobDescription[]
-  insight            RoleInsight?
-  extracted          ExtractedField[]
-  icps               Icp[]
-  searches           SearchStrategy[]
-  questions          Question[]
-  atsStageMaps       AtsStageMap[]
-  discoveryBrief     DiscoveryBrief?
-  scoringVersions    ScoringVersion[]
-  targetCompanies    TargetCompanySet?
+  skillThreshold       Int? // minimum number of required skills with "Evidence found"
+  skillPartialCredit   Boolean           @default(false) // count "Partial evidence" toward the threshold
+  weightRequired       Int               @default(2) // evaluation-criteria weights used in the alignment calculation
+  weightPreferred      Int               @default(1)
+  rubricUpdatedBy      String?
+  rubricUpdatedAt      DateTime?
+  extractionStatus     String? // null | needs_review | reviewed (when created from an uploaded JD)
+  atsExternalId        String? // job/requisition id in the connected ATS
+  createdById          String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  org                  Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  criteria             Criterion[]
+  applications         Application[]
+  documents            JobDescription[]
+  insight              RoleInsight?
+  extracted            ExtractedField[]
+  icps                 Icp[]
+  searches             SearchStrategy[]
+  questions            Question[]
+  atsStageMaps         AtsStageMap[]
+  discoveryBrief       DiscoveryBrief?
+  scoringVersions      ScoringVersion[]
+  targetCompanies      TargetCompanySet?
+  calls                RoleCall[]
+  behavioural          BehaviouralSet?
 
   @@index([orgId])
 }
@@ -341,10 +348,10 @@ model Application {
   altRouteNote     String?
   altRouteBy       String?
   altRouteAt       DateTime?
+  hiringFeedback   HiringFeedback[]
 
   @@unique([candidateId, roleId])
   @@index([orgId, roleId])
-  hiringFeedback   HiringFeedback[]
 }
 
 model StageEvent {
@@ -1257,20 +1264,20 @@ model AiHealth {
 /// AI-proposed companies to source from for one role, with the client-company profile they were
 /// matched against. Stored so the popup doesn't regenerate on every open; "Regenerate" replaces it.
 model TargetCompanySet {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   orgId             String
-  roleId            String   @unique
+  roleId            String    @unique
   clientProfileJson String // ClientProfile: industry, domain, product, headcount band, revenue band, + edited flag
-  companiesJson     String   @default("[]") // TargetCompany[] after validation, dedupe and exclusions
-  droppedJson       String   @default("[]") // what was dropped and why (validation, duplicate, client, exclusion)
+  companiesJson     String    @default("[]") // TargetCompany[] after validation, dedupe and exclusions
+  droppedJson       String    @default("[]") // what was dropped and why (validation, duplicate, client, exclusion)
   model             String // provider:model that generated it
-  webSearch         Boolean  @default(false) // the provider's web search was used; per-company source links are stored
+  webSearch         Boolean   @default(false) // the provider's web search was used; per-company source links are stored
   generatedByName   String
-  generatedAt       DateTime @default(now())
-  selectedJson      String   @default("[]") // company names the recruiter chose (suggested or added by hand); used by searches
+  generatedAt       DateTime  @default(now())
+  selectedJson      String    @default("[]") // company names the recruiter chose (suggested or added by hand); used by searches
   selectedByName    String?
   selectedAt        DateTime?
-  role              Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  role              Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
 }
@@ -1343,4 +1350,93 @@ model InboxState {
 
   @@unique([userId, orgId, itemKey])
   @@index([orgId, userId])
+}
+
+// ---------- Role calls: transcripts saved inside a role and checked against the JD ----------
+
+model RoleCall {
+  id               String        @id @default(cuid())
+  orgId            String
+  roleId           String? // null until someone assigns a notetaker call to a role
+  kind             String // intake (hiring manager about the role) | screen (recruiter with candidate) | interview (interviewer with candidate)
+  title            String
+  occurredAt       DateTime?
+  durationMs       Int?
+  source           String // paste | upload | notetaker
+  provider         String // import:vtt | import:srt | import:text | notetaker:<name>
+  externalId       String? // the notetaker's meeting id, to ignore repeats
+  candidateId      String?
+  applicationId    String?
+  // The person whose questions or expectations are analysed, and their part in hiring.
+  interviewerName  String?
+  interviewerRole  String        @default("hiring_manager") // hiring_manager | recruiter | interviewer
+  speakersJson     String        @default("[]") // [{ label, role: candidate | interviewer | other }]
+  participantsJson String        @default("[]") // from the notetaker: [{ name, email }]
+  consentMethod    String
+  consentByName    String
+  consentAt        DateTime
+  status           String        @default("ready") // needs_role | ready | analyzed | failed
+  error            String?
+  createdByName    String
+  createdAt        DateTime      @default(now())
+  role             Role?         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  segments         CallSegment[]
+  analysis         CallAnalysis?
+
+  @@unique([orgId, externalId])
+  @@index([orgId, roleId])
+  @@index([orgId, status])
+}
+
+model CallSegment {
+  id      String   @id @default(cuid())
+  callId  String
+  idx     Int
+  startMs Int
+  endMs   Int
+  speaker String
+  text    String
+  call    RoleCall @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([callId, idx])
+}
+
+// Suggestions only: nothing here changes a stage, decision or visibility.
+model CallAnalysis {
+  id                String   @id @default(cuid())
+  orgId             String
+  callId            String   @unique
+  roleId            String
+  model             String
+  version           String
+  criteriaVersion   Int
+  candidateJson     String   @default("[]") // per criterion: what the candidate said vs the JD
+  questionsJson     String   @default("[]") // each question the interviewer asked, mapped to the JD
+  coverageJson      String   @default("[]") // per essential criterion: asked about or not
+  expectationsJson  String   @default("[]") // intake: what the hiring manager expects vs the JD
+  behaviouralJson   String   @default("[]") // answers to the role's behavioural questions vs the benchmark
+  suggestionsJson   String   @default("[]") // next steps for the recruiter
+  questionAlignment Int? // % of the interviewer's questions tied to the JD (computed from the labels)
+  essentialCoverage Int? // % of essential criteria the interviewer asked about (computed)
+  createdByName     String
+  createdAt         DateTime @default(now())
+  call              RoleCall @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, roleId])
+}
+
+// Behavioural question bank for a role, tuned to the company's size and the moves candidates make.
+model BehaviouralSet {
+  id              String   @id @default(cuid())
+  orgId           String
+  roleId          String   @unique
+  companySize     String // headcount band used
+  scenariosJson   String   @default("[]") // the career moves the questions target
+  questionsJson   String   @default("[]")
+  model           String
+  generatedByName String
+  generatedAt     DateTime @default(now())
+  role            Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
 }

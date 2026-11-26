@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { APP_ORIGIN_LABEL } from "@/lib/domain";
 import { SlidingIndicator } from "./nav-motion";
 
-export type WorkspaceTab = "overview" | "applicants" | "discover" | "shortlist" | "interviews" | "criteria" | "description" | "ats";
+export type WorkspaceTab = "overview" | "applicants" | "discover" | "shortlist" | "interviews" | "calls" | "criteria" | "description" | "ats";
 
 /**
  * The role workspace: Overview, then the people areas (Applicants · Discover · Shortlist ·
@@ -21,7 +21,7 @@ export function RoleTabs({
 }: {
   roleId: string;
   active: WorkspaceTab;
-  counts: { applicants: number; discover: number; shortlist: number; criteria: number; interviews?: number };
+  counts: { applicants: number; discover: number; shortlist: number; criteria: number; interviews?: number; calls?: number };
   attention?: Partial<Record<WorkspaceTab, number>>;
   showAts?: boolean;
 }) {
@@ -33,6 +33,7 @@ export function RoleTabs({
       <Tab href={`/roles/${roleId}/discover`} active={active === "discover"} label="Discover" count={counts.discover} countLabel="to review" hint="People you find" icon={<OutboundIcon />} attention={attention.discover} />
       <Tab href={`/roles/${roleId}?tab=shortlist`} active={active === "shortlist"} label="Shortlist" count={counts.shortlist} hint="From both" />
       <Tab href={`/roles/${roleId}/interviews`} active={active === "interviews"} label="Interviews" count={counts.interviews} hint="Plans, scorecards, debriefs" />
+      <Tab href={`/roles/${roleId}/calls`} active={active === "calls"} label="Calls" count={counts.calls} hint="Transcripts checked against the JD" />
       <span aria-hidden className="mx-2 mb-2 hidden h-5 w-px bg-line-strong sm:block" />
       <span className="mb-2 hidden px-1 text-[11px] font-semibold uppercase tracking-wide text-faint sm:block">Setup</span>
       <Tab href={`/roles/${roleId}?tab=criteria`} active={active === "criteria"} label="Criteria" count={counts.criteria} attention={attention.criteria} quiet />

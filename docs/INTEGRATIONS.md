@@ -128,6 +128,49 @@ delivery/failure statuses are recorded as provider-confirmed. Message text is no
 
 ---
 
+## 1c. Meeting notetaker (call transcripts)
+
+Calls from any notetaker that can send a webhook (Fireflies, Otter, Fathom, tl;dv, Read.ai and
+others, directly or through Zapier or Make) are saved inside the right role and checked against
+the JD. Talyn never joins, records or listens to meetings itself.
+
+**Turn it on**
+
+1. An admin turns on **Recording & transcription** in Workspace settings, describing how people
+   on calls are told and agree. Without it the webhook answers `403`.
+2. In **Integrations → Notetaker**, the admin names the notetaker and creates a token. It is shown
+   once; Talyn stores only its SHA-256 hash. Creating a new token replaces the old one.
+3. Point the notetaker's webhook (or a Zap/Make step) at `POST {APP_URL}/api/webhooks/notetaker`
+   with `Authorization: Bearer <token>`.
+
+**Payload**
+
+```json
+{
+  "external_id": "meeting-123",          // required; repeats are ignored
+  "title": "Arjun Bose / Priya Shah",
+  "started_at": "2026-11-26T10:00:00Z",  // optional, ISO 8601
+  "duration_seconds": 2710,              // optional
+  "participants": [{ "name": "Priya Shah", "email": "priya@acme.com" }],
+  "role_id": "…",                        // optional: the Talyn role, if your Zap knows it
+  "candidate_email": "arjun@example.com",// optional: helps match the candidate
+  "segments": [                          // either segments…
+    { "speaker": "Priya Shah", "start_seconds": 4.2, "end_seconds": 9.8, "text": "Tell me about…" }
+  ],
+  "transcript": "WEBVTT …"               // …or a VTT, SRT or timestamped text transcript
+}
+```
+
+Responses: `201 { ok, id, status: "needs_setup" }`, `200 { ok, id, duplicate: true }` for a repeat,
+`400` with the validation issues, `401` for a missing or wrong token, `403` when recording is off.
+
+**What happens next**
+
+Every call lands in the inbox as *Set up call*. A person confirms the role, the kind of call
+(interview, recruiter screen or hiring manager intake), the candidate and who asked the questions.
+Nothing is checked until then. The check is a suggestion with quotes; it never changes a stage or
+decision, or contacts anyone.
+
 ## 2. Sourcing provider contract
 
 Talyn never scrapes websites or automates logins. Connect a source your organization is licensed
@@ -202,6 +245,9 @@ results.
 ---
 
 ## 3. ATS contract
+
+> **Paused.** ATS sync is switched off in this version (`ATS_ENABLED` in `src/lib/features.ts`). The code and the contract below are kept so it can return.
+
 
 No specific ATS is assumed. Point `ATS_API_URL` at an endpoint implementing this contract —
 directly, or via a thin adapter in front of your ATS's API (Greenhouse, Lever, Ashby, Workable,

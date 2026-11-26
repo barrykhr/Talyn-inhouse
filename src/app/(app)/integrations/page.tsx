@@ -1,3 +1,5 @@
+import { ATS_ENABLED } from "@/lib/features";
+import { NotetakerConnect } from "./notetaker";
 import Link from "next/link";
 import { Card, Notice, PageHeader, SectionTitle, formatDateTime } from "@/components/ui";
 import { CALENDAR_RESULT, CalendarConnection } from "@/components/calendar/connection";
@@ -61,14 +63,19 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
   const ats = atsSetup();
   const atsConn = getAtsConnector();
   const cron = checkEnv([{ name: "CRON_SECRET", secret: true, purpose: "Authorizes the scheduled jobs (retention, sending, ATS sync)" }]);
-  const [org, otherLinked, due, sendFailures, runs, conflicts, failedPushes] = await Promise.all([
-    db.organization.findUniqueOrThrow({ where: { id: auth.orgId }, select: { atsLinkedAt: true, atsLinkedBy: true } }),
+  const [org, otherLinked, due, sendFailures, runs, conflicts, failedPushes, notetakerCalls, lastNotetakerCall] = await Promise.all([
+    db.organization.findUniqueOrThrow({
+      where: { id: auth.orgId },
+      select: { atsLinkedAt: true, atsLinkedBy: true, recordingEnabled: true, notetakerTokenHash: true, notetakerName: true, notetakerTokenAt: true, notetakerTokenBy: true },
+    }),
     db.organization.count({ where: { atsLinkedAt: { not: null }, id: { not: auth.orgId } } }),
     db.outreachMessage.count({ where: { orgId: auth.orgId, status: "approved", sentAt: null, dueAt: { lte: new Date() }, sequence: { status: "active" } } }),
     db.outreachEvent.count({ where: { orgId: auth.orgId, type: "send_failed", createdAt: { gte: new Date(Date.now() - 7 * 86400000) } } }),
     db.atsSyncRun.findMany({ where: { orgId: auth.orgId }, orderBy: { startedAt: "desc" }, take: 10 }),
     db.atsConflict.count({ where: { orgId: auth.orgId, status: "open" } }),
     db.atsOutbox.findMany({ where: { orgId: auth.orgId, status: "failed" }, orderBy: { createdAt: "asc" }, take: 20 }),
+    db.roleCall.count({ where: { orgId: auth.orgId, source: "notetaker" } }),
+    db.roleCall.findFirst({ where: { orgId: auth.orgId, source: "notetaker" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
   ]);
   const base = appUrl();
 
@@ -154,6 +161,50 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
         </div>
       </Card>
 
+      <Card className="p-5" id="notetaker">
+        <SectionTitle hint="Calls from your meeting notetaker are saved inside the right role and checked against the JD. Talyn never joins or records meetings itself.">
+          Notetaker{" "}
+          <Status
+            on={!!org.notetakerTokenHash && org.recordingEnabled && notetakerCalls > 0}
+            label={!org.notetakerTokenHash ? undefined : !org.recordingEnabled ? "Paused · recording is off" : notetakerCalls ? `Receiving · ${notetakerCalls} call${notetakerCalls === 1 ? "" : "s"}` : "Token created · no calls received yet"}
+          />
+        </SectionTitle>
+        <div className="space-y-3 text-[13px] text-ink-2">
+          <p>
+            Works with any notetaker that can send a webhook (Fireflies, Otter, Fathom, tl;dv, Read.ai and others), directly or through Zapier or Make. Each call arrives in your inbox; someone confirms the role, the
+            candidate and who asked the questions before Talyn checks it.
+          </p>
+          {!org.recordingEnabled && (
+            <p className="text-warn">
+              Recording &amp; transcription is off. An admin turns it on in <a href="/settings#recording" className="font-medium underline">Workspace settings</a> with your consent process first.
+            </p>
+          )}
+          <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[140px_1fr]">
+            <dt className="text-muted">Webhook URL</dt>
+            <dd>
+              <code className="break-all font-mono text-[12px]">{base}/api/webhooks/notetaker</code>
+            </dd>
+            <dt className="text-muted">Sends</dt>
+            <dd>
+              <code className="font-mono text-[12px]">POST</code> JSON with <code className="font-mono text-[12px]">external_id</code>, <code className="font-mono text-[12px]">title</code>,{" "}
+              <code className="font-mono text-[12px]">participants</code>, and either <code className="font-mono text-[12px]">segments</code> (speaker, start_seconds, text) or a{" "}
+              <code className="font-mono text-[12px]">transcript</code> (VTT, SRT or timestamped text). Optional <code className="font-mono text-[12px]">role_id</code> and{" "}
+              <code className="font-mono text-[12px]">candidate_email</code> help match it. Full contract: docs/INTEGRATIONS.md.
+            </dd>
+            {org.notetakerTokenAt && (
+              <>
+                <dt className="text-muted">Token</dt>
+                <dd>
+                  Created {org.notetakerTokenAt.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} by {org.notetakerTokenBy}
+                  {lastNotetakerCall ? ` · last call ${lastNotetakerCall.createdAt.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}
+                </dd>
+              </>
+            )}
+          </dl>
+          {isAdmin ? <NotetakerConnect connected={!!org.notetakerTokenHash} defaultName={org.notetakerName ?? ""} /> : <p className="text-muted">An admin can connect a notetaker.</p>}
+        </div>
+      </Card>
+
       <Card className="p-5">
         <SectionTitle hint="WhatsApp Business Platform (Cloud API). Business-initiated messages use your approved template.">
           WhatsApp <Status on={wa.ready} />
@@ -215,6 +266,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
         </ul>
       </Card>
 
+      {ATS_ENABLED && (
       <Card className="p-5">
         <SectionTitle hint="Field ownership, duplicates, conflicts and failures follow docs/ATS_INTEGRATION.md.">
           ATS <Status on={!!atsConn && !!org.atsLinkedAt} label={atsConn ? (org.atsLinkedAt ? `Linked to ${atsConn.label}` : `${atsConn.label} configured · not linked`) : undefined} />
@@ -275,12 +327,13 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
           )}
         </div>
       </Card>
+      )}
 
       <Card className="p-5">
         <SectionTitle>
           Scheduled jobs <Status on={cron.ready} label={cron.ready ? "Authorized" : "Not authorized"} />
         </SectionTitle>
-        <p className="text-[13px] text-muted">Daily on Vercel: data retention, sending due outreach (only with an email provider) and ATS sync (only when linked). Each job does nothing until its integration is on.</p>
+        <p className="text-[13px] text-muted">Daily on Vercel: data retention, sending due outreach (only with an email provider) and finding new candidates. Each job does nothing until its integration is on.</p>
         <EnvList checks={cron.checks} />
       </Card>
     </div>

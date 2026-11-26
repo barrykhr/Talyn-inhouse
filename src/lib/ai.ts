@@ -45,7 +45,7 @@ export class AiRequestError extends Error {}
 let anthropicClient: Anthropic | null = null;
 let openaiClient: OpenAI | null = null;
 
-const FAIRNESS_RULES = `Fairness rules (mandatory):
+export const FAIRNESS_RULES = `Fairness rules (mandatory):
 - Never infer, mention, or use protected characteristics or proxies for them: age, date of birth or graduation year as an age signal, gender, race, ethnicity, national origin, religion, disability, health, pregnancy, marital or family status, sexual orientation, veteran status, photo/appearance, or name-based assumptions.
 - Employment gaps are not evidence of anything; do not comment on them.
 - Do not invent facts. Only use text that appears in the provided material.`;
