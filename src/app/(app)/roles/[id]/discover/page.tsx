@@ -1,3 +1,4 @@
+import { MUST_HAVE_TIER, mustHaveFromSignals } from "@/lib/loop/must-have";
 import Link from "next/link";
 import { ActionButton } from "@/components/client";
 import { AgentRun, type AgentStep } from "@/components/agent-run";
@@ -17,7 +18,7 @@ import { CONTACT_PROVIDERS } from "@/lib/sourcing/contacts";
 import { THRESHOLD_FILTERS, matchForApplication, passesSkillFilter, roleSkillConfig } from "@/lib/skills";
 import { SkillCount, SkillFilterFields } from "@/components/skill-match";
 import { ProfileScoreChip } from "@/components/profile-score";
-import { clearSampleData } from "@/server/sourcing-actions";
+import { clearSampleData, setKeepLooking } from "@/server/sourcing-actions";
 import { loadOutreachView } from "@/server/outreach-view";
 import { ownRole } from "@/server/scope";
 import { OutreachPanel } from "../../../candidates/[id]/outreach";
@@ -92,7 +93,7 @@ export default async function DiscoverPage({
         }
       : null;
   const [criteria, icps, apps, strategies, rediscoverable, brief, jd] = await Promise.all([
-    db.criterion.findMany({ where: { roleId: id, orgId: auth.orgId }, select: { id: true, status: true, kind: true, importance: true, updatedAt: true } }),
+    db.criterion.findMany({ where: { roleId: id, orgId: auth.orgId }, select: { id: true, status: true, kind: true, importance: true, updatedAt: true, name: true, aliases: true, mustHave: true } }),
     loadIcps(auth.orgId, id),
     db.application.findMany({
       where: { orgId: auth.orgId, roleId: id },
@@ -147,6 +148,13 @@ export default async function DiscoverPage({
   const appById = new Map(apps.map((a) => [a.id, a]));
   const permissionText = (a: (typeof apps)[number]) =>
     a.candidate.isSample ? "Fictional — no one to contact" : a.candidate.contactOptOut ? "Opted out" : a.candidate.whatsappPermission === "granted" ? "WhatsApp opt-in recorded" : a.origin === "applied" ? "Applied to this role" : "Not recorded";
+  const mustSkills = approvedList.filter((c) => c.mustHave && c.kind === "skill").map((c) => ({ name: c.name, aliases: c.aliases }));
+  const mustCache = new Map<string, ReturnType<typeof mustHaveFromSignals>>();
+  const mustOf = (p: (typeof profiles)[number]) => {
+    let r = mustCache.get(p.id);
+    if (!r) mustCache.set(p.id, (r = mustHaveFromSignals(mustSkills, JSON.parse(p.signalsJson) as { term: string; matched: boolean }[])));
+    return r;
+  };
   const profileView = (p: (typeof profiles)[number]): ProfileView => {
     const app = p.savedApplicationId ? appById.get(p.savedApplicationId) : undefined;
     return {
@@ -164,12 +172,15 @@ export default async function DiscoverPage({
       isDemo: p.source === "sample",
       savedCandidateId: app?.candidateId ?? null,
       application: app ? { interest: app.interest, permission: permissionText(app) } : null,
+      mustHave: mustOf(p),
     };
   };
   // Ordering is a review aid, not an assessment: AI rank (when asked for), then relevance score,
   // then matched terms. People below the recruiter's required-skills bar go to Limited evidence.
   const belowBar = (p: (typeof profiles)[number]) => Boolean((JSON.parse(p.relevanceJson || "{}") as { belowBar?: boolean }).belowBar);
+  // Must-have skills are never traded away: people showing all of them come first.
   const bySignals = (a: (typeof profiles)[number], b: (typeof profiles)[number]) =>
+    MUST_HAVE_TIER[mustOf(a).state] - MUST_HAVE_TIER[mustOf(b).state] ||
     (a.aiRank ?? 1e9) - (b.aiRank ?? 1e9) || b.relevanceScore - a.relevanceScore || b.matchedSignals - a.matchedSignals || a.displayName.localeCompare(b.displayName);
   const runPlan = currentRun ? (JSON.parse(strategies.find((s) => s.id === currentRun.strategyId)?.planJson || "{}") as { aiRank?: { status: string; ranked: number; note?: string } }) : {};
   const aiRankNote = runPlan.aiRank && runPlan.aiRank.status !== "off" ? runPlan.aiRank : null;
@@ -297,6 +308,14 @@ export default async function DiscoverPage({
             {role.location && <span>{role.location}</span>}
           </>
         }
+        actions={
+          <span className="flex items-center gap-2 text-[12.5px] text-muted">
+            {role.status !== "open" ? "Daily search runs only for open roles" : role.keepLooking ? "Looking for new people daily" : "Daily search paused"}
+            <ActionButton action={setKeepLooking.bind(null, role.id, !role.keepLooking)} variant={role.keepLooking ? "ghost" : "secondary"}>
+              {role.keepLooking ? "Pause" : "Keep looking daily"}
+            </ActionButton>
+          </span>
+        }
       />
       <RoleTabs
         roleId={role.id}
@@ -305,6 +324,12 @@ export default async function DiscoverPage({
         attention={{ criteria: proposedCriteria }}
         showAts={!!getAtsConnector()}
       />
+      <p className="-mt-2 mb-4 text-[13px]">
+        <Link href={`/roles/${role.id}/discover/past`} className="font-medium text-brand hover:underline">
+          Past candidates worth another look →
+        </Link>{" "}
+        <span className="text-muted">People who got far for other roles and weren&apos;t hired.</span>
+      </p>
 
       <ModeBanner mode="discover">
         People you find for this role. They haven&apos;t applied, and their interest isn&apos;t known. Saving someone marks them Discovered; nothing is sent or decided automatically.

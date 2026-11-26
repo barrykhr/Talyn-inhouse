@@ -1,3 +1,5 @@
+import { MustHaveBadge } from "@/components/must-have";
+import { MUST_HAVE_TIER, mustHaveFromAssessment, type MustHave } from "@/lib/loop/must-have";
 import clsx from "clsx";
 import Link from "next/link";
 import { EvidenceCounts, ModeBanner, OriginBadge, SampleBadge } from "@/components/role-workspace";
@@ -47,6 +49,8 @@ export type AppRow = {
   stageEvents: { createdAt: Date }[];
   assessments: { id: string; status: string; generator: string; criteriaSnapshot: string; resumeId: string | null; materialChars?: number | null; profileHash: string | null; finalRecommendation: string | null; recommendation: string | null; recommendationStatus: string | null; createdAt: Date; criteriaVersion: number | null; items: ItemLite[] }[];
   _count: { tasks: number };
+  interest?: string;
+  interestChecks?: { createdAt: Date; sentVia: string; response: string | null }[];
 };
 
 export type ApplicantFilters = { q: string; stage: string; review: string; view: "list" | "board" | "ranked"; sort: string; skills: string; minskills: string };
@@ -64,8 +68,10 @@ export function ApplicantsTab({
   requiredSkills,
   weights,
   scores,
+  mustHaves = [],
 }: {
   roleId: string;
+  mustHaves?: MustHave[];
   scores: Map<string, ScoreSnapshot | null>;
   skillMatches: Map<string, SkillMatch>;
   requiredSkills: number;
@@ -141,9 +147,9 @@ export function ApplicantsTab({
           }
         />
       ) : view === "board" ? (
-        <Board roleId={roleId} applicants={skillFiltered} approved={approved} skillMatches={skillMatches} weights={weights} />
+        <Board roleId={roleId} applicants={skillFiltered} approved={approved} skillMatches={skillMatches} weights={weights} mustHaves={mustHaves} />
       ) : view === "ranked" ? (
-        <Ranked roleId={roleId} applicants={skillFiltered} approved={approved} criteriaVersion={criteriaVersion} sort={sort} stageFilter={stage} skillMatches={skillMatches} weights={weights} />
+        <Ranked roleId={roleId} applicants={skillFiltered} approved={approved} criteriaVersion={criteriaVersion} sort={sort} stageFilter={stage} skillMatches={skillMatches} weights={weights} mustHaves={mustHaves} />
       ) : (
         <>
           <form role="search" aria-label="Filter applicants" className="flex flex-wrap items-end gap-2 rounded-xl border border-line bg-surface p-3 text-[13px]">
@@ -231,6 +237,7 @@ export function ApplicantsTab({
                           </Link>
                           <OriginBadge origin={a.origin} detail={a.originDetail} />
                           {a.candidate.isSample && <SampleBadge />}
+                          <MustHaveBadge r={mustHaveFromAssessment(mustHaves, latest?.items ?? null)} />
                         </div>
                         <div className="truncate text-[12.5px] text-muted">
                           {[a.candidate.currentTitle, a.candidate.currentCompany].filter(Boolean).join(" · ") || <span className="text-faint">No current role on record</span>}
@@ -278,12 +285,14 @@ function Board({
   approved,
   skillMatches,
   weights,
+  mustHaves,
 }: {
   roleId: string;
   applicants: AppRow[];
   approved: { id: string; updatedAt: Date }[];
   skillMatches: Map<string, SkillMatch>;
   weights: Weights;
+  mustHaves: MustHave[];
 }) {
   return (
     <div className="-mx-4 overflow-x-auto px-4 pb-2 md:mx-0 md:px-0">
@@ -306,6 +315,11 @@ function Board({
                       <Link href={`/candidates/${a.candidate.id}?role=${roleId}`} className="block font-medium leading-snug hover:underline">
                         {a.candidate.fullName}
                       </Link>
+                      {mustHaves.length > 0 && (
+                        <div className="mt-1">
+                          <MustHaveBadge r={mustHaveFromAssessment(mustHaves, asmt?.items ?? null)} />
+                        </div>
+                      )}
                       {(a.candidate.currentTitle || a.candidate.currentCompany) && (
                         <div className="truncate text-[12.5px] text-muted">{[a.candidate.currentTitle, a.candidate.currentCompany].filter(Boolean).join(" · ")}</div>
                       )}
@@ -362,6 +376,7 @@ function Ranked({
   stageFilter,
   skillMatches,
   weights,
+  mustHaves,
 }: {
   roleId: string;
   applicants: AppRow[];
@@ -371,6 +386,7 @@ function Ranked({
   stageFilter: string;
   skillMatches: Map<string, SkillMatch>;
   weights: Weights;
+  mustHaves: MustHave[];
 }) {
   // Ranking (see src/lib/ranking.ts): role fit across the role; readiness only within a stage.
   const ranked = applicants.map((a) => {
@@ -385,9 +401,12 @@ function Ranked({
       openRequests: a._count.tasks,
       decision: a.decision,
     });
-    return { a, fit, readiness, since: a.stageEvents[0]?.createdAt ?? a.createdAt };
+    const must = mustHaveFromAssessment(mustHaves, latestA?.items ?? null);
+    return { a, fit, readiness, must, since: a.stageEvents[0]?.createdAt ?? a.createdAt };
   });
-  const fitOrder = ranked.filter((r) => r.fit.state === "ranked" && r.a.stage !== "rejected").sort((x, y) => compareFit(x.fit, y.fit));
+  // Must-haves are never traded away: anyone who clearly lacks one ranks below everyone who doesn't.
+  const tier = (r: { must: { state: keyof typeof MUST_HAVE_TIER } }) => MUST_HAVE_TIER[r.must.state];
+  const fitOrder = ranked.filter((r) => r.fit.state === "ranked" && r.a.stage !== "rejected").sort((x, y) => tier(x) - tier(y) || compareFit(x.fit, y.fit));
   const fitRank = new Map(fitOrder.map((r, i) => [r.a.id, i + 1]));
   const readinessRank = new Map<string, string>();
   for (const st of STAGES) {
@@ -405,8 +424,8 @@ function Ranked({
           : s === "name"
             ? x.a.candidate.fullName.localeCompare(y.a.candidate.fullName)
             : s === "priority"
-              ? y.a.priority - x.a.priority || compareFit(x.fit, y.fit)
-              : compareFit(x.fit, y.fit),
+              ? y.a.priority - x.a.priority || tier(x) - tier(y) || compareFit(x.fit, y.fit)
+              : tier(x) - tier(y) || compareFit(x.fit, y.fit),
     );
   return (
     <>
@@ -444,12 +463,15 @@ function Ranked({
           anything.
         </div>
         <div className="divide-y divide-line">
-          {listRows.map(({ a, fit, readiness, since }) => (
+          {listRows.map(({ a, fit, readiness, must, since }) => (
             <div key={a.id} className="grid gap-x-4 gap-y-1.5 px-4 py-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
               <div className="min-w-0">
-                <Link href={`/candidates/${a.candidate.id}?role=${roleId}`} className="font-medium hover:underline">
-                  {a.candidate.fullName}
-                </Link>
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <Link href={`/candidates/${a.candidate.id}?role=${roleId}`} className="font-medium hover:underline">
+                    {a.candidate.fullName}
+                  </Link>
+                  <MustHaveBadge r={must} />
+                </span>
                 <div className="truncate text-[12.5px] text-muted">
                   {STAGE_LABEL[a.stage as Stage]} · {timeInStage(since)} in stage · {REVIEW_STATUS_LABEL[reviewStatus(a)]}
                 </div>

@@ -89,32 +89,33 @@ model Session {
 }
 
 model Role {
-  id                   String            @id @default(cuid())
+  id                   String             @id @default(cuid())
   orgId                String
   title                String
-  department           String            @default("")
-  location             String            @default("")
-  employmentType       String            @default("full_time")
-  description          String            @default("")
-  status               String            @default("draft") // draft | open | on_hold | closed
+  department           String             @default("")
+  location             String             @default("")
+  employmentType       String             @default("full_time")
+  description          String             @default("")
+  status               String             @default("draft") // draft | open | on_hold | closed
   // The company the role is hiring for (in-house: usually your own company; agencies: the client).
   clientCompanyName    String?
   clientCompanyWebsite String?
   clientCompanyNotes   String?
-  criteriaVersion      Int               @default(1) // bumped whenever the approved criteria set changes
+  criteriaVersion      Int                @default(1) // bumped whenever the approved criteria set changes
+  keepLooking          Boolean            @default(true) // while open, Discover looks for new people daily
   // Skill matching rubric (recruiter-configured; applied live, never used to reject or hide anyone)
   skillThreshold       Int? // minimum number of required skills with "Evidence found"
-  skillPartialCredit   Boolean           @default(false) // count "Partial evidence" toward the threshold
-  weightRequired       Int               @default(2) // evaluation-criteria weights used in the alignment calculation
-  weightPreferred      Int               @default(1)
+  skillPartialCredit   Boolean            @default(false) // count "Partial evidence" toward the threshold
+  weightRequired       Int                @default(2) // evaluation-criteria weights used in the alignment calculation
+  weightPreferred      Int                @default(1)
   rubricUpdatedBy      String?
   rubricUpdatedAt      DateTime?
   extractionStatus     String? // null | needs_review | reviewed (when created from an uploaded JD)
   atsExternalId        String? // job/requisition id in the connected ATS
   createdById          String?
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
-  org                  Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  org                  Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   criteria             Criterion[]
   applications         Application[]
   documents            JobDescription[]
@@ -129,6 +130,7 @@ model Role {
   targetCompanies      TargetCompanySet?
   calls                RoleCall[]
   behavioural          BehaviouralSet?
+  calibrations         CalibrationRound[]
 
   @@index([orgId])
 }
@@ -208,6 +210,7 @@ model Criterion {
   sourceSection       String?
   rationale           String?
   status              String           @default("proposed") // proposed | approved | rejected
+  mustHave            Boolean          @default(false) // never traded away for a better score; clearly lacking it ranks below everyone else, never hidden
   approvedById        String?
   approvedAt          DateTime?
   position            Int              @default(0)
@@ -269,6 +272,7 @@ model Resume {
   hasFile       Boolean      @default(false) // true when the original upload is stored in ResumeFile
   parserVersion String       @default("text-v1")
   pagesJson     String // JSON string[] of extracted text, one entry per page
+  simhash       String? // 64-bit text fingerprint (hex) for spotting near-identical CVs across people
   isCurrent     Boolean      @default(true)
   createdAt     DateTime     @default(now())
   candidate     Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
@@ -349,6 +353,7 @@ model Application {
   altRouteBy       String?
   altRouteAt       DateTime?
   hiringFeedback   HiringFeedback[]
+  interestChecks   InterestCheck[]
 
   @@unique([candidateId, roleId])
   @@index([orgId, roleId])
@@ -1062,6 +1067,9 @@ model InterviewScheduling {
   proposedSlotsJson    String         @default("[]") // times proposed to the candidate
   proposedVia          String? // email | whatsapp | manual
   proposedAt           DateTime?
+  proposedById         String? // who proposed the times; a candidate's pick is booked on their calendar
+  bookingTokenHash     String?        @unique // SHA-256 of the candidate's self-scheduling link token
+  bookingExpiresAt     DateTime?
   updatedByName        String         @default("")
   updatedAt            DateTime       @updatedAt
   stage                InterviewStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
@@ -1416,6 +1424,7 @@ model CallAnalysis {
   expectationsJson  String   @default("[]") // intake: what the hiring manager expects vs the JD
   behaviouralJson   String   @default("[]") // answers to the role's behavioural questions vs the benchmark
   suggestionsJson   String   @default("[]") // next steps for the recruiter
+  integrityJson     String   @default("[]") // factual differences between the CV and what was said, to check with a person
   questionAlignment Int? // % of the interviewer's questions tied to the JD (computed from the labels)
   essentialCoverage Int? // % of essential criteria the interviewer asked about (computed)
   createdByName     String
@@ -1439,4 +1448,67 @@ model BehaviouralSet {
   role            Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
+}
+
+// Asking a found candidate whether they're interested before a hiring manager sees them.
+model InterestCheck {
+  id            String      @id @default(cuid())
+  orgId         String
+  applicationId String
+  tokenHash     String      @unique // SHA-256 of the link token sent to the candidate
+  message       String
+  sentVia       String // email | manual
+  sentByName    String
+  createdAt     DateTime    @default(now())
+  expiresAt     DateTime
+  respondedAt   DateTime?
+  response      String? // interested | not_now | declined
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, applicationId])
+}
+
+// Calibration: a hiring manager reacts to a handful of real profiles, so the brief gets sharper.
+model CalibrationRound {
+  id              String            @id @default(cuid())
+  orgId           String
+  roleId          String
+  status          String            @default("open") // open | closed
+  createdByName   String
+  createdAt       DateTime          @default(now())
+  suggestionsJson String? // AI-proposed criteria changes from the votes (suggestions only)
+  suggestedAt     DateTime?
+  role            Role              @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  items           CalibrationItem[]
+
+  @@index([orgId, roleId])
+}
+
+model CalibrationItem {
+  id       String            @id @default(cuid())
+  roundId  String
+  kind     String // application | sourced
+  refId    String
+  name     String
+  headline String            @default("")
+  summary  String            @default("")
+  position Int               @default(0)
+  round    CalibrationRound  @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  votes    CalibrationVote[]
+
+  @@index([roundId])
+}
+
+model CalibrationVote {
+  id        String          @id @default(cuid())
+  itemId    String
+  userId    String
+  userName  String
+  verdict   String // yes | no | unsure
+  reason    String          @default("")
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  item      CalibrationItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, userId])
 }

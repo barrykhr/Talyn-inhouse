@@ -238,7 +238,17 @@ export async function analyzeCall(callId: string): Promise<ActionState> {
       });
       await saveAnalysis(auth, call.id, role.id, model, role.criteriaVersion, { expectations, coverage, suggestions: r.suggestions.slice(0, 5), questionAlignment: null, essentialCoverage: essentialCoverageScore(coverage) });
     } else {
-      const r = await analyzeCallWithAi({ roleTitle: role.title, jd, criteria, behavioural: bank, passages });
+      const resume = call.candidateId ? await db.resume.findFirst({ where: { orgId: auth.orgId, candidateId: call.candidateId, isCurrent: true }, orderBy: { createdAt: "desc" }, select: { pagesJson: true } }) : null;
+      const cv = resume ? (JSON.parse(resume.pagesJson) as string[]).join("\n") : "";
+      const r = await analyzeCallWithAi({ roleTitle: role.title, jd, criteria, behavioural: bank, passages, cv });
+      const flat = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+      // Both sides must be real: the CV words in the CV, the spoken words in the candidate's own passage.
+      const integrity = cv
+        ? r.cv_differences
+            .map((d) => ({ ...d, passage: locateQuote(d.said, passages, d.passage) }))
+            .filter((d) => d.passage !== null && roleOf.get(d.passage) === "candidate" && d.cv.trim().length > 3 && flat(cv).includes(flat(d.cv)))
+            .slice(0, 5)
+        : [];
       const candidate = criteria.map((c) => {
         const it = r.candidate.find((x) => x.criterion_id === c.id);
         const n = it?.quote ? locateQuote(it.quote, passages, it.passage) : null;
@@ -266,6 +276,7 @@ export async function analyzeCall(callId: string): Promise<ActionState> {
         coverage,
         behavioural,
         suggestions: r.suggestions.slice(0, 5),
+        integrity,
         questionAlignment: questionAlignmentScore(questions),
         essentialCoverage: essentialCoverageScore(coverage.map((c) => ({ essential: essential.get(c.criterion_id) ?? false, asked: c.asked }))),
       });
@@ -288,7 +299,7 @@ async function saveAnalysis(
   roleId: string,
   model: string,
   criteriaVersion: number,
-  a: { candidate?: unknown[]; questions?: unknown[]; coverage: unknown[]; expectations?: unknown[]; behavioural?: unknown[]; suggestions: unknown[]; questionAlignment: number | null; essentialCoverage: number | null },
+  a: { candidate?: unknown[]; questions?: unknown[]; coverage: unknown[]; expectations?: unknown[]; behavioural?: unknown[]; suggestions: unknown[]; integrity?: unknown[]; questionAlignment: number | null; essentialCoverage: number | null },
 ) {
   const data = {
     orgId: auth.orgId,
@@ -302,6 +313,7 @@ async function saveAnalysis(
     expectationsJson: JSON.stringify(a.expectations ?? []),
     behaviouralJson: JSON.stringify(a.behavioural ?? []),
     suggestionsJson: JSON.stringify(a.suggestions),
+    integrityJson: JSON.stringify(a.integrity ?? []),
     questionAlignment: a.questionAlignment,
     essentialCoverage: a.essentialCoverage,
     createdByName: auth.userName,

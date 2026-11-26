@@ -372,3 +372,30 @@ export async function revealContact(profileId: string): Promise<ActionState> {
   revalidatePath(`/roles/${p.roleId}/discover`);
   return { error: `No contact details found. ${tried.join(" · ")}` };
 }
+
+/** Turns the role's daily search for new people on or off. */
+export async function setKeepLooking(roleId: string, on: boolean) {
+  const auth = await requireAuth();
+  const role = await db.role.findFirst({ where: { id: roleId, orgId: auth.orgId }, select: { id: true } });
+  if (!role) return { error: "Role not found." };
+  await db.role.update({ where: { id: roleId }, data: { keepLooking: on } });
+  await audit(auth, on ? "discover.keep_looking_on" : "discover.keep_looking_off", { subjectType: "role", subjectId: roleId, roleId });
+  revalidatePath(`/roles/${roleId}/discover`);
+  return { ok: true, message: on ? "Talyn will look for new people for this role every day while it's open." : "Daily search paused for this role." };
+}
+
+/** Adds a past candidate to this role as someone the team found. They go through the interest check like anyone found. */
+export async function addPastCandidate(roleId: string, candidateId: string, reason: string) {
+  const auth = await requireAuth();
+  const [role, cand] = await Promise.all([
+    db.role.findFirst({ where: { id: roleId, orgId: auth.orgId }, select: { id: true } }),
+    db.candidate.findFirst({ where: { id: candidateId, orgId: auth.orgId }, select: { id: true, contactOptOut: true } }),
+  ]);
+  if (!role || !cand) return { error: "Not found." };
+  if (cand.contactOptOut) return { error: "This person opted out of contact." };
+  const app = await attach(auth, candidateId, roleId, { origin: "discovered", detail: `Past candidate · ${reason.slice(0, 160)}` });
+  await audit(auth, "discover.past_candidate_added", { subjectType: "application", subjectId: app.id, applicationId: app.id, candidateId, roleId });
+  revalidatePath(`/roles/${roleId}/discover`);
+  revalidatePath(`/roles/${roleId}`);
+  return { ok: true, message: "Added to this role. Ask about their interest from the Shortlist when you're ready." };
+}

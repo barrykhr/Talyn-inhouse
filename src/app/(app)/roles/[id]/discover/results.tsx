@@ -44,6 +44,8 @@ export type ProfileView = {
   aiFit: { fit: string; summary: string; evidence: { criterion: string; quote: string }[]; model?: string } | null;
   /** Once saved: what the candidate has said, and contact permission — kept apart from role fit. */
   application: { interest: string; permission: string } | null;
+  /** Must-have skills: shown with evidence, or not confirmed. Public profiles can't prove absence. */
+  mustHave?: { state: "met" | "unconfirmed" | "missing" | "none"; unconfirmed: string[] };
 };
 
 const CAT: Record<string, string> = {
@@ -119,6 +121,12 @@ export function ResultCard({ p, outreachHref }: { p: ProfileView; outreachHref: 
               {p.displayName || <NotEstablished what="Name" />}
             </h3>
             {p.isDemo && <SampleBadge />}
+            {p.mustHave && p.mustHave.state === "met" && <span className="rounded-md bg-ok-soft px-1.5 py-0.5 text-[11.5px] font-medium text-ok">Shows all must-haves</span>}
+            {p.mustHave && p.mustHave.state === "unconfirmed" && (
+              <span className="rounded-md bg-warn-soft px-1.5 py-0.5 text-[11.5px] font-medium text-warn" title="No evidence found yet; that isn't proof they lack it">
+                No evidence for must-have: {p.mustHave.unconfirmed.join(", ")}
+              </span>
+            )}
             {p.duplicateReason && <span className="rounded-md bg-sunken px-1.5 py-0.5 text-[11.5px] text-ink-2">{p.duplicateReason}</span>}
           </div>
           <div className="flex flex-wrap gap-x-2 text-[12.5px] text-ink-2">

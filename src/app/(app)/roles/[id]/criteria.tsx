@@ -15,6 +15,7 @@ import {
   proposeCriteria,
   moveCriterion,
   setCriterionStatus,
+  setMustHave,
   updateCriterion,
   updateRubric,
 } from "@/server/criteria-actions";
@@ -38,6 +39,7 @@ export type CriterionView = {
   sourceSection: string | null;
   rationale: string | null;
   status: string;
+  mustHave: boolean;
   approvedAt: string | null;
 };
 
@@ -147,6 +149,7 @@ export function CriterionRow({
                 </span>
               )}
               {proposed && <span className="rounded-md border border-dashed border-signal/60 px-1.5 text-[11px] font-semibold text-signal">Suggestion · not in use</span>}
+              {c.mustHave && !proposed && <span className="rounded-md bg-ink px-1.5 text-[11px] font-semibold text-white">Must-have</span>}
               {c.kind === "skill" && c.aliases && <span className="text-[12px] text-muted">also: {c.aliases}</span>}
               {mappedName && <span className="text-[12px] text-muted">→ supports “{mappedName}”</span>}
               {c.priority != null && <span className="text-[12px] text-muted" title="Priority (1 = highest)">Priority {c.priority}</span>}
@@ -190,6 +193,15 @@ export function CriterionRow({
               </>
             )}
             {rejected && <ActionButton action={() => setCriterionStatus(c.id, "proposed")} variant="ghost">Restore</ActionButton>}
+            {!proposed && !rejected && (c.importance === "essential" || c.mustHave) && (
+              <ActionButton
+                action={() => setMustHave(c.id, !c.mustHave)}
+                variant={c.mustHave ? "primary" : "ghost"}
+                title={c.mustHave ? "A must-have: people who clearly lack it rank below everyone else. Click to remove." : "Make this a must-have: never traded away for a better score elsewhere"}
+              >
+                {c.mustHave ? "Must-have ✓" : "Make must-have"}
+              </ActionButton>
+            )}
             {canMoveUp && (
               <ActionButton action={() => moveCriterion(c.id, "up")} variant="ghost" title="Move up">
                 <span aria-hidden>↑</span>

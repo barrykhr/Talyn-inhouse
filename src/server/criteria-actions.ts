@@ -280,3 +280,15 @@ export async function moveCriterion(id: string, dir: "up" | "down") {
   await db.$transaction(order.map((x, k) => db.$executeRaw`UPDATE "Criterion" SET "position" = ${base + k}, "priority" = NULL WHERE "id" = ${x.id} AND "orgId" = ${auth.orgId}`));
   revalidatePath(`/roles/${c.roleId}`);
 }
+
+/** Marks an approved criterion or skill as a must-have (or not). Changes ordering only. */
+export async function setMustHave(id: string, on: boolean) {
+  const auth = await requireAuth();
+  const c = await ownCriterion(auth, id);
+  if (c.status !== "approved") return { error: "Approve it first; only criteria in use can be must-haves." };
+  if (on && c.importance !== "essential") return { error: "Only Required items can be must-haves. Edit it to Required first (that changes scoring, so it's a separate step)." };
+  await db.criterion.update({ where: { id }, data: { mustHave: on } });
+  await audit(auth, on ? "criterion.must_have_set" : "criterion.must_have_cleared", { subjectType: "criterion", subjectId: id, roleId: c.roleId });
+  revalidatePath(`/roles/${c.roleId}`);
+  return { ok: true, message: on ? "Marked as a must-have. People who clearly lack it now rank below everyone who doesn't; nobody is hidden." : "No longer a must-have." };
+}

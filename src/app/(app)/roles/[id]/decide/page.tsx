@@ -1,3 +1,5 @@
+import { MustHaveBadge } from "@/components/must-have";
+import { MUST_HAVE_TIER, mustHaveFromAssessment, type MustHave } from "@/lib/loop/must-have";
 import clsx from "clsx";
 import Link from "next/link";
 import { ProfileScoreChip } from "@/components/profile-score";
@@ -40,7 +42,7 @@ export default async function ReviewModePage({ params, searchParams }: { params:
       decision: true,
       createdAt: true,
       candidate: { select: { id: true, fullName: true, currentTitle: true, currentCompany: true, location: true, isSample: true } },
-      assessments: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, items: { select: { criterionName: true, kind: true, importance: true, result: true, overrideResult: true, evidenceJson: true } } } },
+      assessments: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, items: { select: { criterionId: true, criterionName: true, kind: true, importance: true, result: true, overrideResult: true, evidenceJson: true } } } },
       profileScores: { orderBy: { createdAt: "desc" }, take: 1, include: { scoringVersion: { select: { version: true } } } },
     },
     take: 300,
@@ -49,7 +51,10 @@ export default async function ReviewModePage({ params, searchParams }: { params:
     const p = a.profileScores[0];
     return p && a.assessments[0] && p.assessmentId === a.assessments[0].id && p.score !== null ? p.score : -1;
   };
-  const ordered = [...apps].sort((a, b) => scoreOf(b) - scoreOf(a) || a.createdAt.getTime() - b.createdAt.getTime());
+  // Must-haves are never traded away: anyone who clearly lacks one comes after everyone who doesn't.
+  const mustHaves = (await db.criterion.findMany({ where: { orgId: auth.orgId, roleId: id, status: "approved", mustHave: true }, select: { id: true, name: true } })) as MustHave[];
+  const mustOf = (a: (typeof apps)[number]) => mustHaveFromAssessment(mustHaves, a.assessments[0]?.items ?? null);
+  const ordered = [...apps].sort((a, b) => MUST_HAVE_TIER[mustOf(a).state] - MUST_HAVE_TIER[mustOf(b).state] || scoreOf(b) - scoreOf(a) || a.createdAt.getTime() - b.createdAt.getTime());
   const total = ordered.length;
   const index = Math.max(0, Math.min(total - 1, Number(iParam) || 0));
   const a = ordered[index];
@@ -103,6 +108,8 @@ export default async function ReviewModePage({ params, searchParams }: { params:
         <span className="text-muted">{scope === "undecided" ? "highest score first" : "everyone active"}</span>
       </div>
 
+      {/* The card slides in from the side; clip it so phones never flash a sideways scrollbar. */}
+      <div className="-mx-2 overflow-x-clip px-2 pb-2">
       <article key={a.id} className={clsx("rounded-2xl border border-line bg-surface p-5 shadow-[0_8px_24px_-16px_rgba(16,24,40,0.18)]", d === "prev" ? "motion-slide-prev" : "motion-slide-next")} aria-labelledby="rm-name">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
@@ -111,10 +118,11 @@ export default async function ReviewModePage({ params, searchParams }: { params:
             </h2>
             <p className="text-[13.5px] text-muted">{[a.candidate.currentTitle, a.candidate.currentCompany, a.candidate.location].filter(Boolean).join(" · ") || "No current role on file"}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ProfileScoreChip
               s={valid ? { id: p.id, score: p.score, coverage: p.coverage, status: p.status, band: p.band, bandLabel: p.bandLabel, version: p.scoringVersion.version, currentVersion: p.scoringVersion.version, createdAt: p.createdAt, createdByName: p.createdByName, trigger: p.trigger } : null}
             />
+            <MustHaveBadge r={mustOf(a)} />
             {a.decision && <span className="rounded-md bg-sunken px-2 py-0.5 text-[12px] font-medium">Now: {DECISION_LABEL[a.decision as Decision]}</span>}
           </div>
         </div>
@@ -157,6 +165,7 @@ export default async function ReviewModePage({ params, searchParams }: { params:
           </Link>
         </div>
       </article>
+      </div>
 
       <div className="sticky bottom-0 z-10 -mx-1 mt-4 border-t border-line bg-paper/95 px-1 pb-3 pt-3 backdrop-blur">
         <ReviewControls applicationId={a.id} roleId={role.id} index={index} total={total} scope={scope} current={a.decision} />

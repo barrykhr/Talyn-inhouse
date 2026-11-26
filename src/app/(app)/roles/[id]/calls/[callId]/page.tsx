@@ -81,6 +81,7 @@ export default async function CallPage({ params }: { params: Promise<{ id: strin
   const exp = a ? (JSON.parse(a.expectationsJson) as ExpItem[]) : [];
   const beh = a ? (JSON.parse(a.behaviouralJson) as BItem[]) : [];
   const sugg = a ? (JSON.parse(a.suggestionsJson) as { text: string; why: string }[]) : [];
+  const diffs = a ? (JSON.parse(a.integrityJson) as { cv: string; said: string; passage: number | null; note: string }[]) : [];
   const counts = candidateCounts(cand);
   const missed = cov.filter((c) => c.essential && !c.asked);
 
@@ -264,6 +265,25 @@ export default async function CallPage({ params }: { params: Promise<{ id: strin
                 ))}
               </ul>
               {missed.length > 0 && <p className="mt-3 text-[13px] text-muted">Essential criteria the hiring manager didn&apos;t mention: {missed.map((m) => m.name).join(", ")}.</p>}
+            </Card>
+          )}
+
+          {a && diffs.length > 0 && (
+            <Card className="p-5">
+              <SectionTitle hint="Clear factual differences between the CV and what was said. Ask about them; a slip, a rounding or a transcription error can explain any of these.">Check with the candidate</SectionTitle>
+              <ul className="space-y-2.5 text-[13px]">
+                {diffs.map((d, i) => (
+                  <li key={i} className="rounded-lg border border-line p-3">
+                    <p className="font-medium">{d.note}</p>
+                    <p className="mt-1 text-[12.5px] text-ink-2">
+                      CV: <span className="quote">“{d.cv}”</span>
+                    </p>
+                    <p className="text-[12.5px] text-ink-2">
+                      On the call: <span className="quote">“{d.said}”</span> <At n={d.passage} ms={startMs} />
+                    </p>
+                  </li>
+                ))}
+              </ul>
             </Card>
           )}
 
