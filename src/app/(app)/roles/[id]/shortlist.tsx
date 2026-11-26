@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { InterestAsk } from "./interest-ask";
 import Link from "next/link";
 import { EvidenceCounts, ModeBanner, OriginBadge, SampleBadge } from "@/components/role-workspace";
 import { ReviewActions } from "@/components/review-actions";
@@ -19,8 +20,10 @@ export function ShortlistTab({
   requiredSkills,
   skillFilter,
   scores,
+  emailReady = false,
 }: {
   roleId: string;
+  emailReady?: boolean;
   scores: Map<string, ScoreSnapshot | null>;
   shortlisted: AppRow[];
   origin: string;
@@ -130,8 +133,14 @@ export function ShortlistTab({
                       </span>
                     )}
                   </div>
-                  <div className="lg:justify-self-end">
+                  <div className="space-y-1 lg:justify-self-end">
                     <ReviewActions applicationId={a.id} decision={a.decision} name={a.candidate.fullName} compact allowClear />
+                    {a.origin === "discovered" &&
+                      (a.interest === "interested" ? (
+                        <p className="text-[12px] font-medium text-ok">Confirmed interest</p>
+                      ) : (
+                        <InterestAsk applicationId={a.id} emailReady={emailReady} last={a.interestChecks?.[0] ? { ...a.interestChecks[0], createdAt: a.interestChecks[0].createdAt.toISOString() } : null} />
+                      ))}
                   </div>
                 </li>
               );

@@ -57,14 +57,24 @@ const CallAlignment = z.object({
     }),
   ),
   suggestions: z.array(z.object({ text: z.string(), why: z.string() })).describe("Up to 5 next steps for the hiring team: gaps to cover, follow-up questions, questions to stop asking"),
+  cv_differences: z
+    .array(
+      z.object({
+        cv: z.string().describe("The CV's words, copied exactly"),
+        said: z.string().describe("The candidate's words, copied exactly from the cited passage"),
+        passage: z.number().int(),
+        note: z.string().describe("What differs, factually, in one sentence"),
+      }),
+    )
+    .describe("Only clear factual differences between the CV and what the candidate said: employer, title, dates, team size, numbers. Not emphasis, wording or omissions. Empty when there is no CV or none."),
 });
 export type CallAlignmentResult = z.infer<typeof CallAlignment>;
 
-export async function analyzeCallWithAi(input: { roleTitle: string; jd: string; criteria: Crit[]; behavioural: BQ[]; passages: Passage[] }) {
+export async function analyzeCallWithAi(input: { roleTitle: string; jd: string; criteria: Crit[]; behavioural: BQ[]; passages: Passage[]; cv?: string }) {
   const system = `You help a hiring team review one recorded call between a candidate and an interviewer or recruiter. You check two things against the job description:
 1. The candidate: for each criterion, does what they said match what the JD expects?
 2. The interviewer: is each question they asked tied to the JD, and which criteria did they never ask about?
-You also compare the candidate's answers to the role's behavioural questions against each question's benchmark.
+You also compare the candidate's answers to the role's behavioural questions against each question's benchmark, and note clear factual differences between their CV and what they said (a difference is something to ask about, never proof of anything).
 - candidate: one item per criterion.
 - questions: every real question the interviewer asked, in order. Small talk and scheduling are kind "logistics".
 - coverage: one item per criterion: did the interviewer ask about it at least once?
@@ -83,6 +93,10 @@ ${critBlock(input.criteria)}
 <behavioural_questions>
 ${input.behavioural.length ? input.behavioural.map((b) => `- id: ${b.id}\n  question: ${b.question}\n  benchmark: ${b.benchmark}\n  strong signals: ${b.strong_signals.join("; ")}\n  weak signals: ${b.weak_signals.join("; ")}\n  red flags: ${b.red_flags.join("; ")}`).join("\n") : "(none)"}
 </behavioural_questions>
+
+<cv>
+${input.cv?.slice(0, 10_000) || "(no CV on file)"}
+</cv>
 
 <transcript>
 ${transcriptBlock(input.passages)}

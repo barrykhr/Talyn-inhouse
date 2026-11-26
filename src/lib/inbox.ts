@@ -79,6 +79,18 @@ async function allItems(orgId: string): Promise<InboxItem[]> {
 export async function inboxFor(orgId: string, userId: string): Promise<{ groups: InboxGroup[]; count: number }> {
   const [items, states] = await Promise.all([allItems(orgId), db.inboxState.findMany({ where: { orgId, userId, NOT: { itemKey: UPDATES_SEEN } }, select: { itemKey: true, status: true, until: true } })]);
   const hidden = hiddenKeys(states, Date.now());
+  // Calibration rounds with profiles this person hasn't reacted to yet.
+  const rounds = await db.calibrationRound.findMany({
+    where: { orgId, status: "open" },
+    select: { id: true, roleId: true, createdAt: true, createdByName: true, role: { select: { title: true } }, items: { select: { votes: { where: { userId }, select: { id: true } } } } },
+    take: 20,
+  });
+  for (const r of rounds) {
+    const left = r.items.filter((i) => i.votes.length === 0).length;
+    if (!left) continue;
+    const detail = `${left} profile${left === 1 ? "" : "s"} to react to · started by ${r.createdByName}`;
+    items.push({ id: `calibration:${r.id}:${fp(String(left))}`, verb: "review", title: `Calibrate: ${r.role.title}`, detail, href: `/roles/${r.roleId}/calibrate`, action: "React", at: r.createdAt.toISOString() });
+  }
   const open = items.filter((i) => !hidden.has(i.id)).sort((a, b) => (a.at ?? "9").localeCompare(b.at ?? "9"));
   const groups = VERB_ORDER.map((verb) => ({ verb, label: VERB_LABEL[verb], items: open.filter((i) => i.verb === verb) })).filter((g) => g.items.length);
   return { groups, count: open.length };

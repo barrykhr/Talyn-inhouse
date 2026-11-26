@@ -1,3 +1,5 @@
+import { MustHaveBadge } from "@/components/must-have";
+import { mustHaveFromAssessment } from "@/lib/loop/must-have";
 import Link from "next/link";
 import { ProfileScoreChip } from "@/components/profile-score";
 import { RoleTabs, SampleBadge } from "@/components/role-workspace";
@@ -25,13 +27,15 @@ export default async function HiringReviewPage({ params }: { params: Promise<{ i
   const auth = await requireAuth();
   const { id } = await params;
   const role = await ownRole(auth, id);
-  const [apps, criteria, toReview, counts] = await Promise.all([
+  const [allApps, criteria, toReview, counts] = await Promise.all([
     db.application.findMany({
       where: { orgId: auth.orgId, roleId: id, decision: "advance" },
       orderBy: { decidedAt: "desc" },
       select: {
         id: true,
         candidateId: true,
+        origin: true,
+        interest: true,
         decidedAt: true,
         decidedByName: true,
         decisionNote: true,
@@ -39,7 +43,7 @@ export default async function HiringReviewPage({ params }: { params: Promise<{ i
         assessments: {
           orderBy: { createdAt: "desc" },
           take: 1,
-          select: { id: true, items: { select: { criterionName: true, kind: true, importance: true, result: true, overrideResult: true, evidenceJson: true } } },
+          select: { id: true, items: { select: { criterionId: true, criterionName: true, kind: true, importance: true, result: true, overrideResult: true, evidenceJson: true } } },
         },
         profileScores: { orderBy: { createdAt: "desc" }, take: 1, include: { scoringVersion: { select: { version: true } } } },
         hiringFeedback: { orderBy: { updatedAt: "desc" } },
@@ -50,6 +54,10 @@ export default async function HiringReviewPage({ params }: { params: Promise<{ i
     db.application.groupBy({ by: ["origin"], where: { orgId: auth.orgId, roleId: id }, _count: true }),
   ]);
   const applicants = counts.filter((c) => c.origin !== "discovered").reduce((n, c) => n + c._count, 0);
+  const mustHaves = await db.criterion.findMany({ where: { orgId: auth.orgId, roleId: id, status: "approved", mustHave: true }, select: { id: true, name: true } });
+  // People the team found reach the hiring manager only after they've said they're interested.
+  const waiting = allApps.filter((a) => a.origin === "discovered" && a.interest !== "interested");
+  const apps = allApps.filter((a) => !(a.origin === "discovered" && a.interest !== "interested"));
 
   return (
     <>
@@ -68,8 +76,16 @@ export default async function HiringReviewPage({ params }: { params: Promise<{ i
         showAts={!!getAtsConnector()}
       />
       <Notice tone="neutral" className="mb-4">
-        For hiring managers: the people the recruiter shortlisted, with the evidence behind each. Say Interested, Not a fit or ask a question. Your feedback goes to the recruiter; it doesn&apos;t move anyone or record a decision.
+        For hiring managers: the people the recruiter shortlisted, with the evidence behind each. Say Interested, Not a fit or ask a question. Your feedback goes to the recruiter; it doesn&apos;t move anyone or record a decision.{" "}
+        <Link href={`/roles/${role.id}/calibrate`} className="font-medium text-brand hover:underline">
+          Calibrate the brief →
+        </Link>
       </Notice>
+      {waiting.length > 0 && (
+        <p className="mb-3 text-[12.5px] text-muted">
+          {waiting.length} {waiting.length === 1 ? "person" : "people"} your team found {waiting.length === 1 ? "is" : "are"} shortlisted but haven&apos;t confirmed interest yet. They appear here once they do.
+        </p>
+      )}
       {apps.length === 0 ? (
         <EmptyState title="No one shortlisted yet" body="When the recruiter shortlists candidates for this role, they appear here for your review." />
       ) : (
@@ -96,6 +112,8 @@ export default async function HiringReviewPage({ params }: { params: Promise<{ i
                       {a.candidate.fullName}
                     </Link>
                     {a.candidate.isSample && <SampleBadge />}
+                    <MustHaveBadge r={mustHaveFromAssessment(mustHaves, latest?.items ?? null)} />
+                    {a.origin === "discovered" && <span className="rounded-md bg-ok-soft px-1.5 py-0.5 text-[11.5px] font-medium text-ok">Confirmed interest</span>}
                     <ProfileScoreChip
                       s={
                         valid

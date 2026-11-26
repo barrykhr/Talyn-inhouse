@@ -1,3 +1,5 @@
+import { logError } from "@/lib/log";
+import { integrityFor, type IntegrityFindings } from "@/server/integrity";
 import { echoSummary } from "@/lib/jd-echo";
 import { HEALTH_HELP } from "@/lib/health";
 import { FEEDBACK_LABEL, feedbackSummary, type FeedbackVerdict } from "@/lib/feedback";
@@ -277,6 +279,10 @@ export default async function CandidatePage({
     }
     answerCheckList = answerChecks({ answers, cv: pages.join("\n"), publicWork: linked?.text ?? "", prompts, skills: roleSkills.map((c) => c.name) });
   }
+  const integrity = await integrityFor(auth.orgId, candidate.id).catch((err) => {
+    logError("integrity.check_failed", err, { candidateId: candidate.id });
+    return { nearCvs: [], copiedAnswers: [], callDifferences: [] } as IntegrityFindings;
+  });
   const [dupReviews, linkedSources] = await Promise.all([
     db.duplicateReview.findMany({
       where: { orgId: auth.orgId, status: { not: "dismissed" }, OR: [{ candidateAId: candidate.id }, { candidateBId: candidate.id }] },
@@ -364,6 +370,41 @@ export default async function CandidatePage({
     <Card className="p-4" id="profile-checks">
       <SectionTitle hint="Specific issues with where they came from. Talyn never labels a person fake or scores authenticity.">Profile checks</SectionTitle>
       <ul className="space-y-2.5 text-[13px]">
+        {integrity.nearCvs.map((n) => (
+          <li key={`cv-${n.candidateId}`}>
+            <Badge tone="warn">Near-identical CV</Badge>{" "}
+            <span>
+              Almost the same text as{" "}
+              <Link href={`/candidates/${n.candidateId}`} className="font-medium hover:underline">
+                {n.name}
+              </Link>
+              &apos;s CV. <span className="text-muted">Could be the same person, a shared template, or a copied CV. Check with a person.</span>
+            </span>
+          </li>
+        ))}
+        {integrity.copiedAnswers.map((c) => (
+          <li key={`ans-${c.candidateId}-${c.label}`}>
+            <Badge tone="warn">Similar answer</Badge> <span className="font-medium">{c.label}</span>{" "}
+            <span className="text-muted">
+              {c.overlap}% the same wording as{" "}
+              <Link href={`/candidates/${c.candidateId}`} className="text-ink hover:underline">
+                {c.name}
+              </Link>
+              &apos;s answer. Ask them to talk it through.
+            </span>
+          </li>
+        ))}
+        {integrity.callDifferences.map((d, i) => (
+          <li key={`call-${i}`}>
+            <Badge tone="warn">CV vs call</Badge>{" "}
+            <span>
+              CV says <span className="quote">“{d.cv}”</span>; on the call: <span className="quote">“{d.said}”</span>{" "}
+              <Link href={`/roles/${d.roleId}/calls/${d.callId}${d.passage ? `#p-${d.passage}` : ""}`} className="text-[12.5px] text-brand hover:underline">
+                {d.title}
+              </Link>
+            </span>
+          </li>
+        ))}
         {dupReviews.map((r) => {
           const other = r.candidateAId === candidate.id ? r.candidateB : r.candidateA;
           const reasons = JSON.parse(r.reasonsJson) as string[];

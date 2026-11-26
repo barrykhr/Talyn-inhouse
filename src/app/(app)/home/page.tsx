@@ -34,6 +34,14 @@ export default async function HomePage() {
     db.role.count({ where: { orgId: auth.orgId, status: "open" } }),
     db.auditEvent.findMany({ where: { orgId: auth.orgId, action: { not: "candidate.viewed" } }, orderBy: { createdAt: "desc" }, take: 8 }),
   ]);
+  // Daily digest: new people Discover found for each role since yesterday (still to review).
+  const since = new Date(Date.now() - 24 * 3600_000);
+  const found = await db.sourcedProfile.groupBy({ by: ["roleId"], where: { orgId: auth.orgId, status: "new", createdAt: { gte: since } }, _count: true });
+  const foundRoles = found.length ? await db.role.findMany({ where: { orgId: auth.orgId, id: { in: found.map((f) => f.roleId) } }, select: { id: true, title: true } }) : [];
+  const digest = found
+    .map((f) => ({ role: foundRoles.find((r) => r.id === f.roleId), n: f._count }))
+    .filter((d): d is { role: { id: string; title: string }; n: number } => !!d.role)
+    .sort((a, b) => b.n - a.n);
   const openRoleList = await db.role.findMany({
     where: { orgId: auth.orgId, status: "open" },
     orderBy: { updatedAt: "desc" },
@@ -196,6 +204,24 @@ export default async function HomePage() {
           <InboxList groups={inbox.groups} limit={5} compact />
         )}
       </section>
+
+      {digest.length > 0 && (
+        <section aria-labelledby="found-h">
+          <h2 id="found-h" className="mb-2 text-[15px] font-semibold">
+            Found since yesterday
+          </h2>
+          <Card className="divide-y divide-line overflow-hidden">
+            {digest.map((d) => (
+              <Link key={d.role.id} href={`/roles/${d.role.id}/discover`} className="motion-row flex items-center justify-between gap-3 px-4 py-2.5 text-[13.5px] hover:bg-sunken/60">
+                <span className="min-w-0 truncate font-medium">{d.role.title}</span>
+                <span className="shrink-0 text-muted">
+                  {d.n} new {d.n === 1 ? "person" : "people"} to review →
+                </span>
+              </Link>
+            ))}
+          </Card>
+        </section>
+      )}
 
       {recent.length > 0 && (
         <section aria-labelledby="act-h">

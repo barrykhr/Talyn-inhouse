@@ -6,6 +6,7 @@ import { Badge, Breadcrumbs, Card, EmptyState, PageHeader, SectionTitle } from "
 import { requireAuth } from "@/lib/auth";
 import { EXPECTATION_LABEL, INTERVIEWER_ROLE_LABEL, STAGE_LABEL, managerProfiles, managerSummary, stageOf } from "@/lib/calls/core";
 import { companyDetail } from "@/server/company-view";
+import { memoryForRoles } from "@/server/company-memory";
 
 export const metadata = { title: "Company" };
 
@@ -22,6 +23,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ key: s
   const c = await companyDetail(auth.orgId, auth.orgName, key);
   if (!c) notFound();
   const managers = managerProfiles(c.calls);
+  const memory = await memoryForRoles(auth.orgId, c.roles.map((r) => r.id));
   const interviews = c.calls.filter((x) => x.kind !== "intake");
   const scored = interviews.filter((x) => x.questionAlignment !== null);
   const avg = scored.length ? Math.round(scored.reduce((s, x) => s + x.questionAlignment!, 0) / scored.length) : null;
@@ -127,6 +129,26 @@ export default async function CompanyPage({ params }: { params: Promise<{ key: s
         </section>
 
         <aside className="space-y-4">
+          <Card className="p-4">
+            <SectionTitle hint="What hiring managers said in calibration and intake calls. Used to sharpen the next role here.">Hiring memory</SectionTitle>
+            {memory.length === 0 ? (
+              <p className="text-[12.5px] text-muted">Nothing yet. Calibration rounds and intake calls add to it.</p>
+            ) : (
+              <ul className="space-y-1.5 text-[12.5px]">
+                {memory.slice(0, 12).map((m, i) => (
+                  <li key={i}>
+                    <span className={m.verdict === "yes" ? "text-ok" : m.verdict === "no" || m.verdict === "conflicts" ? "text-danger" : "text-warn"}>
+                      {m.kind === "calibration" ? (m.verdict === "yes" ? "Would meet" : m.verdict === "no" ? "Wouldn't meet" : "Unsure") : "Wants"}
+                    </span>{" "}
+                    <span className="text-ink-2">{m.text}</span>
+                    <span className="block text-[11.5px] text-faint">
+                      {m.roleTitle} · {m.by}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
           <Card className="p-4">
             <SectionTitle>Openings</SectionTitle>
             <ul className="divide-y divide-line">

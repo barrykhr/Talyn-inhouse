@@ -1,3 +1,4 @@
+import { getEmailProvider } from "@/lib/outreach/provider";
 import { getAtsConnector } from "@/lib/ats/connector";
 import Link from "next/link";
 import { ActionButton } from "@/components/client";
@@ -74,6 +75,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
           },
           _count: { select: { tasks: { where: { status: "open", type: "gather_info" } } } },
           profileScores: { orderBy: { createdAt: "desc" }, take: 1, include: { scoringVersion: { select: { version: true } } } },
+          interestChecks: { orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true, sentVia: true, response: true } },
         },
         orderBy: { updatedAt: "desc" },
       },
@@ -254,6 +256,13 @@ export default async function RolePage({ params, searchParams }: { params: Promi
       {tab === "criteria" && (
         <div className="space-y-6">
           {proposed.length > 0 && <ReviewBanner roleId={role.id} count={proposed.length} />}
+          <p className="text-[13px] text-muted">
+            Not sure the criteria match what the hiring manager wants?{" "}
+            <Link href={`/roles/${role.id}/calibrate`} className="font-medium text-brand hover:underline">
+              Calibrate with a few real profiles →
+            </Link>{" "}
+            Mark the non-negotiable ones as <span className="font-medium text-ink">must-haves</span>: people who clearly lack one rank below everyone else.
+          </p>
           <ProposePanel roleId={role.id} aiConfigured={ai.configured} hasDescription={role.description.trim().length >= 40} hasCriteria={role.criteria.length > 0} />
 
           {proposed.length > 0 && (
@@ -547,6 +556,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
           requiredSkills={skillConfig.requiredSkillIds.length}
           weights={weightsOf(role)}
           scores={scoreSnaps}
+          mustHaves={approved.filter((c) => c.mustHave).map((c) => ({ id: c.id, name: c.name }))}
         />
       )}
 
@@ -559,6 +569,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
           requiredSkills={skillConfig.requiredSkillIds.length}
           skillFilter={skillFilter}
           scores={scoreSnaps}
+          emailReady={!!getEmailProvider()}
         />
       )}
     </>

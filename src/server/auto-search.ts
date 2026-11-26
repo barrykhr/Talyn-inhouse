@@ -94,7 +94,7 @@ export async function autoSearchRole(orgId: string, roleId: string, opts: { only
 /** Daily: open roles, least recently searched first, within a time budget. */
 export async function autoSearchOpenRoles(budgetMs = 240_000): Promise<AutoSearchOutcome[]> {
   const started = Date.now();
-  const roles = await db.role.findMany({ where: { status: "open" }, select: { id: true, orgId: true } });
+  const roles = await db.role.findMany({ where: { status: "open", keepLooking: true }, select: { id: true, orgId: true } });
   const last = await db.searchRun.groupBy({ by: ["roleId"], _max: { createdAt: true }, where: { roleId: { in: roles.map((r) => r.id) } } });
   const lastAt = new Map(last.map((l) => [l.roleId, l._max.createdAt?.getTime() ?? 0]));
   roles.sort((a, b) => (lastAt.get(a.id) ?? 0) - (lastAt.get(b.id) ?? 0));
