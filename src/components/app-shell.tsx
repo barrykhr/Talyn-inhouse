@@ -19,6 +19,7 @@ const ROLE_LABEL: Record<string, string> = { admin: "Admin", recruiter: "Recruit
 const PRIMARY = [
   { href: "/home", label: "Home", icon: "home" },
   { href: "/roles", label: "Roles", icon: "roles" },
+  { href: "/companies", label: "Companies", icon: "company" },
   { href: "/candidates", label: "Candidates", icon: "people" },
   { href: "/interviews", label: "Interviews", icon: "interviews" },
 ] as const;
@@ -297,6 +298,12 @@ function NavIcon({ name }: { name: string }) {
       return (
         <svg {...p}>
           <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" />
+        </svg>
+      );
+    case "company":
+      return (
+        <svg {...p}>
+          <path d="M2.5 13.5v-10a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v10M9.5 6.5h3a1 1 0 0 1 1 1v6M1.5 13.5h13M5 5.5h2M5 8h2M5 10.5h2" />
         </svg>
       );
     case "plug":

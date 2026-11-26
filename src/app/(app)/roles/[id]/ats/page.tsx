@@ -1,3 +1,5 @@
+import { ATS_ENABLED } from "@/lib/features";
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Card, EmptyState, Notice, PageHeader, SectionTitle, buttonClass, formatDateTime } from "@/components/ui";
 import { getAtsConnector, type AtsJob } from "@/lib/ats/connector";
@@ -13,6 +15,7 @@ export const metadata = { title: "ATS" };
 const OUTBOX_LABEL: Record<string, string> = { pending: "Waiting to push", sent: "Pushed", failed: "Failed — needs attention", skipped: "Not synced" };
 
 export default async function RoleAtsPage({ params }: { params: Promise<{ id: string }> }) {
+  if (!ATS_ENABLED) notFound();
   const auth = await requireAuth();
   const { id } = await params;
   const role = await ownRole(auth, id);

@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { checkEnv } from "../integrations/env";
+import { ATS_ENABLED } from "../features";
 
 /**
  * ATS connector. No specific ATS is chosen here: the built-in connector speaks a small,
@@ -151,6 +152,7 @@ function restConnector(): AtsConnector {
 
 /** The configured connector, or null. A workspace must also be linked before anything syncs. */
 export function getAtsConnector(): AtsConnector | null {
+  if (!ATS_ENABLED) return null;
   return atsSetup().ready ? restConnector() : null;
 }
 

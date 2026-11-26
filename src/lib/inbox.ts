@@ -1,6 +1,7 @@
 import "server-only";
 import { attention } from "./attention";
 import { db } from "./db";
+import { ATS_ENABLED } from "./features";
 import { AUDIT_LABEL } from "./audit";
 import { coveredByReplies, fingerprint as fp, hiddenKeys } from "./inbox-core";
 import { buildQueue } from "./queue";
@@ -44,11 +45,20 @@ const ATTENTION_VERB: Record<string, InboxVerb> = {
   interviews: "schedule",
 };
 // Queue sections the attention groups don't already cover.
-const QUEUE_VERB: Record<string, InboxVerb> = { evidence: "reply", assessment: "review", decision: "decide", ats: "fix", ats_push: "fix" };
+const QUEUE_VERB: Record<string, InboxVerb> = { evidence: "reply", assessment: "review", decision: "decide", ...(ATS_ENABLED ? { ats: "fix" as const, ats_push: "fix" as const } : {}) };
 
 async function allItems(orgId: string): Promise<InboxItem[]> {
-  const [groups, sections] = await Promise.all([attention(orgId), buildQueue(orgId)]);
+  const [groups, sections, calls] = await Promise.all([
+    attention(orgId),
+    buildQueue(orgId),
+    db.roleCall.findMany({ where: { orgId, status: "needs_role" }, orderBy: { createdAt: "asc" }, take: 50, select: { id: true, title: true, provider: true, createdAt: true } }),
+  ]);
   const out: InboxItem[] = [];
+  // Calls a notetaker sent: a person says which role they belong to and who was on them.
+  for (const c of calls) {
+    const detail = `From ${c.provider.split(":")[1] ?? "your notetaker"} · say which role and who was on it`;
+    out.push({ id: `call:${c.id}:${fp(detail)}`, verb: "review", title: `Set up call: ${c.title}`, detail, href: `/calls/${c.id}`, action: "Set up", at: c.createdAt.toISOString() });
+  }
   for (const g of groups) {
     const verb = ATTENTION_VERB[g.key] ?? "review";
     for (const it of g.items) out.push({ id: `${g.key}:${it.key}:${fp(it.detail)}`, verb, title: it.title, detail: it.detail, href: it.href, action: it.action, at: it.at?.toISOString() ?? null });

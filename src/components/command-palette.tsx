@@ -15,6 +15,7 @@ const COMMANDS: Item[] = [
   { key: "c-discover", label: "Go to Discover", hint: "G then D", href: "/discover", group: "Go to" },
   { key: "c-interviews", label: "Go to interviews", hint: "G then I", href: "/interviews", group: "Go to" },
   { key: "c-roles", label: "Go to roles", hint: "G then R", href: "/roles", group: "Go to" },
+  { key: "c-companies", label: "Go to companies", hint: "", href: "/companies", group: "Go to" },
   { key: "c-cands", label: "Go to candidates", hint: "G then C", href: "/candidates", group: "Go to" },
   { key: "c-newrole", label: "New role from a job description", hint: "", href: "/roles/new", group: "Create" },
   { key: "c-newcand", label: "New candidate from a CV", hint: "", href: "/candidates/new", group: "Create" },

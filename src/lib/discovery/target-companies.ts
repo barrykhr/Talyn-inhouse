@@ -258,3 +258,13 @@ export function parseSelection(json: string | null | undefined): string[] {
     return [];
   }
 }
+
+/** The stored client profile, or null when it is missing or malformed. */
+export function parseClientProfile(json: string | null | undefined): ClientProfile | null {
+  try {
+    const r = ClientProfileSchema.safeParse(JSON.parse(json ?? ""));
+    return r.success ? r.data : null;
+  } catch {
+    return null;
+  }
+}
