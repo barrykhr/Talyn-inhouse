@@ -70,6 +70,7 @@ export const AUDIT_LABEL: Record<string, string> = {
   "discover.keep_looking_on": "Turned on daily search",
   "discover.keep_looking_off": "Paused daily search",
   "discover.past_candidate_added": "Added a past candidate",
+  "timing.company_news_checked": "Checked company news",
   "candidate.feedback": "Gave hiring team feedback",
   "role.insights_generated": "Checked the JD (role insights)",
   "discover.target_companies_generated": "Suggested target companies",

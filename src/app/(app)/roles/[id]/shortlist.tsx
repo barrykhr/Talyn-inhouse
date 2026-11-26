@@ -1,5 +1,7 @@
 import clsx from "clsx";
 import { InterestAsk } from "./interest-ask";
+import { TimingChip } from "@/components/timing-card";
+import type { TimingBand } from "@/lib/timing";
 import Link from "next/link";
 import { EvidenceCounts, ModeBanner, OriginBadge, SampleBadge } from "@/components/role-workspace";
 import { ReviewActions } from "@/components/review-actions";
@@ -21,9 +23,11 @@ export function ShortlistTab({
   skillFilter,
   scores,
   emailReady = false,
+  timings,
 }: {
   roleId: string;
   emailReady?: boolean;
+  timings?: Map<string, { score: number | null; band: TimingBand; top: string | null }>;
   scores: Map<string, ScoreSnapshot | null>;
   shortlisted: AppRow[];
   origin: string;
@@ -105,6 +109,12 @@ export function ShortlistTab({
                       </Link>
                       <OriginBadge origin={a.origin} detail={a.originDetail} />
                       {a.candidate.isSample && <SampleBadge />}
+                      {timings?.get(a.candidate.id)?.score != null && (
+                        <Link href={`/candidates/${a.candidate.id}?role=${roleId}&view=cv#timing`} title={timings.get(a.candidate.id)!.top ?? undefined} className="inline-flex items-center gap-1">
+                          <TimingChip score={timings.get(a.candidate.id)!.score} band={timings.get(a.candidate.id)!.band} compact />
+                          <span className="text-[11.5px] text-muted">Timing</span>
+                        </Link>
+                      )}
                     </div>
                     <div className="truncate text-[12.5px] text-muted">
                       {[a.candidate.currentTitle, a.candidate.currentCompany].filter(Boolean).join(" · ") || <span className="text-faint">No current role on record</span>}

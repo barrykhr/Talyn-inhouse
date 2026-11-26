@@ -1512,3 +1512,18 @@ model CalibrationVote {
 
   @@unique([itemId, userId])
 }
+
+// Public company news used as timing context (layoffs, funding, acquisitions…), with sources.
+// Cached per workspace and company; refreshed when older than two weeks.
+model CompanyEvents {
+  id         String   @id @default(cuid())
+  orgId      String
+  companyKey String
+  name       String
+  eventsJson String   @default("[]") // CompanyEvent[] — only those whose source page the search actually retrieved
+  webSearch  Boolean  @default(false)
+  model      String
+  checkedAt  DateTime @default(now())
+
+  @@unique([orgId, companyKey])
+}

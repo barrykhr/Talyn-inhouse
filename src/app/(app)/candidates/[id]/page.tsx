@@ -1,3 +1,6 @@
+import { TimingCard } from "@/components/timing-card";
+import { timingForCandidate } from "@/server/timing";
+import { checkCompanyNews } from "@/server/timing-actions";
 import { logError } from "@/lib/log";
 import { integrityFor, type IntegrityFindings } from "@/server/integrity";
 import { echoSummary } from "@/lib/jd-echo";
@@ -279,6 +282,12 @@ export default async function CandidatePage({
     }
     answerCheckList = answerChecks({ answers, cv: pages.join("\n"), publicWork: linked?.text ?? "", prompts, skills: roleSkills.map((c) => c.name) });
   }
+  const timing = await timingForCandidate(auth.orgId, candidate.id).catch((err) => {
+    logError("timing.compute_failed", err, { candidateId: candidate.id });
+    return null;
+  });
+  const timingCard = timing ? <TimingCard t={timing} checkNews={checkCompanyNews.bind(null, candidate.id)} anchorId="timing" /> : null;
+  const timingCardOutreach = timing ? <TimingCard t={timing} checkNews={checkCompanyNews.bind(null, candidate.id)} /> : null;
   const integrity = await integrityFor(auth.orgId, candidate.id).catch((err) => {
     logError("integrity.check_failed", err, { candidateId: candidate.id });
     return { nearCvs: [], copiedAnswers: [], callDifferences: [] } as IntegrityFindings;
@@ -492,6 +501,7 @@ export default async function CandidatePage({
   const cvProfile = (
     <div className="grid gap-5 xl:grid-cols-2">
       <div className="space-y-5">
+        {timingCard}
         {profileChecks}
         <Card className="p-4">
           <SectionTitle hint="Where each detail came from.">Profile</SectionTitle>
@@ -1493,7 +1503,15 @@ export default async function CandidatePage({
               initial={view === "outreach" ? 1 : view === "cv" ? 2 : view === "interviews" ? 4 : 0}
               tabs={[
                 { label: "Assessment", content: assessmentMain },
-                { label: "Outreach", content: outreach ? <OutreachPanel v={outreach} /> : null },
+                {
+                  label: "Outreach",
+                  content: (
+                    <div className="space-y-4">
+                      {timingCardOutreach}
+                      {outreach ? <OutreachPanel v={outreach} /> : null}
+                    </div>
+                  ),
+                },
                 { label: "CV & profile", content: cvProfile },
                 { label: "Notes & activity", count: candidate.notes.length, content: notesHistory },
                 { label: "Interviews", content: interviewsTab },
