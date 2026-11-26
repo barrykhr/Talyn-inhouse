@@ -835,3 +835,27 @@ export async function roleInsightsWithAi(input: { title: string; jdText: string;
 export async function runStructuredFor<T extends z.ZodType>(opts: { system: string; user: string; schema: T; name: string; maxTokens?: number }): Promise<z.infer<T>> {
   return runStructured(opts);
 }
+
+// ---------- Company events (timing context), with web search and sources ----------
+
+export const COMPANY_EVENTS_VERSION = "company-events-v1";
+const CompanyEventsOutput = z.object({
+  events: z.array(
+    z.object({
+      type: z.enum(["layoffs", "restructuring", "acquisition", "leadership_change", "funding", "hiring_freeze", "office_closure", "other"]),
+      date: z.string().describe("YYYY-MM of the event"),
+      headline: z.string().describe("One factual line, e.g. 'Cut about 10% of staff in engineering'"),
+      source_url: z.string().describe("The page that reports it"),
+    }),
+  ),
+});
+
+/** Notable public events at one company in the last 12 months, each with the page that reports it. */
+export async function companyEventsWithAi(input: { name: string; website?: string | null; today: string }) {
+  const system = `You research public news about one company for a recruiter deciding when to reach out to people who work there.
+- List notable events from the last 12 months only: layoffs, restructuring, acquisition or merger, leadership change (CEO/CTO/founder), funding round, hiring freeze, office closure.
+- Only events a reputable source reports, with that page's URL. If you're not sure it's the right company (same name, different company), leave it out.
+- Facts only, one line each. No speculation about employees. Return an empty list if nothing notable is reported.`;
+  const user = `Company: ${input.name}${input.website ? `\nWebsite: ${input.website}` : ""}\nToday: ${input.today}`;
+  return runStructuredWithWeb({ system, user, schema: CompanyEventsOutput, name: "company_events" });
+}

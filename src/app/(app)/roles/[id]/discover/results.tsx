@@ -2,6 +2,8 @@
 
 import { INTEREST_LABEL } from "@/lib/domain";
 import clsx from "clsx";
+import { TimingChip } from "@/components/timing-card";
+import type { TimingBand } from "@/lib/timing";
 import Link from "next/link";
 import { useId, useState } from "react";
 import { ActionButton } from "@/components/client";
@@ -46,6 +48,8 @@ export type ProfileView = {
   application: { interest: string; permission: string } | null;
   /** Must-have skills: shown with evidence, or not confirmed. Public profiles can't prove absence. */
   mustHave?: { state: "met" | "unconfirmed" | "missing" | "none"; unconfirmed: string[] };
+  /** Timing from company news and profile changes; never used to order or filter. */
+  timing?: { score: number | null; band: TimingBand; top: string | null };
 };
 
 const CAT: Record<string, string> = {
@@ -128,6 +132,12 @@ export function ResultCard({ p, outreachHref }: { p: ProfileView; outreachHref: 
               </span>
             )}
             {p.duplicateReason && <span className="rounded-md bg-sunken px-1.5 py-0.5 text-[11.5px] text-ink-2">{p.duplicateReason}</span>}
+            {p.timing && p.timing.score !== null && (
+              <span className="inline-flex items-center gap-1" title={p.timing.top ?? undefined}>
+                <TimingChip score={p.timing.score} band={p.timing.band} compact />
+                <span className="text-[11.5px] text-muted">Timing</span>
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap gap-x-2 text-[12.5px] text-ink-2">
             <span>{p.currentTitle ?? <NotEstablished what="Role" />}</span>

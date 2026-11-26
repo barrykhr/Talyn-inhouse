@@ -1,3 +1,4 @@
+import { timingForSourced } from "@/server/timing";
 import { MUST_HAVE_TIER, mustHaveFromSignals } from "@/lib/loop/must-have";
 import Link from "next/link";
 import { ActionButton } from "@/components/client";
@@ -145,6 +146,7 @@ export default async function DiscoverPage({
   const runSources = currentRun ? (JSON.parse(currentRun.sourcesJson) as SourceStatus[]) : [];
   const profiles = currentRun ? await db.sourcedProfile.findMany({ where: { orgId: auth.orgId, runId: currentRun.id } }) : [];
   const toReview = await db.sourcedProfile.count({ where: { orgId: auth.orgId, roleId: id, status: "new" } });
+  const timings = await timingForSourced(auth.orgId, profiles);
   const appById = new Map(apps.map((a) => [a.id, a]));
   const permissionText = (a: (typeof apps)[number]) =>
     a.candidate.isSample ? "Fictional — no one to contact" : a.candidate.contactOptOut ? "Opted out" : a.candidate.whatsappPermission === "granted" ? "WhatsApp opt-in recorded" : a.origin === "applied" ? "Applied to this role" : "Not recorded";
@@ -173,6 +175,10 @@ export default async function DiscoverPage({
       savedCandidateId: app?.candidateId ?? null,
       application: app ? { interest: app.interest, permission: permissionText(app) } : null,
       mustHave: mustOf(p),
+      timing: (() => {
+        const t = timings.get(p.id);
+        return t ? { score: t.score, band: t.band, top: t.signals.map((x) => `${x.label}: ${x.detail}`).join(" · ") || null } : undefined;
+      })(),
     };
   };
   // Ordering is a review aid, not an assessment: AI rank (when asked for), then relevance score,

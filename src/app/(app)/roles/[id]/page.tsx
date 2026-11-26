@@ -1,3 +1,4 @@
+import { timingForCandidates } from "@/server/timing";
 import { getEmailProvider } from "@/lib/outreach/provider";
 import { getAtsConnector } from "@/lib/ats/connector";
 import Link from "next/link";
@@ -570,6 +571,7 @@ export default async function RolePage({ params, searchParams }: { params: Promi
           skillFilter={skillFilter}
           scores={scoreSnaps}
           emailReady={!!getEmailProvider()}
+          timings={tab === "shortlist" ? await timingForCandidates(auth.orgId, shortlisted.map((a) => a.candidate.id)) : undefined}
         />
       )}
     </>
